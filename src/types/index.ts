@@ -209,6 +209,7 @@ export interface CreateOrderRequest {
     quantity: number
   }[]
   notes?: string
+  deliveryDate?: string
   liffAccessToken: string
 }
 

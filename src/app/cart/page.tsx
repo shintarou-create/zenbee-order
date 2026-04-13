@@ -9,11 +9,24 @@ import CartItemComponent from '@/components/customer/CartItem'
 import OrderSummary from '@/components/customer/OrderSummary'
 import { formatCurrency } from '@/lib/utils'
 
+function getMinDeliveryDate(): string {
+  const d = new Date()
+  d.setDate(d.getDate() + 3)
+  return d.toISOString().split('T')[0]
+}
+
+function getDefaultDeliveryDate(): string {
+  const d = new Date()
+  d.setDate(d.getDate() + 5)
+  return d.toISOString().split('T')[0]
+}
+
 export default function CartPage() {
   const router = useRouter()
   const { items, total, updateQuantity, removeFromCart, clearCart } = useCart()
   const { userId, isLoading: liffLoading } = useLiff()
   const [notes, setNotes] = useState('')
+  const [deliveryDate, setDeliveryDate] = useState(getDefaultDeliveryDate())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -49,6 +62,7 @@ export default function CartPage() {
             quantity: item.quantity,
           })),
           notes,
+          deliveryDate,
           liffAccessToken: accessToken || '',
         }),
       })
@@ -122,6 +136,21 @@ export default function CartPage() {
 
             {/* 注文内容確認 */}
             <OrderSummary items={items} total={total} />
+
+            {/* 納品希望日 */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+              <label className="block font-bold text-gray-900 mb-2 text-base">
+                納品希望日
+              </label>
+              <input
+                type="date"
+                value={deliveryDate}
+                min={getMinDeliveryDate()}
+                onChange={(e) => setDeliveryDate(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+              />
+              <p className="mt-1 text-xs text-gray-500">※ご注文日の3日後以降でご指定ください</p>
+            </div>
 
             {/* 備考欄 */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">

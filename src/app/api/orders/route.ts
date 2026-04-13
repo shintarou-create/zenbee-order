@@ -7,7 +7,7 @@ import type { CreateOrderRequest } from '@/types'
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as CreateOrderRequest
-    const { items, notes, liffAccessToken } = body
+    const { items, notes, deliveryDate, liffAccessToken } = body
 
     if (!items || items.length === 0) {
       return NextResponse.json(
@@ -152,6 +152,7 @@ export async function POST(req: NextRequest) {
         status: 'pending',
         total_amount: totalAmount,
         notes: notes || null,
+        delivery_date: deliveryDate || null,
         cool_type: orderItemsData.some(
           (item) => products.find((p) => p.id === item.product_id)?.cool_type === 1
         ) ? 1 : 0,

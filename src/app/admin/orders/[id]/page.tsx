@@ -24,6 +24,7 @@ export default function AdminOrderDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<OrderStatus>('pending')
   const [adminNotes, setAdminNotes] = useState('')
+  const [deliveryDate, setDeliveryDate] = useState('')
   const [updating, setUpdating] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [downloadingPdf, setDownloadingPdf] = useState(false)
@@ -53,6 +54,7 @@ export default function AdminOrderDetailPage() {
         setOrder(data as Order)
         setStatus(data.status as OrderStatus)
         setAdminNotes(data.admin_notes || '')
+        setDeliveryDate(data.delivery_date || '')
       } catch (err) {
         console.error('注文取得エラー:', err)
         setError('注文の取得に失敗しました')
@@ -74,6 +76,7 @@ export default function AdminOrderDetailPage() {
         .update({
           status,
           admin_notes: adminNotes || null,
+          delivery_date: deliveryDate || null,
         })
         .eq('id', order.id)
 
@@ -265,6 +268,16 @@ export default function AdminOrderDetailPage() {
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">納品希望日</label>
+            <input
+              type="date"
+              value={deliveryDate}
+              onChange={(e) => setDeliveryDate(e.target.value)}
+              className="w-full md:w-auto border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+            />
           </div>
 
           <div>
