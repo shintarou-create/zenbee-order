@@ -1,101 +1,178 @@
-import Image from "next/image";
+'use client'
 
-export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { useLiff } from '@/hooks/useLiff'
+import { useProducts } from '@/hooks/useProducts'
+import { useCart } from '@/hooks/useCart'
+import { createClient } from '@/lib/supabase/client'
+import ProductCard from '@/components/customer/ProductCard'
+import type { Customer, PriceRank } from '@/types'
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+const CATEGORIES = ['全商品', 'みかん', 'びわ', 'レモン', 'ジュース']
+
+export default function HomePage() {
+  const router = useRouter()
+  const { userId, isLoading: liffLoading, error: liffError } = useLiff()
+  const [customer, setCustomer] = useState<Customer | null>(null)
+  const [customerLoading, setCustomerLoading] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState('全商品')
+
+  const priceRank: PriceRank = customer?.price_rank || 'standard'
+  const { products, isLoading: productsLoading } = useProducts({
+    priceRank,
+    category: selectedCategory,
+  })
+  const { items: cartItems, addToCart, itemCount } = useCart()
+
+  // 顧客情報の取得
+  useEffect(() => {
+    if (!userId) return
+
+    async function fetchCustomer() {
+      setCustomerLoading(true)
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('line_user_id', userId)
+          .eq('is_active', true)
+          .single()
+
+        if (error || !data) {
+          router.push('/not-registered')
+          return
+        }
+
+        setCustomer(data as Customer)
+      } catch {
+        router.push('/not-registered')
+      } finally {
+        setCustomerLoading(false)
+      }
+    }
+
+    fetchCustomer()
+  }, [userId, router])
+
+  if (liffLoading || customerLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-green-50">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-green-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-green-800 font-medium">読み込み中...</p>
         </div>
+      </div>
+    )
+  }
+
+  if (liffError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-red-50 p-4">
+        <div className="text-center max-w-sm">
+          <p className="text-red-600 font-medium">エラーが発生しました</p>
+          <p className="text-red-500 text-sm mt-2">{liffError}</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* ヘッダー */}
+      <header className="bg-green-700 text-white sticky top-0 z-10 shadow-md">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold">善兵衛農園</h1>
+            {customer && (
+              <p className="text-green-200 text-xs">{customer.company_name}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <Link href="/orders" className="text-green-100 text-sm hover:text-white">
+              注文履歴
+            </Link>
+            <Link
+              href="/cart"
+              className="relative bg-white text-green-700 rounded-full px-4 py-2 text-sm font-bold flex items-center gap-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-4H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              カート
+              {itemCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount > 99 ? '99+' : Math.floor(itemCount)}
+                </span>
+              )}
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* カテゴリタブ */}
+      <div className="bg-white border-b border-gray-200 sticky top-14 z-10">
+        <div className="max-w-2xl mx-auto px-4">
+          <div className="flex overflow-x-auto gap-1 py-2 scrollbar-hide">
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                  selectedCategory === cat
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 商品一覧 */}
+      <main className="max-w-2xl mx-auto px-4 py-4">
+        {productsLoading ? (
+          <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : products.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            <p className="text-lg">この時期の商品はありません</p>
+            <p className="text-sm mt-2">他のカテゴリをご確認ください</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {products.map((product) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                onAddToCart={addToCart}
+                cartItem={cartItems.find((i) => i.productId === product.id)}
+              />
+            ))}
+          </div>
+        )}
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+      {/* カートボタン（下部固定） */}
+      {itemCount > 0 && (
+        <div className="fixed bottom-4 left-0 right-0 flex justify-center px-4 z-20">
+          <Link
+            href="/cart"
+            className="w-full max-w-sm bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-full shadow-lg flex items-center justify-between transition-colors"
+          >
+            <span className="bg-green-500 rounded-full px-2 py-0.5 text-sm">
+              {cartItems.length}種類
+            </span>
+            <span>カートを見る</span>
+            <span className="text-green-200">→</span>
+          </Link>
+        </div>
+      )}
     </div>
-  );
+  )
 }

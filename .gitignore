@@ -25,8 +25,16 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# local env files
+# local env files（Supabaseキー等の機密情報を含む）
+.env
+.env.local
+.env.development
+.env.production
 .env*.local
+
+# Supabase ローカル開発
+supabase/.branches/
+supabase/.temp/
 
 # vercel
 .vercel
