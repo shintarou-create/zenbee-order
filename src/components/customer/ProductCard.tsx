@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import type { Product, CartItem, CoolType } from '@/types'
-import { formatCurrency } from '@/lib/utils'
 
 interface ProductCardProps {
   product: Product
@@ -106,14 +105,6 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
       </div>
 
       <div className="p-4">
-        {/* 価格 */}
-        <div className="flex items-baseline gap-1 mb-3">
-          <span className="text-2xl font-bold text-green-700">
-            {formatCurrency(currentPrice)}
-          </span>
-          <span className="text-sm text-gray-500">/{product.unit}</span>
-        </div>
-
         {/* 説明 */}
         {product.description && (
           <p className="text-xs text-gray-500 mb-3 line-clamp-2">{product.description}</p>
@@ -122,7 +113,7 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
         {/* カートに入っている場合の表示 */}
         {cartItem && (
           <div className="mb-2 text-xs text-green-600 bg-green-50 rounded-lg px-2 py-1">
-            カート: {cartItem.quantity}{product.unit} ({formatCurrency(cartItem.subtotal)})
+            カート: {cartItem.quantity}{product.unit}
           </div>
         )}
 
@@ -156,11 +147,6 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
               >
                 ＋
               </button>
-            </div>
-
-            {/* 小計 */}
-            <div className="text-right text-sm text-gray-500 mb-3">
-              小計: <span className="font-bold text-gray-900">{formatCurrency(quantity * currentPrice)}</span>
             </div>
 
             {/* カートに追加ボタン */}

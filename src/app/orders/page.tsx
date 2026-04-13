@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useLiff } from '@/hooks/useLiff'
 import type { Order } from '@/types'
-import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
+import { formatDate, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
 
 function OrdersContent() {
   const searchParams = useSearchParams()
@@ -139,16 +139,11 @@ function OrdersContent() {
                   </span>
                 </div>
 
-                <div className="mt-2 flex items-center justify-between">
-                  <div className="text-sm text-gray-600">
-                    {order.order_items && order.order_items.length > 0 && (
-                      <span>{order.order_items.length}品目</span>
-                    )}
+                {order.order_items && order.order_items.length > 0 && (
+                  <div className="mt-2 text-sm text-gray-600">
+                    {order.order_items.length}品目
                   </div>
-                  <p className="font-bold text-green-700 text-lg">
-                    {formatCurrency(order.total_amount)}
-                  </p>
-                </div>
+                )}
 
                 {order.delivery_date && (
                   <p className="text-xs text-gray-500 mt-1">

@@ -1,7 +1,6 @@
 'use client'
 
 import type { CartItem as CartItemType } from '@/types'
-import { formatCurrency } from '@/lib/utils'
 
 interface CartItemProps {
   item: CartItemType
@@ -37,9 +36,6 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {formatCurrency(item.unitPrice)}/{item.unit}
-          </p>
         </div>
         <button
           onClick={() => onRemove(item.productId)}
@@ -80,10 +76,6 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
           </button>
         </div>
 
-        {/* 小計 */}
-        <div className="text-right">
-          <p className="font-bold text-green-700 text-lg">{formatCurrency(item.subtotal)}</p>
-        </div>
       </div>
     </div>
   )

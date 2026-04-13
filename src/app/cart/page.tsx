@@ -7,7 +7,6 @@ import { useCart } from '@/hooks/useCart'
 import { useLiff } from '@/hooks/useLiff'
 import CartItemComponent from '@/components/customer/CartItem'
 import OrderSummary from '@/components/customer/OrderSummary'
-import { formatCurrency } from '@/lib/utils'
 import { calculateShipping } from '@/lib/shipping'
 
 function getMinDeliveryDate(): string {
@@ -143,24 +142,12 @@ export default function CartPage() {
             {shipping.lines.length > 0 && (
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                 <h3 className="font-bold text-gray-900 mb-3 text-base">送料内訳</h3>
-                <div className="space-y-2 mb-3">
+                <div className="space-y-1.5">
                   {shipping.lines.map((line, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm">
-                      <span className="text-gray-700 flex-1">
-                        {line.label} × {line.quantity}
-                      </span>
-                      <span className="text-gray-500 flex-shrink-0 mr-2">
-                        {formatCurrency(line.unitCost)}/個
-                      </span>
-                      <span className="font-medium text-gray-900 flex-shrink-0">
-                        {formatCurrency(line.cost)}
-                      </span>
+                    <div key={i} className="text-sm text-gray-700">
+                      {line.label} × {line.quantity}
                     </div>
                   ))}
-                </div>
-                <div className="border-t border-gray-100 pt-3 flex justify-between font-bold text-gray-900">
-                  <span>送料合計</span>
-                  <span>{formatCurrency(shipping.total)}</span>
                 </div>
               </div>
             )}
@@ -208,16 +195,6 @@ export default function CartPage() {
       {items.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 z-20">
           <div className="max-w-2xl mx-auto">
-            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-              <span>
-                商品 {formatCurrency(total)}
-                {shipping.total > 0 && <> ＋ 送料 {formatCurrency(shipping.total)}</>}
-              </span>
-            </div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-600">合計金額（送料込）</span>
-              <span className="text-xl font-bold text-green-700">{formatCurrency(total + shipping.total)}</span>
-            </div>
             <button
               onClick={handleOrder}
               disabled={submitting || items.length === 0}

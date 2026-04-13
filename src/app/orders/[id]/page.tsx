@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useLiff } from '@/hooks/useLiff'
 import type { Order } from '@/types'
-import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
+import { formatDate, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
 
 export default function OrderDetailPage() {
   const params = useParams()
@@ -160,22 +160,13 @@ export default function OrderDetailPage() {
 
           <div className="divide-y divide-gray-50">
             {(order.order_items || []).map((item) => (
-              <div key={item.id} className="p-4 flex items-center justify-between gap-3">
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900">{item.product_name}</p>
-                  <p className="text-sm text-gray-500">
-                    {item.quantity}{item.unit} × {formatCurrency(item.unit_price)}
-                  </p>
-                </div>
-                <p className="font-bold text-green-700">{formatCurrency(item.subtotal)}</p>
+              <div key={item.id} className="p-4">
+                <p className="font-medium text-gray-900">{item.product_name}</p>
+                <p className="text-sm text-gray-500">{item.quantity}{item.unit}</p>
               </div>
             ))}
           </div>
 
-          <div className="p-4 bg-green-50 flex items-center justify-between">
-            <span className="font-bold text-gray-900">合計</span>
-            <span className="text-xl font-bold text-green-700">{formatCurrency(order.total_amount)}</span>
-          </div>
         </div>
 
         {/* PDFダウンロードボタン */}
