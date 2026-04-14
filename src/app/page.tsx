@@ -10,7 +10,7 @@ import { createClient } from '@/lib/supabase/client'
 import ProductCard from '@/components/customer/ProductCard'
 import type { Customer, PriceRank } from '@/types'
 
-const CATEGORIES = ['全商品', 'みかん', 'びわ', 'レモン', 'ジュース']
+const CATEGORIES = ['全商品', '柑橘', 'びわ', 'ジュース', 'その他']
 
 export default function HomePage() {
   const router = useRouter()
