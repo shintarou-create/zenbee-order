@@ -25,14 +25,14 @@ export default function OrderDetailPage() {
       try {
         const supabase = createClient()
 
-        // まず顧客IDを確認
-        const { data: customer } = await supabase
-          .from('customers')
-          .select('id')
+        // line_users → companies で会社IDを確認
+        const { data: lineUser } = await supabase
+          .from('line_users')
+          .select('company_id')
           .eq('line_user_id', userId)
           .single()
 
-        if (!customer) {
+        if (!lineUser || !lineUser.company_id) {
           setError('顧客情報が見つかりません')
           return
         }
@@ -41,11 +41,12 @@ export default function OrderDetailPage() {
           .from('orders')
           .select(`
             *,
-            customer:customers (*),
-            order_items (*)
+            company:companies (*),
+            order_items (*),
+            order_shipping (*)
           `)
           .eq('id', orderId)
-          .eq('customer_id', customer.id)
+          .eq('company_id', lineUser.company_id)
           .single()
 
         if (fetchError || !data) {

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { generateOrderNumber } from '@/lib/utils'
 import { notifyOrderCreated } from '@/lib/line-messaging'
-import type { CreateOrderRequest } from '@/types'
+import { calculateShipping } from '@/lib/shipping'
+import type { CreateOrderRequest, CartItem, CoolType } from '@/types'
 
 export async function POST(req: NextRequest) {
   try {
@@ -46,17 +47,26 @@ export async function POST(req: NextRequest) {
 
     const supabase = createServiceClient()
 
-    // 顧客情報を取得
-    const { data: customer, error: customerError } = await supabase
-      .from('customers')
-      .select('*')
+    // line_users → companies で顧客情報を取得
+    const { data: lineUser, error: lineUserError } = await supabase
+      .from('line_users')
+      .select('*, company:companies (*)')
       .eq('line_user_id', lineUserId)
       .eq('is_active', true)
       .single()
 
-    if (customerError || !customer) {
+    if (lineUserError || !lineUser || !lineUser.company) {
       return NextResponse.json(
         { error: '顧客情報が見つかりません。登録申請をお待ちください。' },
+        { status: 403 }
+      )
+    }
+
+    const company = lineUser.company
+
+    if (!company.is_active) {
+      return NextResponse.json(
+        { error: 'このアカウントは現在ご利用いただけません。' },
         { status: 403 }
       )
     }
@@ -84,6 +94,7 @@ export async function POST(req: NextRequest) {
     let totalAmount = 0
     const orderItemsData = []
     const inventoryUpdates: Array<{ productId: string; newReserved: number }> = []
+    const cartItemsForShipping: CartItem[] = []
 
     for (const item of items) {
       const product = products.find((p) => p.id === item.productId)
@@ -112,7 +123,7 @@ export async function POST(req: NextRequest) {
 
       // 価格取得
       const priceEntry = Array.isArray(product.product_prices)
-        ? product.product_prices.find((pp: { price_rank: string }) => pp.price_rank === customer.price_rank)
+        ? product.product_prices.find((pp: { price_rank: string }) => pp.price_rank === company.price_rank)
         : null
       const unitPrice = priceEntry?.price_per_unit || 0
 
@@ -127,7 +138,22 @@ export async function POST(req: NextRequest) {
         unit_price: unitPrice,
         subtotal,
       })
+
+      // 送料計算用のCartItem形式に変換
+      cartItemsForShipping.push({
+        productId: product.id,
+        productName: product.name,
+        quantity: item.quantity,
+        unit: product.unit,
+        unitPrice,
+        subtotal,
+        coolType: product.cool_type as CoolType,
+      })
     }
+
+    // 送料計算
+    const shippingBreakdown = calculateShipping(cartItemsForShipping)
+    totalAmount += shippingBreakdown.total
 
     // 今日の注文数を取得してシーケンス番号を計算
     const today = new Date()
@@ -148,14 +174,11 @@ export async function POST(req: NextRequest) {
       .from('orders')
       .insert({
         order_number: orderNumber,
-        customer_id: customer.id,
+        company_id: company.id,
         status: 'pending',
         total_amount: totalAmount,
         notes: notes || null,
         delivery_date: deliveryDate || null,
-        cool_type: orderItemsData.some(
-          (item) => products.find((p) => p.id === item.product_id)?.cool_type === 1
-        ) ? 1 : 0,
       })
       .select()
       .single()
@@ -180,12 +203,32 @@ export async function POST(req: NextRequest) {
 
     if (itemsError) {
       console.error('注文明細作成エラー:', itemsError)
-      // 注文を削除してロールバック
       await supabase.from('orders').delete().eq('id', order.id)
       return NextResponse.json(
         { error: '注文明細の作成に失敗しました' },
         { status: 500 }
       )
+    }
+
+    // 送料明細を保存
+    if (shippingBreakdown.lines.length > 0) {
+      const { error: shippingError } = await supabase
+        .from('order_shipping')
+        .insert(
+          shippingBreakdown.lines.map((line, idx) => ({
+            order_id: order.id,
+            label: line.label,
+            quantity: line.quantity,
+            unit_cost: line.unitCost,
+            cost: line.cost,
+            sort_order: idx,
+          }))
+        )
+
+      if (shippingError) {
+        console.error('送料明細作成エラー:', shippingError)
+        // 送料保存失敗しても注文は完了扱い（後から管理画面で修正可能）
+      }
     }
 
     // 在庫のreserved_qtyを更新
@@ -204,10 +247,10 @@ export async function POST(req: NextRequest) {
         .join('\n')
 
       notifyOrderCreated(
-        customer.line_user_id,
+        lineUser.line_user_id,
         orderNumber,
         totalAmount,
-        customer.company_name,
+        company.company_name,
         productSummary,
         adminLineId
       ).catch((err) => console.error('LINE通知エラー:', err))
@@ -240,20 +283,21 @@ export async function GET(req: NextRequest) {
   try {
     const supabase = createServiceClient()
 
-    const { data: customer } = await supabase
-      .from('customers')
-      .select('id')
+    // line_users → companies で会社IDを取得
+    const { data: lineUser } = await supabase
+      .from('line_users')
+      .select('company_id')
       .eq('line_user_id', lineUserId)
       .single()
 
-    if (!customer) {
+    if (!lineUser || !lineUser.company_id) {
       return NextResponse.json({ error: '顧客が見つかりません' }, { status: 404 })
     }
 
     const { data: orders, error } = await supabase
       .from('orders')
-      .select(`*, order_items (*)`)
-      .eq('customer_id', customer.id)
+      .select(`*, order_items (*), order_shipping (*)`)
+      .eq('company_id', lineUser.company_id)
       .order('created_at', { ascending: false })
 
     if (error) throw error

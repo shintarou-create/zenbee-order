@@ -75,22 +75,22 @@ export function generateInvoicePDF(order: Order): void {
   }
 
   // お届け先情報
-  if (order.customer) {
+  if (order.company) {
     y += 12
     doc.setFont('helvetica', 'bold')
     doc.text('\u304a\u5c4a\u3051\u5148 (Ship To):', margin, y)
 
     y += 7
     doc.setFont('helvetica', 'normal')
-    const customer = order.customer
+    const company = order.company
     const addressLines = [
-      customer.company_name,
-      customer.representative_name || '',
-      `\u3012${customer.postal_code || ''}`,
-      [customer.prefecture, customer.city, customer.address, customer.building]
+      company.company_name,
+      company.representative_name || '',
+      `\u3012${company.postal_code || ''}`,
+      [company.prefecture, company.city, company.address, company.building]
         .filter(Boolean)
         .join(''),
-      customer.phone ? `TEL: ${customer.phone}` : '',
+      company.phone ? `TEL: ${company.phone}` : '',
     ].filter(Boolean)
 
     for (const line of addressLines) {

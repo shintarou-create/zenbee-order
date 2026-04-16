@@ -67,7 +67,7 @@ export default function OrderTable({
         </thead>
         <tbody className="divide-y divide-gray-100">
           {orders.map((order) => {
-            const customer = order.customer as { company_name?: string; representative_name?: string } | undefined
+            const company = order.company as { company_name?: string; representative_name?: string; has_separate_billing?: boolean } | undefined
             return (
               <tr key={order.id} className="hover:bg-gray-50 transition-colors">
                 {showCheckbox && (
@@ -84,7 +84,7 @@ export default function OrderTable({
                   <span className="font-medium text-gray-900">{order.order_number}</span>
                 </td>
                 <td className="px-4 py-3 text-gray-700">
-                  {customer?.company_name || '—'}
+                  {company?.company_name || '—'}
                 </td>
                 <td className="px-4 py-3 text-gray-500 hidden md:table-cell">
                   {formatDate(order.created_at)}

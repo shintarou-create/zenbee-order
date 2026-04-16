@@ -6,17 +6,16 @@ import OrderTable from '@/components/admin/OrderTable'
 import type { Order, OrderStatus } from '@/types'
 
 const STATUS_FILTERS: { value: string; label: string }[] = [
+  { value: 'pending', label: '未対応' },
+  { value: 'shipped', label: '出荷済' },
+  { value: 'done', label: '完了' },
   { value: 'all', label: 'すべて' },
-  { value: 'pending', label: '確認待ち' },
-  { value: 'confirmed', label: '確認済み' },
-  { value: 'shipped', label: '発送済み' },
-  { value: 'delivered', label: 'お届け済み' },
 ]
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('pending')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -35,8 +34,11 @@ export default function AdminOrdersPage() {
         .from('orders')
         .select(`
           *,
-          customer:customers (company_name, representative_name)
+          company:companies (company_name, representative_name, has_separate_billing),
+          order_items (*),
+          order_shipping (*)
         `)
+        .order('delivery_date', { ascending: true, nullsFirst: false })
         .order('created_at', { ascending: false })
 
       if (statusFilter !== 'all') {
@@ -44,11 +46,11 @@ export default function AdminOrdersPage() {
       }
 
       if (dateFrom) {
-        query = query.gte('created_at', `${dateFrom}T00:00:00`)
+        query = query.gte('delivery_date', dateFrom)
       }
 
       if (dateTo) {
-        query = query.lte('created_at', `${dateTo}T23:59:59`)
+        query = query.lte('delivery_date', dateTo)
       }
 
       const { data, error } = await query.limit(200)
@@ -62,25 +64,29 @@ export default function AdminOrdersPage() {
     }
   }
 
-  async function handleBulkConfirm() {
+  async function handleBulkStatusChange(newStatus: OrderStatus) {
     if (selectedIds.length === 0) return
     setBulkUpdating(true)
     try {
       const supabase = createClient()
       const { error } = await supabase
         .from('orders')
-        .update({ status: 'confirmed' as OrderStatus })
+        .update({ status: newStatus })
         .in('id', selectedIds)
-        .eq('status', 'pending')
 
       if (error) throw error
 
-      setMessage({ type: 'success', text: `${selectedIds.length}件の注文を確認済みにしました` })
+      const statusLabels: Record<string, string> = {
+        pending: '未対応',
+        shipped: '出荷済',
+        done: '完了',
+      }
+      setMessage({ type: 'success', text: `${selectedIds.length}件を「${statusLabels[newStatus] || newStatus}」にしました` })
       setSelectedIds([])
       await fetchOrders()
     } catch (err) {
-      console.error('一括確認エラー:', err)
-      setMessage({ type: 'error', text: '一括確認に失敗しました' })
+      console.error('一括更新エラー:', err)
+      setMessage({ type: 'error', text: '一括更新に失敗しました' })
     } finally {
       setBulkUpdating(false)
       setTimeout(() => setMessage(null), 3000)
@@ -90,7 +96,7 @@ export default function AdminOrdersPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">受注一覧</h1>
+        <h1 className="text-xl font-bold text-gray-900">注文管理</h1>
         <span className="text-sm text-gray-500">{orders.length}件</span>
       </div>
 
@@ -121,8 +127,9 @@ export default function AdminOrdersPage() {
           ))}
         </div>
 
-        {/* 日付フィルター */}
+        {/* 納品日フィルター */}
         <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-gray-500">納品日:</span>
           <input
             type="date"
             value={dateFrom}
@@ -153,13 +160,26 @@ export default function AdminOrdersPage() {
           <span className="text-green-800 font-medium text-sm">
             {selectedIds.length}件選択中
           </span>
-          <button
-            onClick={handleBulkConfirm}
-            disabled={bulkUpdating}
-            className="bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors"
-          >
-            {bulkUpdating ? '処理中...' : '確認済みにする'}
-          </button>
+          <div className="flex gap-2">
+            {statusFilter === 'pending' && (
+              <button
+                onClick={() => handleBulkStatusChange('shipped')}
+                disabled={bulkUpdating}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors"
+              >
+                出荷済みにする
+              </button>
+            )}
+            {statusFilter === 'shipped' && (
+              <button
+                onClick={() => handleBulkStatusChange('done')}
+                disabled={bulkUpdating}
+                className="bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors"
+              >
+                完了にする
+              </button>
+            )}
+          </div>
         </div>
       )}
 

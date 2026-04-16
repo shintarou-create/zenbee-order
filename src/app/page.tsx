@@ -8,18 +8,18 @@ import { useProducts } from '@/hooks/useProducts'
 import { useCart } from '@/hooks/useCart'
 import { createClient } from '@/lib/supabase/client'
 import ProductCard from '@/components/customer/ProductCard'
-import type { Customer, PriceRank } from '@/types'
+import type { Company, PriceRank } from '@/types'
 
 const CATEGORIES = ['全商品', '柑橘', 'びわ', 'ジュース', 'その他']
 
 export default function HomePage() {
   const router = useRouter()
   const { userId, isLoading: liffLoading, error: liffError } = useLiff()
-  const [customer, setCustomer] = useState<Customer | null>(null)
+  const [company, setCompany] = useState<Company | null>(null)
   const [customerLoading, setCustomerLoading] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState('全商品')
 
-  const priceRank: PriceRank = customer?.price_rank || 'standard'
+  const priceRank: PriceRank = company?.price_rank || 'standard'
   const { products, isLoading: productsLoading } = useProducts({
     priceRank,
     category: selectedCategory,
@@ -34,19 +34,20 @@ export default function HomePage() {
       setCustomerLoading(true)
       try {
         const supabase = createClient()
-        const { data, error } = await supabase
-          .from('customers')
-          .select('*')
+        // line_users → companies で会社情報を取得
+        const { data: lineUser, error } = await supabase
+          .from('line_users')
+          .select('*, company:companies (*)')
           .eq('line_user_id', userId)
           .eq('is_active', true)
           .single()
 
-        if (error || !data) {
+        if (error || !lineUser || !lineUser.company) {
           router.push('/not-registered')
           return
         }
 
-        setCustomer(data as Customer)
+        setCompany(lineUser.company as Company)
       } catch {
         router.push('/not-registered')
       } finally {
@@ -86,8 +87,8 @@ export default function HomePage() {
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <div>
             <h1 className="text-lg font-bold">善兵衛農園</h1>
-            {customer && (
-              <p className="text-green-200 text-xs">{customer.company_name}</p>
+            {company && (
+              <p className="text-green-200 text-xs">{company.company_name}</p>
             )}
           </div>
           <div className="flex items-center gap-3">

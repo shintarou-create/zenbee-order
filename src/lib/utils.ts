@@ -91,10 +91,9 @@ export function formatDateForInput(date: Date): string {
 
 export function getOrderStatusLabel(status: string): string {
   const labels: Record<string, string> = {
-    pending: '確認待ち',
-    confirmed: '確認済み',
-    shipped: '発送済み',
-    delivered: 'お届け済み',
+    pending: '未対応',
+    shipped: '出荷済',
+    done: '完了',
     cancelled: 'キャンセル',
   }
   return labels[status] || status
@@ -103,9 +102,8 @@ export function getOrderStatusLabel(status: string): string {
 export function getOrderStatusColor(status: string): string {
   const colors: Record<string, string> = {
     pending: 'bg-yellow-100 text-yellow-800',
-    confirmed: 'bg-blue-100 text-blue-800',
-    shipped: 'bg-purple-100 text-purple-800',
-    delivered: 'bg-green-100 text-green-800',
+    shipped: 'bg-blue-100 text-blue-800',
+    done: 'bg-green-100 text-green-800',
     cancelled: 'bg-red-100 text-red-800',
   }
   return colors[status] || 'bg-gray-100 text-gray-800'

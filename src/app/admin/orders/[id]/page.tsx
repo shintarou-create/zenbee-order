@@ -8,10 +8,9 @@ import type { Order, OrderStatus } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
 
 const STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
-  { value: 'pending', label: '確認待ち' },
-  { value: 'confirmed', label: '確認済み' },
-  { value: 'shipped', label: '発送済み' },
-  { value: 'delivered', label: 'お届け済み' },
+  { value: 'pending', label: '未対応' },
+  { value: 'shipped', label: '出荷済' },
+  { value: 'done', label: '完了' },
   { value: 'cancelled', label: 'キャンセル' },
 ]
 
@@ -40,8 +39,9 @@ export default function AdminOrderDetailPage() {
           .from('orders')
           .select(`
             *,
-            customer:customers (*),
-            order_items (*)
+            company:companies (*),
+            order_items (*),
+            order_shipping (*)
           `)
           .eq('id', orderId)
           .single()
@@ -84,25 +84,6 @@ export default function AdminOrderDetailPage() {
 
       setOrder((prev) => prev ? { ...prev, status, admin_notes: adminNotes } : null)
       setMessage({ type: 'success', text: '注文を更新しました' })
-
-      // 発送済みに変更した場合はLINE通知
-      if (status === 'shipped' && order.status !== 'shipped') {
-        const customer = order.customer
-        if (customer) {
-          try {
-            await fetch('/api/line-notify', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                userId: customer.line_user_id,
-                message: `【善兵衛農園】ご注文品を発送いたしました。\n\n注文番号: ${order.order_number}\n\nお届けまでしばらくお待ちください。`,
-              }),
-            })
-          } catch {
-            // 通知失敗は無視
-          }
-        }
-      }
     } catch (err) {
       console.error('注文更新エラー:', err)
       setMessage({ type: 'error', text: '更新に失敗しました' })
@@ -144,7 +125,7 @@ export default function AdminOrderDetailPage() {
     )
   }
 
-  const customer = order.customer
+  const company = order.company
 
   return (
     <div className="space-y-4 max-w-3xl">
@@ -185,10 +166,6 @@ export default function AdminOrderDetailPage() {
               <span className="text-gray-500">お届け予定日</span>
               <span>{order.delivery_date ? formatDate(order.delivery_date) : '—'}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">温度管理</span>
-              <span>{order.cool_type === 1 ? '冷蔵' : '常温'}</span>
-            </div>
             {order.notes && (
               <div>
                 <span className="text-gray-500">備考</span>
@@ -199,20 +176,20 @@ export default function AdminOrderDetailPage() {
         </div>
 
         {/* お客様情報 */}
-        {customer && (
+        {company && (
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
             <h2 className="font-bold text-gray-900 mb-3">お客様情報</h2>
             <div className="space-y-1.5 text-sm">
-              <p className="font-medium text-gray-900">{customer.company_name}</p>
-              {customer.representative_name && (
-                <p className="text-gray-600">{customer.representative_name}</p>
+              <p className="font-medium text-gray-900">{company.company_name}</p>
+              {company.representative_name && (
+                <p className="text-gray-600">{company.representative_name}</p>
               )}
               <p className="text-gray-600">
-                〒{customer.postal_code} {customer.prefecture}{customer.city}{customer.address}
+                〒{company.postal_code} {company.prefecture}{company.city}{company.address}
               </p>
-              {customer.building && <p className="text-gray-600">{customer.building}</p>}
-              {customer.phone && <p className="text-gray-600">TEL: {customer.phone}</p>}
-              {customer.email && <p className="text-gray-600">{customer.email}</p>}
+              {company.building && <p className="text-gray-600">{company.building}</p>}
+              {company.phone && <p className="text-gray-600">TEL: {company.phone}</p>}
+              {company.email && <p className="text-gray-600">{company.email}</p>}
             </div>
           </div>
         )}
@@ -242,15 +219,31 @@ export default function AdminOrderDetailPage() {
               </tr>
             ))}
           </tbody>
-          <tfoot className="bg-green-50">
-            <tr>
-              <td colSpan={3} className="px-4 py-3 font-bold text-right">合計</td>
-              <td className="px-4 py-3 font-bold text-right text-green-700 text-lg">
-                {formatCurrency(order.total_amount)}
-              </td>
-            </tr>
-          </tfoot>
         </table>
+        {/* 送料明細 */}
+        {order.order_shipping && order.order_shipping.length > 0 && (
+          <>
+            <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
+              <span className="text-xs font-semibold text-gray-500">送料</span>
+            </div>
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-gray-50">
+                {order.order_shipping.map((line) => (
+                  <tr key={line.id}>
+                    <td className="px-4 py-2 text-gray-600">{line.label}</td>
+                    <td className="px-4 py-2 text-right text-gray-500">{line.quantity}個</td>
+                    <td className="px-4 py-2 text-right text-gray-500">{formatCurrency(line.unit_cost)}</td>
+                    <td className="px-4 py-2 text-right font-medium">{formatCurrency(line.cost)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+        <div className="bg-green-50 px-4 py-3 flex justify-between">
+          <span className="font-bold">合計</span>
+          <span className="font-bold text-green-700 text-lg">{formatCurrency(order.total_amount)}</span>
+        </div>
       </div>
 
       {/* ステータス変更・管理メモ */}
@@ -304,9 +297,6 @@ export default function AdminOrderDetailPage() {
               disabled={downloadingPdf}
               className="border border-green-600 text-green-600 hover:bg-green-50 font-bold px-6 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
               {downloadingPdf ? '生成中...' : '納品書PDF出力'}
             </button>
           </div>

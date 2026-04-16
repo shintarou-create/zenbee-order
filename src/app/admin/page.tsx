@@ -78,7 +78,7 @@ export default function AdminDashboard() {
           .from('orders')
           .select(`
             *,
-            customer:customers (company_name, representative_name)
+            company:companies (company_name, representative_name)
           `)
           .order('created_at', { ascending: false })
           .limit(10)
@@ -192,7 +192,7 @@ export default function AdminDashboard() {
                   <div>
                     <p className="font-medium text-gray-900 text-sm">{order.order_number}</p>
                     <p className="text-xs text-gray-500">
-                      {(order.customer as { company_name: string } | undefined)?.company_name} ・ {formatDate(order.created_at)}
+                      {(order.company as { company_name: string } | undefined)?.company_name} ・ {formatDate(order.created_at)}
                     </p>
                   </div>
                   <div className="text-right">

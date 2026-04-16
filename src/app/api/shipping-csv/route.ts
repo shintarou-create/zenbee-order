@@ -3,7 +3,6 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { generateB2CSV } from '@/lib/yamato-csv'
 import type { ShipmentRow } from '@/lib/yamato-csv'
 import type { ShippingCsvRequest } from '@/types'
-import { formatDeliveryTimeSlot } from '@/lib/yamato-csv'
 
 export async function POST(req: NextRequest) {
   // 管理者認証チェック
@@ -26,15 +25,16 @@ export async function POST(req: NextRequest) {
 
     const supabase = createServiceClient()
 
-    // 注文と顧客情報を取得
+    // 注文と会社情報を取得（納品先住所を使用）
     const { data: orders, error: fetchError } = await supabase
       .from('orders')
       .select(`
         *,
-        customer:customers (*)
+        company:companies (*),
+        order_shipping (*)
       `)
       .in('id', orderIds)
-      .in('status', ['confirmed', 'shipped'])
+      .in('status', ['pending', 'shipped'])
 
     if (fetchError || !orders) {
       console.error('注文取得エラー:', fetchError)
@@ -45,26 +45,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '対象の注文が見つかりません' }, { status: 404 })
     }
 
-    // CSV行データを作成
+    // CSV行データを作成（ヤマトCSVは納品先住所を使用）
     const rows: ShipmentRow[] = orders.map((order) => {
-      const customer = order.customer
+      const company = order.company
       const address = [
-        customer?.prefecture || '',
-        customer?.city || '',
-        customer?.address || '',
+        company?.prefecture || '',
+        company?.city || '',
+        company?.address || '',
       ].filter(Boolean).join('')
 
+      // 冷蔵品があるか送料明細から判定
+      const hasCool = (order.order_shipping || []).some(
+        (s: { label: string }) => s.label.includes('冷蔵')
+      )
+
       return {
-        recipientPostalCode: (customer?.postal_code || '').replace('-', ''),
+        recipientPostalCode: (company?.postal_code || '').replace('-', ''),
         recipientAddress1: address,
-        recipientAddress2: customer?.building || '',
-        recipientCompanyName: customer?.company_name || '',
-        recipientName: customer?.representative_name || customer?.company_name || '',
-        recipientPhone: (customer?.phone || '').replace(/-/g, ''),
+        recipientAddress2: company?.building || '',
+        recipientCompanyName: company?.company_name || '',
+        recipientName: company?.representative_name || company?.company_name || '',
+        recipientPhone: (company?.phone || '').replace(/-/g, ''),
         shipDate: formatDateForYamato(shipDate),
         deliveryDate: order.delivery_date ? formatDateForYamato(order.delivery_date) : '',
-        deliveryTimeSlot: formatDeliveryTimeSlot(order.delivery_time_slot),
-        coolType: order.cool_type || 0,
+        deliveryTimeSlot: '',
+        coolType: hasCool ? 2 : 0,
         itemName: '農産物',
         quantity: 1,
         clientOrderNumber: order.order_number,
@@ -84,12 +89,11 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .in('id', orderIds)
-      .eq('status', 'confirmed')
+      .eq('status', 'pending')
 
     // CSVファイルとして返す
     const filename = `yamato_b2_${shipDate.replace(/-/g, '')}.csv`
 
-    // Uint8Array をReadableStreamに変換してNextResponseに渡す
     const stream = new ReadableStream({
       start(controller) {
         controller.enqueue(csvBuffer)
@@ -112,6 +116,5 @@ export async function POST(req: NextRequest) {
 }
 
 function formatDateForYamato(dateStr: string): string {
-  // YYYY-MM-DD → YYYY/MM/DD
   return dateStr.replace(/-/g, '/')
 }

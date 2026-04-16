@@ -16,7 +16,7 @@ function OrdersContent() {
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [, setCustomerId] = useState<string | null>(null)
+  const [, setCompanyId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!userId) return
@@ -26,19 +26,19 @@ function OrdersContent() {
       try {
         const supabase = createClient()
 
-        // 顧客IDを取得
-        const { data: customer } = await supabase
-          .from('customers')
-          .select('id')
+        // line_users → companies で会社IDを取得
+        const { data: lineUser } = await supabase
+          .from('line_users')
+          .select('company_id')
           .eq('line_user_id', userId)
           .single()
 
-        if (!customer) {
+        if (!lineUser || !lineUser.company_id) {
           setError('顧客情報が見つかりません')
           return
         }
 
-        setCustomerId(customer.id)
+        setCompanyId(lineUser.company_id)
 
         // 注文一覧を取得
         const { data, error: fetchError } = await supabase
@@ -47,7 +47,7 @@ function OrdersContent() {
             *,
             order_items (*)
           `)
-          .eq('customer_id', customer.id)
+          .eq('company_id', lineUser.company_id)
           .order('created_at', { ascending: false })
           .limit(50)
 

@@ -31,7 +31,7 @@ export default function AdminInvoicesPage() {
         .from('invoices')
         .select(`
           *,
-          customer:customers (company_name),
+          company:companies (company_name),
           invoice_items (id, order_id, amount)
         `)
         .eq('billing_month', selectedMonth)
@@ -60,9 +60,9 @@ export default function AdminInvoicesPage() {
         .from('orders')
         .select(`
           *,
-          customer:customers (*)
+          company:companies (*)
         `)
-        .in('status', ['shipped', 'delivered'])
+        .in('status', ['shipped', 'done'])
         .gte('shipping_date', monthStart.split('T')[0])
         .lte('shipping_date', monthEnd.split('T')[0])
 
@@ -75,29 +75,29 @@ export default function AdminInvoicesPage() {
       }
 
       // 顧客ごとにグループ化
-      const customerOrders: Record<string, Order[]> = {}
+      const companyOrders: Record<string, Order[]> = {}
       for (const order of orders) {
-        const customerId = order.customer_id
-        if (!customerOrders[customerId]) {
-          customerOrders[customerId] = []
+        const companyId = order.company_id
+        if (!companyOrders[companyId]) {
+          companyOrders[companyId] = []
         }
-        customerOrders[customerId].push(order as Order)
+        companyOrders[companyId].push(order as Order)
       }
 
       // 請求書を作成
       let created = 0
-      for (const [customerId, custOrders] of Object.entries(customerOrders)) {
+      for (const [companyId, compOrders] of Object.entries(companyOrders)) {
         // 既に請求書があるか確認
         const { data: existing } = await supabase
           .from('invoices')
           .select('id')
-          .eq('customer_id', customerId)
+          .eq('company_id', companyId)
           .eq('billing_month', selectedMonth)
           .single()
 
         if (existing) continue // スキップ
 
-        const totalAmount = custOrders.reduce((sum, o) => sum + o.total_amount, 0)
+        const totalAmount = compOrders.reduce((sum, o) => sum + o.total_amount, 0)
         const taxRate = 0.08
         const taxAmount = Math.floor(totalAmount - totalAmount / (1 + taxRate))
 
@@ -113,7 +113,7 @@ export default function AdminInvoicesPage() {
           .from('invoices')
           .insert({
             invoice_number: invoiceNumber,
-            customer_id: customerId,
+            company_id: companyId,
             billing_month: selectedMonth,
             total_amount: totalAmount,
             tax_amount: taxAmount,
@@ -127,7 +127,7 @@ export default function AdminInvoicesPage() {
 
         // 請求明細を作成
         await supabase.from('invoice_items').insert(
-          custOrders.map((order) => ({
+          compOrders.map((order) => ({
             invoice_id: invoice.id,
             order_id: order.id,
             amount: order.total_amount,
@@ -187,8 +187,8 @@ export default function AdminInvoicesPage() {
     doc.text(`\u8acb\u6c42\u66f8\u756a\u53f7: ${invoice.invoice_number}`, 20, 40)
     doc.text(`\u8acb\u6c42\u6708: ${invoice.billing_month}`, 20, 48)
 
-    const customer = invoice.customer as { company_name?: string } | undefined
-    doc.text(`\u8acb\u6c42\u5148: ${customer?.company_name || ''}`, 20, 56)
+    const company = invoice.company as { company_name?: string } | undefined
+    doc.text(`\u8acb\u6c42\u5148: ${company?.company_name || ''}`, 20, 56)
 
     doc.text(`\u5408\u8a08\u91d1\u984d: ${formatCurrency(invoice.total_amount)}`, 20, 70)
     doc.text(`\u6d88\u8cbb\u7a0e: ${formatCurrency(invoice.tax_amount)}`, 20, 78)
@@ -261,12 +261,12 @@ export default function AdminInvoicesPage() {
         ) : (
           <div className="divide-y divide-gray-100">
             {invoices.map((invoice) => {
-              const customer = invoice.customer as { company_name?: string } | undefined
+              const company = invoice.company as { company_name?: string } | undefined
               return (
                 <div key={invoice.id} className="px-4 py-4 flex items-center justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900">{invoice.invoice_number}</p>
-                    <p className="text-sm text-gray-600">{customer?.company_name}</p>
+                    <p className="text-sm text-gray-600">{company?.company_name}</p>
                     {invoice.due_date && (
                       <p className="text-xs text-gray-400">支払期限: {formatDate(invoice.due_date)}</p>
                     )}

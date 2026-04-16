@@ -26,9 +26,9 @@ export default function AdminShippingPage() {
         .from('orders')
         .select(`
           *,
-          customer:customers (company_name, representative_name, phone, postal_code, prefecture, city, address)
+          company:companies (company_name, representative_name, phone, postal_code, prefecture, city, address, building)
         `)
-        .eq('status', 'confirmed')
+        .eq('status', 'pending')
         .order('created_at', { ascending: true })
 
       if (error) throw error
@@ -147,11 +147,11 @@ export default function AdminShippingPage() {
           <h3 className="font-bold text-blue-800 mb-2">選択中の注文（{selectedIds.length}件）</h3>
           <div className="space-y-1.5">
             {selectedOrders.map((order) => {
-              const customer = order.customer as { company_name?: string } | undefined
+              const company = order.company as { company_name?: string } | undefined
               return (
                 <div key={order.id} className="flex items-center justify-between text-sm">
                   <span className="text-blue-700">{order.order_number}</span>
-                  <span className="text-blue-600">{customer?.company_name}</span>
+                  <span className="text-blue-600">{company?.company_name}</span>
                 </div>
               )
             })}
