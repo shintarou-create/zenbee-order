@@ -9,6 +9,7 @@ export default function AdminInvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
+  const [downloadingCsv, setDownloadingCsv] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // 月選択（デフォルト: 先月）
@@ -175,6 +176,38 @@ export default function AdminInvoicesPage() {
     }
   }
 
+  async function handleDownloadFreeeCsv() {
+    setDownloadingCsv(true)
+    try {
+      const res = await fetch('/api/freee-csv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billingMonth: selectedMonth }),
+      })
+
+      if (!res.ok) {
+        const { error } = await res.json()
+        setMessage({ type: 'error', text: error || 'CSV生成に失敗しました' })
+        setTimeout(() => setMessage(null), 5000)
+        return
+      }
+
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `freee_${selectedMonth.replace('-', '')}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('freee CSV ダウンロードエラー:', err)
+      setMessage({ type: 'error', text: 'CSV生成に失敗しました' })
+      setTimeout(() => setMessage(null), 5000)
+    } finally {
+      setDownloadingCsv(false)
+    }
+  }
+
   async function handleDownloadPdf(invoice: Invoice) {
     // 請求書PDF生成（簡易版）
     const { jsPDF } = await import('jspdf')
@@ -240,6 +273,16 @@ export default function AdminInvoicesPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
             {generating ? '生成中...' : '請求書を生成'}
+          </button>
+          <button
+            onClick={handleDownloadFreeeCsv}
+            disabled={downloadingCsv || invoices.length === 0}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            {downloadingCsv ? 'ダウンロード中...' : 'freee CSV'}
           </button>
         </div>
       </div>
