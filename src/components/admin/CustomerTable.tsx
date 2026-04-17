@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import type { Company } from '@/types'
-import { formatDate, getPriceRankLabel } from '@/lib/utils'
+import { getPriceRankLabel } from '@/lib/utils'
 
 interface CustomerTableProps {
   customers: Company[]
