@@ -25,6 +25,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [adminUser, setAdminUser] = useState<AdminUser | null>(DEV_BYPASS ? DEV_ADMIN : null)
   const [checking, setChecking] = useState(!DEV_BYPASS)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // DEBUG TODO: 管理者登録完了後に削除
+  const [debugUserId, setDebugUserId] = useState<string | null>(null)
 
   useEffect(() => {
     if (DEV_BYPASS) return
@@ -33,6 +35,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       if (!liffLoading) setChecking(false)
       return
     }
+
+    // DEBUG TODO: 管理者登録完了後に削除
+    setDebugUserId(userId)
 
     async function checkAdmin() {
       try {
@@ -76,6 +81,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <Link href="/" className="mt-4 inline-block text-green-600 font-bold text-sm">
             ホームに戻る
           </Link>
+
+          {/* DEBUG TODO: 管理者登録完了後に削除 */}
+          {debugUserId && (
+            <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-left">
+              <p className="text-xs font-bold text-yellow-700 mb-2">あなたのLINE User ID:</p>
+              <code className="block font-mono text-sm font-bold text-gray-900 break-all select-all">
+                {debugUserId}
+              </code>
+              <p className="text-xs text-yellow-600 mt-2">
+                このIDをSupabaseのadmin_usersテーブルに登録すると管理画面にアクセスできます。
+              </p>
+            </div>
+          )}
         </div>
       </div>
     )

@@ -1,6 +1,18 @@
 'use client'
 
+// DEBUG TODO: 管理者登録完了後にuseState/useEffect/initLiff importごと削除すること
+import { useState, useEffect } from 'react'
+import { initLiff } from '@/lib/liff'
+
 export default function NotRegisteredPage() {
+  // DEBUG TODO: 削除対象
+  const [lineUserId, setLineUserId] = useState<string | null>(null)
+  useEffect(() => {
+    initLiff().then((profile) => {
+      if (profile?.userId) setLineUserId(profile.userId)
+    }).catch(() => {})
+  }, [])
+
   return (
     <div className="min-h-screen bg-green-50 flex items-center justify-center p-4">
       <div className="max-w-sm w-full text-center">
@@ -38,6 +50,19 @@ export default function NotRegisteredPage() {
             TEL: 0737-62-xxxx
           </p>
         </div>
+
+        {/* DEBUG TODO: 管理者登録完了後に削除 */}
+        {lineUserId && (
+          <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-left">
+            <p className="text-xs font-bold text-yellow-700 mb-2">あなたのLINE User ID:</p>
+            <code className="block font-mono text-sm font-bold text-gray-900 break-all select-all">
+              {lineUserId}
+            </code>
+            <p className="text-xs text-yellow-600 mt-2">
+              このIDをSupabaseのline_usersテーブルに登録すると発注システムをご利用いただけます。
+            </p>
+          </div>
+        )}
 
         {/* 注意書き */}
         <p className="text-xs text-gray-400 mt-6">
