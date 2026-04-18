@@ -23,6 +23,7 @@ export async function initLiff(): Promise<LiffProfile | null> {
     }
 
     const profile = await liff.getProfile()
+    console.log('[LIFF Profile] userId:', profile.userId, 'displayName:', profile.displayName)
     return {
       userId: profile.userId,
       displayName: profile.displayName,
