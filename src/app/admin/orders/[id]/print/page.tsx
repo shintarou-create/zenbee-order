@@ -72,26 +72,46 @@ export default function OrderPrintPage() {
         }
       `}</style>
 
-      {/* 操作バー（印刷時非表示） */}
-      <div className="no-print mb-6 flex items-center gap-3 px-6 pt-4">
+      {/* 操作エリア（印刷時非表示） */}
+      <div className="no-print mb-6 px-6 pt-4 space-y-3">
+        {/* 戻るリンク */}
         <Link
           href={`/admin/orders/${id}`}
-          className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"
+          className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1 w-fit"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          戻る
+          注文詳細に戻る
         </Link>
-        <button
-          onClick={() => window.print()}
-          className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-          </svg>
-          印刷する
-        </button>
+
+        {/* ボタンエリア */}
+        <div className="bg-gray-50 rounded-xl border border-gray-200 px-5 py-4 space-y-3">
+          <p className="text-sm text-gray-600">納品書を印刷またはPDF保存できます</p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => window.print()}
+              className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              印刷する
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="border border-green-600 text-green-700 hover:bg-green-50 font-bold px-6 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors bg-white"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              PDFで保存
+            </button>
+          </div>
+          <p className="text-xs text-gray-400">
+            ※「PDFで保存」を選んだ場合、印刷ダイアログの送信先を「PDFとして保存」に変更してください
+          </p>
+        </div>
       </div>
 
       <DeliveryNoteLayout order={order} />
