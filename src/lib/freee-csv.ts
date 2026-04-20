@@ -1,23 +1,25 @@
 export interface FreeeTransactionRow {
   date: string           // 発生日 (YYYY/MM/DD)
   partner: string        // 取引先名
+  accountTitle: string   // 勘定科目
+  itemName: string       // 品目
+  taxClass: string       // 税区分
   amount: number         // 金額（税込）
-  taxAmount: number      // 税額
-  invoiceNumber: string  // 請求書番号（備考用）
-  billingMonth: string   // 請求月（備考用）
+  memo: string           // 備考
 }
 
 // freee 取引インポートCSV ヘッダー
 const CSV_HEADERS = [
-  '発生日',
   '収支区分',
+  '発生日',
+  '管理番号',
   '取引先',
   '勘定科目',
+  '税区分',
+  '金額',
   '品目',
   '部門',
-  'メモタグ（複数可）',
-  '税区分',
-  '金額（税込）',
+  'メモタグ（複数指定可、カンマ区切り）',
   '備考',
 ]
 
@@ -39,16 +41,17 @@ export function generateFreeeCSV(rows: FreeeTransactionRow[]): Uint8Array {
   // データ行
   for (const row of rows) {
     const fields = [
-      row.date,                                       // 発生日
-      '収入',                                          // 収支区分
-      row.partner,                                    // 取引先
-      '売上高',                                        // 勘定科目
-      '農産物',                                        // 品目
-      '',                                             // 部門
-      '',                                             // メモタグ
-      '課税売上8%（軽減）',                             // 税区分（農産物は軽減税率）
-      String(row.amount),                             // 金額（税込）
-      `${row.invoiceNumber} ${row.billingMonth}月分`,  // 備考
+      '収入',                  // 収支区分
+      row.date,                // 発生日
+      '',                      // 管理番号
+      row.partner,             // 取引先
+      row.accountTitle,        // 勘定科目
+      row.taxClass,            // 税区分
+      String(row.amount),      // 金額
+      row.itemName,            // 品目
+      '',                      // 部門
+      '',                      // メモタグ
+      row.memo,                // 備考
     ]
     lines.push(fields.map(escapeCSVField).join(','))
   }

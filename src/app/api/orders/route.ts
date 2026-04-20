@@ -148,6 +148,8 @@ export async function POST(req: NextRequest) {
         unitPrice,
         subtotal,
         coolType: product.cool_type as CoolType,
+        stepQty: product.step_qty,
+        minOrderQty: product.min_order_qty,
       })
     }
 

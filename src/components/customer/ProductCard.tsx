@@ -55,6 +55,8 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
         unit: product.unit,
         unitPrice: currentPrice,
         coolType: product.cool_type as CoolType,
+        stepQty: product.step_qty,
+        minOrderQty: product.min_order_qty,
       })
       // カート追加後に数量をリセット
       setQuantity(product.min_order_qty)

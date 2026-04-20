@@ -61,8 +61,8 @@ export async function POST(req: NextRequest) {
 
       return {
         recipientPostalCode: (company?.postal_code || '').replace('-', ''),
-        recipientAddress1: address,
-        recipientAddress2: company?.building || '',
+        recipientAddress: address,
+        recipientBuilding: company?.building || '',
         recipientCompanyName: company?.company_name || '',
         recipientName: company?.representative_name || company?.company_name || '',
         recipientPhone: (company?.phone || '').replace(/-/g, ''),
@@ -71,7 +71,6 @@ export async function POST(req: NextRequest) {
         deliveryTimeSlot: '',
         coolType: hasCool ? 2 : 0,
         itemName: '農産物',
-        quantity: 1,
         clientOrderNumber: order.order_number,
         notes: order.notes || '',
       }

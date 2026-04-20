@@ -240,6 +240,8 @@ export interface CartItem {
   unitPrice: number
   subtotal: number
   coolType: CoolType
+  stepQty: number
+  minOrderQty: number
 }
 
 export interface CartState {

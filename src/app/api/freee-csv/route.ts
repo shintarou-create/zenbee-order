@@ -20,11 +20,23 @@ export async function POST(req: NextRequest) {
 
     const supabase = createServiceClient()
 
+    // 請求書 → 請求明細 → 注文 → 注文明細 + 送料明細 を一括取得
     const { data: invoices, error } = await supabase
       .from('invoices')
       .select(`
         *,
-        company:companies (company_name)
+        company:companies (company_name),
+        invoice_items (
+          id,
+          order_id,
+          amount,
+          order:orders (
+            id,
+            order_number,
+            order_items (subtotal),
+            order_shipping (cost)
+          )
+        )
       `)
       .eq('billing_month', billingMonth)
       .order('invoice_number')
@@ -38,17 +50,67 @@ export async function POST(req: NextRequest) {
     // 発生日 = 請求月末日
     const date = billingMonthToDate(billingMonth)
 
-    const rows: FreeeTransactionRow[] = invoices.map((invoice) => {
+    const rows: FreeeTransactionRow[] = []
+
+    for (const invoice of invoices) {
       const company = invoice.company as { company_name?: string } | undefined
-      return {
-        date,
-        partner: company?.company_name || '',
-        amount: invoice.total_amount,
-        taxAmount: invoice.tax_amount,
-        invoiceNumber: invoice.invoice_number,
-        billingMonth,
+      const partner = company?.company_name || ''
+      const memo = `${invoice.invoice_number} ${billingMonth}月分`
+
+      // 注文明細から食品合計・送料合計を算出
+      let foodTotal = 0
+      let shippingTotal = 0
+
+      const items = (invoice.invoice_items || []) as Array<{
+        order?: {
+          order_items?: Array<{ subtotal: number }>
+          order_shipping?: Array<{ cost: number }>
+        } | null
+      }>
+
+      for (const item of items) {
+        const order = item.order
+        if (!order) continue
+
+        // 食品 = order_items の subtotal 合計
+        const orderFood = (order.order_items || []).reduce(
+          (sum: number, oi: { subtotal: number }) => sum + oi.subtotal, 0
+        )
+        // 送料 = order_shipping の cost 合計
+        const orderShipping = (order.order_shipping || []).reduce(
+          (sum: number, os: { cost: number }) => sum + os.cost, 0
+        )
+
+        foodTotal += orderFood
+        shippingTotal += orderShipping
       }
-    })
+
+      // 食品行（8%軽減税率）
+      if (foodTotal > 0) {
+        rows.push({
+          date,
+          partner,
+          accountTitle: '売上高',
+          itemName: '農産物',
+          taxClass: '課税売上8%（軽）',
+          amount: foodTotal,
+          memo,
+        })
+      }
+
+      // 送料行（10%標準税率）
+      if (shippingTotal > 0) {
+        rows.push({
+          date,
+          partner,
+          accountTitle: '売上高',
+          itemName: '送料',
+          taxClass: '課税売上10%',
+          amount: shippingTotal,
+          memo,
+        })
+      }
+    }
 
     const csvBuffer = generateFreeeCSV(rows)
     const filename = `freee_${billingMonth.replace('-', '')}.csv`
