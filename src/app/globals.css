@@ -45,6 +45,13 @@ input[type='number']::-webkit-outer-spin-button {
   header {
     display: none !important;
   }
+  /* min-h-screen (100vh) がコンテナを1ページ全高に固定して余白ページを生む */
+  html,
+  body,
+  .min-h-screen {
+    height: auto !important;
+    min-height: 0 !important;
+  }
   main {
     padding: 0 !important;
     overflow: visible !important;
