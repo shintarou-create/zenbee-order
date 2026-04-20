@@ -208,28 +208,6 @@ export default function AdminInvoicesPage() {
     }
   }
 
-  async function handleDownloadPdf(invoice: Invoice) {
-    // 請求書PDF生成（簡易版）
-    const { jsPDF } = await import('jspdf')
-    const doc = new jsPDF()
-
-    doc.setFontSize(16)
-    doc.text('Invoice / \u8acb\u6c42\u66f8', 105, 20, { align: 'center' })
-
-    doc.setFontSize(10)
-    doc.text(`\u8acb\u6c42\u66f8\u756a\u53f7: ${invoice.invoice_number}`, 20, 40)
-    doc.text(`\u8acb\u6c42\u6708: ${invoice.billing_month}`, 20, 48)
-
-    const company = invoice.company as { company_name?: string } | undefined
-    doc.text(`\u8acb\u6c42\u5148: ${company?.company_name || ''}`, 20, 56)
-
-    doc.text(`\u5408\u8a08\u91d1\u984d: ${formatCurrency(invoice.total_amount)}`, 20, 70)
-    doc.text(`\u6d88\u8cbb\u7a0e: ${formatCurrency(invoice.tax_amount)}`, 20, 78)
-    doc.text(`\u652f\u6255\u671f\u9650: ${invoice.due_date ? formatDate(invoice.due_date) : ''}`, 20, 86)
-
-    doc.save(`invoice_${invoice.invoice_number}.pdf`)
-  }
-
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       draft: 'bg-gray-100 text-gray-600',
@@ -332,15 +310,6 @@ export default function AdminInvoicesPage() {
                       <option value="overdue">未払い</option>
                     </select>
 
-                    <button
-                      onClick={() => handleDownloadPdf(invoice)}
-                      className="text-green-600 hover:text-green-800 text-xs font-medium"
-                      title="PDFダウンロード"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                    </button>
                   </div>
                 </div>
               )

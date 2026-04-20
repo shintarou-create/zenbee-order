@@ -39,6 +39,20 @@ input[type='number']::-webkit-outer-spin-button {
   opacity: 1;
 }
 
+/* 印刷時：管理サイドバー・ヘッダーを非表示 */
+@media print {
+  aside,
+  header {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

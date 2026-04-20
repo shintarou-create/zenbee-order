@@ -26,7 +26,6 @@ export default function AdminOrderDetailPage() {
   const [deliveryDate, setDeliveryDate] = useState('')
   const [updating, setUpdating] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [downloadingPdf, setDownloadingPdf] = useState(false)
 
   useEffect(() => {
     if (!orderId) return
@@ -90,19 +89,6 @@ export default function AdminOrderDetailPage() {
     } finally {
       setUpdating(false)
       setTimeout(() => setMessage(null), 3000)
-    }
-  }
-
-  async function handleDownloadPdf() {
-    if (!order) return
-    setDownloadingPdf(true)
-    try {
-      const { generateInvoicePDF } = await import('@/lib/invoice-pdf')
-      generateInvoicePDF(order)
-    } catch {
-      alert('PDFの生成に失敗しました')
-    } finally {
-      setDownloadingPdf(false)
     }
   }
 
@@ -292,13 +278,17 @@ export default function AdminOrderDetailPage() {
             >
               {updating ? '更新中...' : '更新する'}
             </button>
-            <button
-              onClick={handleDownloadPdf}
-              disabled={downloadingPdf}
+            <Link
+              href={`/admin/orders/${orderId}/print`}
+              target="_blank"
+              rel="noopener noreferrer"
               className="border border-green-600 text-green-600 hover:bg-green-50 font-bold px-6 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
             >
-              {downloadingPdf ? '生成中...' : '納品書PDF出力'}
-            </button>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              納品書を印刷
+            </Link>
           </div>
         </div>
       </div>
