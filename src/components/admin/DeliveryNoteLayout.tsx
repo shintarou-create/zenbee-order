@@ -29,38 +29,15 @@ export default function DeliveryNoteLayout({ order }: Props) {
   return (
     <>
       <style>{`
-        @font-face {
-          font-family: 'Noto Sans JP';
-          font-style: normal;
-          font-weight: 400;
-          font-display: block;
-          src: url('https://fonts.gstatic.com/s/notosansjp/v53/-F6jfjtqLzI2JPCgQBnw7HFQMisq1H1hj-sNFQ.woff2') format('woff2');
-          unicode-range: U+3000-9FFF, U+F900-FAFF, U+FE10-FE1F, U+FE30-FE4F, U+FF00-FFEF;
-        }
-        @font-face {
-          font-family: 'Noto Sans JP';
-          font-style: normal;
-          font-weight: 500;
-          font-display: block;
-          src: url('https://fonts.gstatic.com/s/notosansjp/v53/-F6pfjtqLzI2JPCgQBnw7HFyzSD-AsregRCT96-diA.woff2') format('woff2');
-          unicode-range: U+3000-9FFF, U+F900-FAFF, U+FE10-FE1F, U+FE30-FE4F, U+FF00-FFEF;
-        }
-        @font-face {
-          font-family: 'Noto Sans JP';
-          font-style: normal;
-          font-weight: 700;
-          font-display: block;
-          src: url('https://fonts.gstatic.com/s/notosansjp/v53/-F6pfjtqLzI2JPCgQBnw7HFy_iD-AsregRCT96-diA.woff2') format('woff2');
-          unicode-range: U+3000-9FFF, U+F900-FAFF, U+FE10-FE1F, U+FE30-FE4F, U+FF00-FFEF;
-        }
         @media print {
-          * {
-            font-family: 'Noto Sans JP', var(--font-noto-jp), sans-serif !important;
+          .delivery-note,
+          .delivery-note * {
+            font-family: var(--font-noto-jp), 'Noto Sans JP', sans-serif !important;
           }
         }
       `}</style>
       <div
-        className="bg-white mx-auto px-10 py-8"
+        className="delivery-note bg-white mx-auto px-10 py-8"
         style={{
           maxWidth: '720px',
           color: '#1a1a1a',
