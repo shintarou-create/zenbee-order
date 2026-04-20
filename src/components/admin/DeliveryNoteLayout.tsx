@@ -27,16 +27,48 @@ export default function DeliveryNoteLayout({ order }: Props) {
   const today = toJpDate(new Date().toISOString())
 
   return (
-    <div
-      className="bg-white mx-auto px-10 py-8"
-      style={{
-        maxWidth: '720px',
-        color: '#1a1a1a',
-        fontSize: '13px',
-        lineHeight: '1.6',
-        fontFamily: 'system-ui, -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif',
-      }}
-    >
+    <>
+      <style>{`
+        @font-face {
+          font-family: 'Noto Sans JP';
+          font-style: normal;
+          font-weight: 400;
+          font-display: block;
+          src: url('https://fonts.gstatic.com/s/notosansjp/v53/-F6jfjtqLzI2JPCgQBnw7HFQMisq1H1hj-sNFQ.woff2') format('woff2');
+          unicode-range: U+3000-9FFF, U+F900-FAFF, U+FE10-FE1F, U+FE30-FE4F, U+FF00-FFEF;
+        }
+        @font-face {
+          font-family: 'Noto Sans JP';
+          font-style: normal;
+          font-weight: 500;
+          font-display: block;
+          src: url('https://fonts.gstatic.com/s/notosansjp/v53/-F6pfjtqLzI2JPCgQBnw7HFyzSD-AsregRCT96-diA.woff2') format('woff2');
+          unicode-range: U+3000-9FFF, U+F900-FAFF, U+FE10-FE1F, U+FE30-FE4F, U+FF00-FFEF;
+        }
+        @font-face {
+          font-family: 'Noto Sans JP';
+          font-style: normal;
+          font-weight: 700;
+          font-display: block;
+          src: url('https://fonts.gstatic.com/s/notosansjp/v53/-F6pfjtqLzI2JPCgQBnw7HFy_iD-AsregRCT96-diA.woff2') format('woff2');
+          unicode-range: U+3000-9FFF, U+F900-FAFF, U+FE10-FE1F, U+FE30-FE4F, U+FF00-FFEF;
+        }
+        @media print {
+          * {
+            font-family: 'Noto Sans JP', var(--font-noto-jp), sans-serif !important;
+          }
+        }
+      `}</style>
+      <div
+        className="bg-white mx-auto px-10 py-8"
+        style={{
+          maxWidth: '720px',
+          color: '#1a1a1a',
+          fontSize: '13px',
+          lineHeight: '1.6',
+          fontFamily: "var(--font-noto-jp), 'Noto Sans JP', sans-serif",
+        }}
+      >
       {/* ヘッダー: ロゴ＋会社情報（左） ／ 注文番号・発行日（右） */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
@@ -167,5 +199,6 @@ export default function DeliveryNoteLayout({ order }: Props) {
         </div>
       )}
     </div>
+    </>
   )
 }
