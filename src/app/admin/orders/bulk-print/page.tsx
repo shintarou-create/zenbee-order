@@ -44,15 +44,29 @@ export default function BulkPrintPage() {
       })
   }, [searchParams])
 
+  async function markDeliveryNotePrinted(targetOrders: Order[]) {
+    if (targetOrders.length === 0) return
+    try {
+      const supabase = createClient()
+      await supabase
+        .from('orders')
+        .update({ delivery_note_printed: true })
+        .in('id', targetOrders.map((o) => o.id))
+    } catch (err) {
+      console.error('delivery_note_printed 更新エラー:', err)
+    }
+  }
+
   useEffect(() => {
     if (!isLoading && orders.length > 0) {
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
+        await markDeliveryNotePrinted(orders)
         window.print()
         setPrinted(true)
       }, 500)
       return () => clearTimeout(timer)
     }
-  }, [isLoading, orders.length])
+  }, [isLoading, orders.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) {
     return (
@@ -117,7 +131,7 @@ export default function BulkPrintPage() {
       <div className="no-print mb-6 flex items-center gap-3 px-6 pt-4">
         <span className="text-sm text-gray-600">{orders.length}件の納品書</span>
         <button
-          onClick={() => { window.print(); setPrinted(true) }}
+          onClick={async () => { await markDeliveryNotePrinted(orders); window.print(); setPrinted(true) }}
           className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

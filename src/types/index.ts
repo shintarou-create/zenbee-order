@@ -134,6 +134,7 @@ export interface Order {
   shipping_date: string | null
   delivery_date: string | null
   shipping_label_printed: boolean
+  delivery_note_printed: boolean
   details_confirmed: boolean
   notes: string | null
   admin_notes: string | null
@@ -153,7 +154,7 @@ export interface Order {
 }
 
 export type OrderInput = Omit<Order, 'id' | 'created_at' | 'updated_at' | 'company' | 'order_items' | 'order_shipping'>
-export type OrderUpdate = Partial<Pick<Order, 'status' | 'shipping_date' | 'delivery_date' | 'shipping_label_printed' | 'details_confirmed' | 'admin_notes' | 'billing_name' | 'billing_postal_code' | 'billing_prefecture' | 'billing_city' | 'billing_address' | 'billing_building'>>
+export type OrderUpdate = Partial<Pick<Order, 'status' | 'shipping_date' | 'delivery_date' | 'shipping_label_printed' | 'delivery_note_printed' | 'details_confirmed' | 'admin_notes' | 'billing_name' | 'billing_postal_code' | 'billing_prefecture' | 'billing_city' | 'billing_address' | 'billing_building'>>
 
 // ============================================================
 // OrderItem

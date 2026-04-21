@@ -18,6 +18,16 @@ interface OrderTableProps {
   onUnmarkLabel?: (orderId: string) => void
 }
 
+function getDisplayStatusLabel(order: Order): string {
+  if (order.status === 'pending' && order.delivery_note_printed) return '納品書済'
+  return getOrderStatusLabel(order.status)
+}
+
+function getDisplayStatusColor(order: Order): string {
+  if (order.status === 'pending' && order.delivery_note_printed) return 'bg-purple-100 text-purple-700'
+  return getOrderStatusColor(order.status)
+}
+
 function buildItemSummary(order: Order): string {
   const items = order.order_items ?? []
   if (items.length === 0) return ''
@@ -200,8 +210,8 @@ export default function OrderTable({
 
                 {/* ステータス */}
                 <td className="px-4 py-3 text-center">
-                  <span className={`inline-flex text-xs font-bold px-2 py-1 rounded-full ${getOrderStatusColor(order.status)}`}>
-                    {getOrderStatusLabel(order.status)}
+                  <span className={`inline-flex text-xs font-bold px-2 py-1 rounded-full ${getDisplayStatusColor(order)}`}>
+                    {getDisplayStatusLabel(order)}
                   </span>
                 </td>
 
