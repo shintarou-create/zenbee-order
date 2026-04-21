@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import OrderTable from '@/components/admin/OrderTable'
 import type { Order, OrderStatus } from '@/types'
+import { formatDateForInput, getNextBusinessDay } from '@/lib/utils'
 
 const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: 'pending', label: '未対応' },
@@ -20,6 +21,8 @@ export default function AdminOrdersPage() {
   const [dateTo, setDateTo] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [bulkUpdating, setBulkUpdating] = useState(false)
+  const [shipDate, setShipDate] = useState(formatDateForInput(getNextBusinessDay(new Date())))
+  const [csvExporting, setCsvExporting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
@@ -93,6 +96,46 @@ export default function AdminOrdersPage() {
     }
   }
 
+  async function handleYamatoCSV() {
+    if (selectedIds.length === 0) return
+    setCsvExporting(true)
+    try {
+      const response = await fetch('/api/shipping-csv', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': 'admin',
+        },
+        body: JSON.stringify({ orderIds: selectedIds, shipDate }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'CSV生成に失敗しました')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `yamato_b2_${shipDate.replace(/-/g, '')}.csv`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      setMessage({ type: 'success', text: `${selectedIds.length}件のヤマトCSVを出力し、発送済みに更新しました` })
+      setSelectedIds([])
+      await fetchOrders()
+    } catch (err) {
+      console.error('CSV出力エラー:', err)
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'CSV出力に失敗しました' })
+    } finally {
+      setCsvExporting(false)
+      setTimeout(() => setMessage(null), 5000)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -156,15 +199,31 @@ export default function AdminOrdersPage() {
 
       {/* 一括操作 */}
       {selectedIds.length > 0 && (
-        <div className="bg-green-50 rounded-xl border border-green-200 px-4 py-3 flex items-center justify-between">
+        <div className="bg-green-50 rounded-xl border border-green-200 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
           <span className="text-green-800 font-medium text-sm">
             {selectedIds.length}件選択中
           </span>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="date"
+              value={shipDate}
+              onChange={(e) => setShipDate(e.target.value)}
+              className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white"
+            />
+            <button
+              onClick={handleYamatoCSV}
+              disabled={csvExporting || bulkUpdating}
+              className="bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              {csvExporting ? 'CSV生成中...' : 'ヤマトCSV出力'}
+            </button>
             {statusFilter === 'pending' && (
               <button
                 onClick={() => handleBulkStatusChange('shipped')}
-                disabled={bulkUpdating}
+                disabled={bulkUpdating || csvExporting}
                 className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors"
               >
                 出荷済みにする
@@ -173,7 +232,7 @@ export default function AdminOrdersPage() {
             {statusFilter === 'shipped' && (
               <button
                 onClick={() => handleBulkStatusChange('done')}
-                disabled={bulkUpdating}
+                disabled={bulkUpdating || csvExporting}
                 className="bg-green-600 hover:bg-green-700 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors"
               >
                 完了にする
