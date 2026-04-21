@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import OrderTable from '@/components/admin/OrderTable'
+import PendingProductsSummary from '@/components/admin/PendingProductsSummary'
 import type { Order, OrderStatus } from '@/types'
 import { formatDateForInput, getNextBusinessDay } from '@/lib/utils'
 
@@ -284,6 +285,9 @@ export default function AdminOrdersPage() {
           />
         )}
       </div>
+
+      {/* 未発送商品合計（納品日フィルターと連動） */}
+      <PendingProductsSummary dateFrom={dateFrom} dateTo={dateTo} />
     </div>
   )
 }

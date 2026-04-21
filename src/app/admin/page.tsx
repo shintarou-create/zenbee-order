@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import type { Order, Product, Inventory } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
+import PendingProductsSummary from '@/components/admin/PendingProductsSummary'
 
 interface LowStockItem {
   product: Product
@@ -132,6 +133,9 @@ export default function AdminDashboard() {
           <p className="text-2xl font-bold text-green-700 mt-1">→</p>
         </Link>
       </div>
+
+      {/* 未発送商品合計 */}
+      <PendingProductsSummary />
 
       <div className="grid md:grid-cols-2 gap-6">
         {/* 在庫アラート */}
