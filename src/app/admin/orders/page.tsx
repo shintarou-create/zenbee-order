@@ -96,6 +96,22 @@ export default function AdminOrdersPage() {
     }
   }
 
+  async function handleUnmarkLabel(orderId: string) {
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('orders')
+        .update({ shipping_label_printed: false })
+        .eq('id', orderId)
+      if (error) throw error
+      await fetchOrders()
+    } catch (err) {
+      console.error('伝票済み解除エラー:', err)
+      setMessage({ type: 'error', text: '伝票済みの解除に失敗しました' })
+      setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
   async function handleYamatoCSV() {
     if (selectedIds.length === 0) return
     setCsvExporting(true)
@@ -254,6 +270,7 @@ export default function AdminOrdersPage() {
             showCheckbox={true}
             selectedIds={selectedIds}
             onSelectChange={setSelectedIds}
+            onUnmarkLabel={handleUnmarkLabel}
           />
         )}
       </div>

@@ -15,6 +15,7 @@ interface OrderTableProps {
   selectedIds?: string[]
   onSelectChange?: (ids: string[]) => void
   basePath?: string
+  onUnmarkLabel?: (orderId: string) => void
 }
 
 function buildItemSummary(order: Order): string {
@@ -31,6 +32,7 @@ export default function OrderTable({
   selectedIds = [],
   onSelectChange,
   basePath = '/admin/orders',
+  onUnmarkLabel,
 }: OrderTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('delivery_date')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -139,7 +141,16 @@ export default function OrderTable({
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-medium text-gray-900">{order.order_number}</span>
                     {order.shipping_label_printed && (
-                      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                      <span
+                        className={`inline-flex items-center gap-0.5 text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded ${onUnmarkLabel ? 'cursor-pointer hover:bg-blue-100 hover:text-blue-800' : ''}`}
+                        onClick={onUnmarkLabel ? (e) => {
+                          e.stopPropagation()
+                          if (window.confirm('伝票印刷済みマークを解除しますか？')) {
+                            onUnmarkLabel(order.id)
+                          }
+                        } : undefined}
+                        title={onUnmarkLabel ? 'クリックして解除' : undefined}
+                      >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                         </svg>
