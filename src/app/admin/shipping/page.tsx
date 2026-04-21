@@ -3,34 +3,44 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import OrderTable from '@/components/admin/OrderTable'
+import PendingProductsSummary from '@/components/admin/PendingProductsSummary'
 import type { Order } from '@/types'
 import { formatDateForInput, getNextBusinessDay } from '@/lib/utils'
 
 export default function AdminShippingPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [shipDate, setShipDate] = useState(formatDateForInput(getNextBusinessDay(new Date())))
-  const [exporting, setExporting] = useState(false)
+  const [csvExporting, setCsvExporting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
-    fetchConfirmedOrders()
-  }, [])
+    fetchOrders() // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function fetchConfirmedOrders() {
+  async function fetchOrders() {
     setIsLoading(true)
     try {
       const supabase = createClient()
-      const { data, error } = await supabase
+      let query = supabase
         .from('orders')
         .select(`
           *,
-          company:companies (company_name, representative_name, phone, postal_code, prefecture, city, address, building)
+          company:companies (company_name, representative_name, has_separate_billing),
+          order_items (*),
+          order_shipping (*)
         `)
         .eq('status', 'pending')
-        .order('created_at', { ascending: true })
+        .order('delivery_date', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: false })
 
+      if (dateFrom) query = query.gte('delivery_date', dateFrom)
+      if (dateTo)   query = query.lte('delivery_date', dateTo)
+
+      const { data, error } = await query.limit(200)
       if (error) throw error
       setOrders((data || []) as Order[])
     } catch (err) {
@@ -40,25 +50,17 @@ export default function AdminShippingPage() {
     }
   }
 
-  async function handleExportCSV() {
-    if (selectedIds.length === 0) {
-      setMessage({ type: 'error', text: '出荷する注文を選択してください' })
-      setTimeout(() => setMessage(null), 3000)
-      return
-    }
-
-    setExporting(true)
+  async function handleYamatoCSV() {
+    if (selectedIds.length === 0) return
+    setCsvExporting(true)
     try {
       const response = await fetch('/api/shipping-csv', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-admin-token': 'admin', // 実際の本番では適切なトークンを使用
+          'x-admin-token': 'admin',
         },
-        body: JSON.stringify({
-          orderIds: selectedIds,
-          shipDate,
-        }),
+        body: JSON.stringify({ orderIds: selectedIds, shipDate }),
       })
 
       if (!response.ok) {
@@ -66,7 +68,6 @@ export default function AdminShippingPage() {
         throw new Error(err.error || 'CSV生成に失敗しました')
       }
 
-      // ファイルダウンロード
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
@@ -77,19 +78,17 @@ export default function AdminShippingPage() {
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
 
-      setMessage({ type: 'success', text: `${selectedIds.length}件のCSVを出力し、発送済みに更新しました` })
+      setMessage({ type: 'success', text: `${selectedIds.length}件のヤマトCSVを出力しました（伝票印刷済みにマーク）` })
       setSelectedIds([])
-      await fetchConfirmedOrders()
+      await fetchOrders()
     } catch (err) {
       console.error('CSV出力エラー:', err)
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'CSV出力に失敗しました' })
     } finally {
-      setExporting(false)
+      setCsvExporting(false)
       setTimeout(() => setMessage(null), 5000)
     }
   }
-
-  const selectedOrders = orders.filter((o) => selectedIds.includes(o.id))
 
   return (
     <div className="space-y-4">
@@ -103,28 +102,76 @@ export default function AdminShippingPage() {
         </div>
       )}
 
-      {/* 発送日設定 */}
+      {/* 納品日フィルター */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">発送日</label>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-gray-500">納品日:</span>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+          />
+          <span className="text-gray-400">〜</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+          />
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(''); setDateTo('') }}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              クリア
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 未発送商品合計 */}
+      <PendingProductsSummary dateFrom={dateFrom} dateTo={dateTo} />
+
+      {/* 選択バナー */}
+      {selectedIds.length > 0 && (
+        <div className="bg-green-50 rounded-xl border border-green-200 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+          <span className="text-green-800 font-medium text-sm">{selectedIds.length}件選択中</span>
+          <div className="flex items-center gap-2 flex-wrap">
             <input
               type="date"
               value={shipDate}
               onChange={(e) => setShipDate(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+              className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white"
             />
-          </div>
-          <div className="text-sm text-gray-500 pt-5">
-            ※ 確認済みの注文のみ表示されます
+            <button
+              onClick={() => window.open(`/admin/orders/bulk-print?ids=${selectedIds.join(',')}`, '_blank')}
+              disabled={csvExporting}
+              className="bg-green-700 hover:bg-green-800 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              納品書印刷
+            </button>
+            <button
+              onClick={handleYamatoCSV}
+              disabled={csvExporting}
+              className="bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              {csvExporting ? 'CSV生成中...' : 'ヤマトCSV出力'}
+            </button>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* 注文一覧（チェックボックス付き） */}
+      {/* 未発送の注文一覧 */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="font-bold text-gray-900">確認済み注文一覧</h2>
+          <h2 className="font-bold text-gray-900">未発送の注文</h2>
           <span className="text-sm text-gray-500">{orders.length}件</span>
         </div>
         {isLoading ? (
@@ -139,44 +186,6 @@ export default function AdminShippingPage() {
             onSelectChange={setSelectedIds}
           />
         )}
-      </div>
-
-      {/* 選択した注文のプレビュー */}
-      {selectedIds.length > 0 && (
-        <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">
-          <h3 className="font-bold text-blue-800 mb-2">選択中の注文（{selectedIds.length}件）</h3>
-          <div className="space-y-1.5">
-            {selectedOrders.map((order) => {
-              const company = order.company as { company_name?: string } | undefined
-              return (
-                <div key={order.id} className="flex items-center justify-between text-sm">
-                  <span className="text-blue-700">{order.order_number}</span>
-                  <span className="text-blue-600">{company?.company_name}</span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* CSV出力ボタン */}
-      <div className="flex justify-end">
-        <button
-          onClick={handleExportCSV}
-          disabled={exporting || selectedIds.length === 0}
-          className={`flex items-center gap-2 font-bold px-6 py-3 rounded-xl text-sm transition-all ${
-            selectedIds.length === 0
-              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              : exporting
-              ? 'bg-green-400 text-white'
-              : 'bg-green-600 hover:bg-green-700 text-white'
-          }`}
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
-          {exporting ? 'CSV生成中...' : `CSV出力（${selectedIds.length}件）`}
-        </button>
       </div>
     </div>
   )
