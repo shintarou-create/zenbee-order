@@ -34,15 +34,16 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
       try {
         const supabase = createClient()
 
-        // pending注文IDを取得（納品日フィルター付き）
+        // Step1: pending注文IDを取得（納品日フィルター付き）
         let ordersQuery = supabase
           .from('orders')
           .select('id')
           .eq('status', 'pending')
         if (dateFrom) ordersQuery = ordersQuery.gte('delivery_date', dateFrom)
-        if (dateTo) ordersQuery = ordersQuery.lte('delivery_date', dateTo)
+        if (dateTo)   ordersQuery = ordersQuery.lte('delivery_date', dateTo)
 
-        const { data: orderRows } = await ordersQuery
+        const { data: orderRows, error: ordersError } = await ordersQuery
+        if (ordersError) throw ordersError
 
         if (!orderRows || orderRows.length === 0) {
           setSummaries([])
@@ -53,27 +54,36 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
         setOrderCount(orderRows.length)
         const orderIds = orderRows.map((o) => o.id)
 
-        // order_items + products を取得
-        const { data: items } = await supabase
+        // Step2: order_items を取得（product_id, quantity のみ）
+        const { data: items, error: itemsError } = await supabase
           .from('order_items')
-          .select('product_id, quantity, product:products(name, unit, category)')
+          .select('product_id, quantity')
           .in('order_id', orderIds)
+        if (itemsError) throw itemsError
 
-        if (!items) {
+        if (!items || items.length === 0) {
           setSummaries([])
           return
         }
 
-        // 商品ごとに数量を集計
-        const map = new Map<string, ProductSummary>()
+        // Step3: 全商品マスタを取得（24件程度なので全件OK）
+        const { data: products, error: productsError } = await supabase
+          .from('products')
+          .select('id, name, unit, category')
+        if (productsError) throw productsError
+
+        const productMap = new Map((products ?? []).map((p) => [p.id, p]))
+
+        // Step4: JS側で product_id ごとに数量を集計
+        const summaryMap = new Map<string, ProductSummary>()
         for (const item of items) {
-          const product = item.product as unknown as { name: string; unit: string; category: string } | null
+          const product = productMap.get(item.product_id)
           if (!product) continue
-          const existing = map.get(item.product_id)
+          const existing = summaryMap.get(item.product_id)
           if (existing) {
             existing.totalQty += item.quantity
           } else {
-            map.set(item.product_id, {
+            summaryMap.set(item.product_id, {
               productId: item.product_id,
               name: product.name,
               unit: product.unit,
@@ -83,7 +93,7 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
           }
         }
 
-        setSummaries(Array.from(map.values()))
+        setSummaries(Array.from(summaryMap.values()))
       } catch (err) {
         console.error('未発送商品集計エラー:', err)
       } finally {
@@ -140,7 +150,7 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
                       <td className="px-4 py-2.5 text-right font-bold text-gray-900 tabular-nums">
                         {item.totalQty}
                       </td>
-                      <td className="px-4 py-2.5 text-gray-500 w-12 text-left">{item.unit}</td>
+                      <td className="px-4 py-2.5 text-gray-500 w-12">{item.unit}</td>
                     </tr>
                   ))}
                 </tbody>
