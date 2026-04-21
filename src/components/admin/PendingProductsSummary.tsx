@@ -17,10 +17,10 @@ interface PendingProductsSummaryProps {
 }
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: string; order: number }> = {
-  citrus: { label: '柑橘',     icon: '🍊', order: 0 },
-  biwa:   { label: 'びわ',     icon: '🫒', order: 1 },
-  juice:  { label: 'ジュース', icon: '🧃', order: 2 },
-  other:  { label: 'その他',   icon: '📦', order: 3 },
+  '柑橘':   { label: '柑橘',     icon: '🍊', order: 0 },
+  'びわ':   { label: 'びわ',     icon: '🫒', order: 1 },
+  'ジュース': { label: 'ジュース', icon: '🧃', order: 2 },
+  'その他': { label: 'その他',   icon: '📦', order: 3 },
 }
 
 export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProductsSummaryProps) {
@@ -87,7 +87,7 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
               productId: item.product_id,
               name: product.name,
               unit: product.unit,
-              category: product.category || 'other',
+              category: product.category || 'その他',
               totalQty: item.quantity,
             })
           }
