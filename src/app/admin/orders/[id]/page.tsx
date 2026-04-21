@@ -24,6 +24,7 @@ export default function AdminOrderDetailPage() {
   const [status, setStatus] = useState<OrderStatus>('pending')
   const [adminNotes, setAdminNotes] = useState('')
   const [deliveryDate, setDeliveryDate] = useState('')
+  const [detailsConfirmed, setDetailsConfirmed] = useState(false)
   const [updating, setUpdating] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -54,6 +55,7 @@ export default function AdminOrderDetailPage() {
         setStatus(data.status as OrderStatus)
         setAdminNotes(data.admin_notes || '')
         setDeliveryDate(data.delivery_date || '')
+        setDetailsConfirmed(data.details_confirmed ?? false)
       } catch (err) {
         console.error('注文取得エラー:', err)
         setError('注文の取得に失敗しました')
@@ -64,6 +66,25 @@ export default function AdminOrderDetailPage() {
 
     fetchOrder()
   }, [orderId])
+
+  async function handleToggleConfirmed() {
+    if (!order) return
+    const newValue = !detailsConfirmed
+    try {
+      const supabase = createClient()
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({ details_confirmed: newValue })
+        .eq('id', order.id)
+      if (updateError) throw updateError
+      setDetailsConfirmed(newValue)
+      setOrder((prev) => prev ? { ...prev, details_confirmed: newValue } : null)
+    } catch (err) {
+      console.error('確認済み更新エラー:', err)
+      setMessage({ type: 'error', text: '更新に失敗しました' })
+      setTimeout(() => setMessage(null), 3000)
+    }
+  }
 
   async function handleUpdate() {
     if (!order) return
@@ -115,7 +136,7 @@ export default function AdminOrderDetailPage() {
 
   return (
     <div className="space-y-4 max-w-3xl">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <Link href="/admin/orders" className="text-gray-500 hover:text-gray-700">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -125,6 +146,16 @@ export default function AdminOrderDetailPage() {
         <span className={`text-sm font-bold px-2.5 py-1 rounded-full ${getOrderStatusColor(order.status)}`}>
           {getOrderStatusLabel(order.status)}
         </span>
+        <button
+          onClick={handleToggleConfirmed}
+          className={`text-sm font-bold px-3 py-1 rounded-lg transition-colors ${
+            detailsConfirmed
+              ? 'bg-green-600 hover:bg-green-700 text-white'
+              : 'border border-gray-300 text-gray-600 hover:border-gray-400 hover:bg-gray-50'
+          }`}
+        >
+          {detailsConfirmed ? '✓ 確認済み' : '確認済みにする'}
+        </button>
       </div>
 
       {message && (

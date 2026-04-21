@@ -140,6 +140,11 @@ export default function OrderTable({
                 <td className="px-4 py-3 max-w-[160px]">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-medium text-gray-900">{order.order_number}</span>
+                    {order.details_confirmed && (
+                      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
+                        ✓ 確認済
+                      </span>
+                    )}
                     {order.shipping_label_printed && (
                       <span
                         className={`inline-flex items-center gap-0.5 text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded ${onUnmarkLabel ? 'cursor-pointer hover:bg-blue-100 hover:text-blue-800' : ''}`}
