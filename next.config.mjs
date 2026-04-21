@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    // iconv-lite の Shift_JIS エンコードテーブルを webpack バンドル外で読み込む
+    serverComponentsExternalPackages: ['iconv-lite'],
+  },
   images: {
     remotePatterns: [
       {

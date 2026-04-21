@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { generateFreeeCSV, billingMonthToDate } from '@/lib/freee-csv'
-import type { FreeeTransactionRow } from '@/lib/freee-csv'
+import type { FreeeInvoiceRow } from '@/lib/freee-csv'
 
 export async function POST(req: NextRequest) {
   // 管理者認証チェック
@@ -47,17 +47,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '対象月の請求書がありません' }, { status: 404 })
     }
 
-    // 発生日 = 請求月末日
+    // 発行日 = 請求月末日
     const date = billingMonthToDate(billingMonth)
 
-    const rows: FreeeTransactionRow[] = []
+    const rows: FreeeInvoiceRow[] = []
 
     for (const invoice of invoices) {
       const company = invoice.company as { company_name?: string } | undefined
-      const partner = company?.company_name || ''
-      const memo = `${invoice.invoice_number} ${billingMonth}月分`
+      const partnerName = company?.company_name || ''
 
-      // 注文明細から食品合計・送料合計を算出
       let foodTotal = 0
       let shippingTotal = 0
 
@@ -72,11 +70,9 @@ export async function POST(req: NextRequest) {
         const order = item.order
         if (!order) continue
 
-        // 食品 = order_items の subtotal 合計
         const orderFood = (order.order_items || []).reduce(
           (sum: number, oi: { subtotal: number }) => sum + oi.subtotal, 0
         )
-        // 送料 = order_shipping の cost 合計
         const orderShipping = (order.order_shipping || []).reduce(
           (sum: number, os: { cost: number }) => sum + os.cost, 0
         )
@@ -85,31 +81,14 @@ export async function POST(req: NextRequest) {
         shippingTotal += orderShipping
       }
 
-      // 食品行（8%軽減税率）
-      if (foodTotal > 0) {
-        rows.push({
-          date,
-          partner,
-          accountTitle: '売上高',
-          itemName: '農産物',
-          taxClass: '課税売上8%（軽）',
-          amount: foodTotal,
-          memo,
-        })
-      }
-
-      // 送料行（10%標準税率）
-      if (shippingTotal > 0) {
-        rows.push({
-          date,
-          partner,
-          accountTitle: '売上高',
-          itemName: '送料',
-          taxClass: '課税売上10%',
-          amount: shippingTotal,
-          memo,
-        })
-      }
+      rows.push({
+        invoiceNumber: invoice.invoice_number,
+        date,
+        billingMonth,
+        partnerName,
+        foodTotal,
+        shippingTotal,
+      })
     }
 
     const csvBuffer = generateFreeeCSV(rows)
