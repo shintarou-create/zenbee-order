@@ -79,16 +79,14 @@ export async function POST(req: NextRequest) {
     // CSV生成
     const csvBuffer = generateB2CSV(rows)
 
-    // 注文ステータスを shipped に更新
+    // 伝票印刷済みフラグを更新（ステータスは変更しない）
     await supabase
       .from('orders')
       .update({
-        status: 'shipped',
-        shipping_date: shipDate,
+        shipping_label_printed: true,
         updated_at: new Date().toISOString(),
       })
       .in('id', orderIds)
-      .eq('status', 'pending')
 
     // CSVファイルとして返す
     const filename = `yamato_b2_${shipDate.replace(/-/g, '')}.csv`

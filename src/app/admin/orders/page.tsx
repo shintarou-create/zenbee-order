@@ -124,7 +124,7 @@ export default function AdminOrdersPage() {
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
 
-      setMessage({ type: 'success', text: `${selectedIds.length}件のヤマトCSVを出力し、発送済みに更新しました` })
+      setMessage({ type: 'success', text: `${selectedIds.length}件のヤマトCSVを出力しました（伝票印刷済みにマーク）` })
       setSelectedIds([])
       await fetchOrders()
     } catch (err) {
