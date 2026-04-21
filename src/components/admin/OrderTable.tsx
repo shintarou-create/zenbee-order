@@ -16,6 +16,8 @@ interface OrderTableProps {
   onSelectChange?: (ids: string[]) => void
   basePath?: string
   onUnmarkLabel?: (orderId: string) => void
+  onUndoDeliveryNotePrinted?: (orderId: string) => Promise<void>
+  onUndoShipped?: (orderId: string) => Promise<void>
 }
 
 function getDisplayStatusLabel(order: Order): string {
@@ -43,9 +45,12 @@ export default function OrderTable({
   onSelectChange,
   basePath = '/admin/orders',
   onUnmarkLabel,
+  onUndoDeliveryNotePrinted,
+  onUndoShipped,
 }: OrderTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('delivery_date')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -83,6 +88,34 @@ export default function OrderTable({
     onSelectChange(
       checked ? [...selectedIds, orderId] : selectedIds.filter((id) => id !== orderId)
     )
+  }
+
+  async function handleStatusBadgeClick(order: Order) {
+    if (updatingId) return
+
+    let confirmMsg: string
+    let updateFn: () => Promise<void>
+
+    if (order.status === 'pending' && order.delivery_note_printed && onUndoDeliveryNotePrinted) {
+      confirmMsg = '納品書印刷済みを取り消しますか？'
+      updateFn = () => onUndoDeliveryNotePrinted(order.id)
+    } else if (order.status === 'shipped' && onUndoShipped) {
+      confirmMsg = '出荷済みを取り消しますか？ステータスが戻ります'
+      updateFn = () => onUndoShipped(order.id)
+    } else {
+      return
+    }
+
+    if (!window.confirm(confirmMsg)) return
+
+    setUpdatingId(order.id)
+    try {
+      await updateFn()
+    } catch {
+      alert('更新に失敗しました')
+    } finally {
+      setUpdatingId(null)
+    }
   }
 
   if (orders.length === 0) {
@@ -132,6 +165,10 @@ export default function OrderTable({
             const company = order.company as { company_name?: string; representative_name?: string; has_separate_billing?: boolean } | undefined
             const itemSummary = buildItemSummary(order)
             const shippingTotal = (order.order_shipping ?? []).reduce((sum, s) => sum + s.cost, 0)
+            const isStatusClickable =
+              (order.status === 'pending' && order.delivery_note_printed && !!onUndoDeliveryNotePrinted) ||
+              (order.status === 'shipped' && !!onUndoShipped)
+            const isUpdatingThis = updatingId === order.id
 
             return (
               <tr key={order.id} className="hover:bg-gray-50 transition-colors">
@@ -210,8 +247,13 @@ export default function OrderTable({
 
                 {/* ステータス */}
                 <td className="px-4 py-3 text-center">
-                  <span className={`inline-flex text-xs font-bold px-2 py-1 rounded-full ${getDisplayStatusColor(order)}`}>
-                    {getDisplayStatusLabel(order)}
+                  <span
+                    className={`inline-flex text-xs font-bold px-2 py-1 rounded-full transition-opacity ${getDisplayStatusColor(order)} ${
+                      isStatusClickable && !isUpdatingThis ? 'cursor-pointer hover:opacity-75' : ''
+                    } ${isUpdatingThis ? 'opacity-50 cursor-wait' : ''}`}
+                    onClick={isStatusClickable && !isUpdatingThis ? () => handleStatusBadgeClick(order) : undefined}
+                  >
+                    {isUpdatingThis ? '更新中...' : getDisplayStatusLabel(order)}
                   </span>
                 </td>
 

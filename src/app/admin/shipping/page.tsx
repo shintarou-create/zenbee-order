@@ -50,6 +50,26 @@ export default function AdminShippingPage() {
     }
   }
 
+  async function handleUndoDeliveryNotePrinted(orderId: string) {
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('orders')
+      .update({ delivery_note_printed: false })
+      .eq('id', orderId)
+    if (error) throw error
+    await fetchOrders()
+  }
+
+  async function handleUndoShipped(orderId: string) {
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('orders')
+      .update({ status: 'pending' })
+      .eq('id', orderId)
+    if (error) throw error
+    await fetchOrders()
+  }
+
   async function handleYamatoCSV() {
     if (selectedIds.length === 0) return
     setCsvExporting(true)
@@ -184,6 +204,8 @@ export default function AdminShippingPage() {
             showCheckbox={true}
             selectedIds={selectedIds}
             onSelectChange={setSelectedIds}
+            onUndoDeliveryNotePrinted={handleUndoDeliveryNotePrinted}
+            onUndoShipped={handleUndoShipped}
           />
         )}
       </div>

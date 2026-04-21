@@ -97,6 +97,26 @@ export default function AdminOrdersPage() {
     }
   }
 
+  async function handleUndoDeliveryNotePrinted(orderId: string) {
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('orders')
+      .update({ delivery_note_printed: false })
+      .eq('id', orderId)
+    if (error) throw error
+    await fetchOrders()
+  }
+
+  async function handleUndoShipped(orderId: string) {
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('orders')
+      .update({ status: 'pending' })
+      .eq('id', orderId)
+    if (error) throw error
+    await fetchOrders()
+  }
+
   async function handleUnmarkLabel(orderId: string) {
     try {
       const supabase = createClient()
@@ -282,6 +302,8 @@ export default function AdminOrdersPage() {
             selectedIds={selectedIds}
             onSelectChange={setSelectedIds}
             onUnmarkLabel={handleUnmarkLabel}
+            onUndoDeliveryNotePrinted={handleUndoDeliveryNotePrinted}
+            onUndoShipped={handleUndoShipped}
           />
         )}
       </div>
