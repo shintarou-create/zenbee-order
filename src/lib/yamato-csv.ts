@@ -114,7 +114,7 @@ function formatShipmentRow(row: ShipmentRow): string[] {
     row.recipientName,             // 16: お届け先名
     '',                            // 17: お届け先名略称カナ
     '',                            // 18: 敬称
-    '',                            // 19: ご依頼主コード
+    '09069864632',                 // 19: ご依頼主コード
     sender.phone,                  // 20: ご依頼主電話番号
     '',                            // 21: ご依頼主電話番号枝
     sender.postalCode,             // 22: ご依頼主郵便番号
