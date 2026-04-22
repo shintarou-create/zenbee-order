@@ -34,6 +34,19 @@ export default function HomePage() {
       setCustomerLoading(true)
       try {
         const supabase = createClient()
+
+        // admin_usersテーブルをチェック → 管理者なら /admin へリダイレクト
+        const { data: adminUser } = await supabase
+          .from('admin_users')
+          .select('id')
+          .eq('line_user_id', userId)
+          .single()
+
+        if (adminUser) {
+          router.push('/admin')
+          return
+        }
+
         // line_users → companies で会社情報を取得
         const { data: lineUser, error } = await supabase
           .from('line_users')
