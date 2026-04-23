@@ -181,7 +181,10 @@ export default function AdminInvoicesPage() {
     try {
       const res = await fetch('/api/freee-csv', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': 'admin',
+        },
         body: JSON.stringify({ billingMonth: selectedMonth }),
       })
 
