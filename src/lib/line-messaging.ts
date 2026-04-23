@@ -41,22 +41,13 @@ export async function notifyOrderCreated(
   productSummary: string,
   adminLineId: string
 ): Promise<void> {
+  // 仕様書 v2 準拠: 顧客へのPushは通数消費を避けるため送信しない（注文確認は LIFF 画面完結）
+  // 引数 customerLineId は将来の応答メッセージ連携のため残存
   const formattedAmount = new Intl.NumberFormat('ja-JP', {
     style: 'currency',
     currency: 'JPY',
   }).format(totalAmount)
 
-  // お客様への通知
-  const customerMessage = `【善兵衛農園】ご発注を受け付けました。
-
-注文番号: ${orderNumber}
-${productSummary}
-合計金額: ${formattedAmount}
-
-ご注文内容を確認次第、改めてご連絡いたします。
-何かご不明な点がございましたら、お気軽にお申し付けください。`
-
-  // 管理者への通知
   const adminMessage = `【新規注文通知】
 お客様: ${customerName}
 注文番号: ${orderNumber}
@@ -65,10 +56,7 @@ ${productSummary}
 
 管理画面にてご確認ください。`
 
-  await Promise.allSettled([
-    sendPushMessage(customerLineId, customerMessage),
-    sendPushMessage(adminLineId, adminMessage),
-  ])
+  await sendPushMessage(adminLineId, adminMessage)
 }
 
 export async function notifyOrderShipped(
