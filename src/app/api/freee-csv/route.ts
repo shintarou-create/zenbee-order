@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
         invoice_items (
           order:orders (
             shipping_date,
-            order_items (quantity, unit_price, product:products (name, unit)),
+            order_items (quantity, unit_price, subtotal, product:products (name, unit, category)),
             order_shipping (label, cost)
           )
         )
@@ -66,7 +66,8 @@ export async function POST(req: NextRequest) {
           order_items?: Array<{
             quantity: number
             unit_price: number
-            product?: { name: string; unit: string } | null
+            subtotal: number
+            product?: { name: string; unit: string; category: string } | null
           }>
           order_shipping?: Array<{ label: string; cost: number }>
         } | null
@@ -87,10 +88,13 @@ export async function POST(req: NextRequest) {
 
         // 商品明細（8%軽減税率）
         for (const oi of order.order_items || []) {
+          // TODO: unit_priceが正しく入るようになったら unit_price × quantity に戻す
+          const unitPrice = oi.unit_price || oi.subtotal
+          const quantity = oi.unit_price ? oi.quantity : 1
           lineItems.push({
             description: `${md}納品 ${oi.product?.name || ''}`,
-            unitPrice: oi.unit_price,
-            quantity: oi.quantity,
+            unitPrice,
+            quantity,
             unit: oi.product?.unit || '',
             taxRate: '8',
           })
@@ -100,7 +104,7 @@ export async function POST(req: NextRequest) {
         for (const os of order.order_shipping || []) {
           if (!os.cost) continue
           lineItems.push({
-            description: `${md} 送料（${os.label}）`,
+            description: `${md}納品 送料（${os.label}）`,
             unitPrice: os.cost,
             quantity: 1,
             unit: '',
