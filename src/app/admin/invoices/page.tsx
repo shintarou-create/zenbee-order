@@ -200,7 +200,9 @@ export default function AdminInvoicesPage() {
       const a = document.createElement('a')
       a.href = url
       a.download = `freee_${selectedMonth.replace('-', '')}.csv`
+      document.body.appendChild(a)
       a.click()
+      document.body.removeChild(a)
       URL.revokeObjectURL(url)
     } catch (err) {
       console.error('freee CSV ダウンロードエラー:', err)
