@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { generateFreeeCSV } from '@/lib/freee-csv'
 import type { FreeeInvoiceData, FreeeLineItem } from '@/lib/freee-csv'
-import type { ShippingCsvRequest } from '@/types'
 
 export async function POST(req: NextRequest) {
   // 管理者認証チェック
