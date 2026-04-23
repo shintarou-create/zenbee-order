@@ -83,12 +83,18 @@ function getSenderInfo() {
   }
 }
 
+function getTodayJST(): string {
+  const now = new Date()
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000
+  const jst = new Date(utcMs + 9 * 60 * 60000)
+  const y = jst.getFullYear()
+  const m = String(jst.getMonth() + 1).padStart(2, '0')
+  const d = String(jst.getDate()).padStart(2, '0')
+  return `${y}/${m}/${d}`
+}
+
 function isAfterToday(dateStr: string): boolean {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const date = new Date(dateStr.replace(/\//g, '-'))
-  date.setHours(0, 0, 0, 0)
-  return date > today
+  return dateStr > getTodayJST()
 }
 
 function escapeCSVField(value: string | number | undefined | null): string {
