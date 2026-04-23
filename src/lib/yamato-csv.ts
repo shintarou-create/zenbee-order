@@ -83,6 +83,14 @@ function getSenderInfo() {
   }
 }
 
+function isAfterToday(dateStr: string): boolean {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const date = new Date(dateStr.replace(/\//g, '-'))
+  date.setHours(0, 0, 0, 0)
+  return date > today
+}
+
 function escapeCSVField(value: string | number | undefined | null): string {
   if (value === null || value === undefined) return ''
   const str = String(value)
@@ -101,7 +109,7 @@ function formatShipmentRow(row: ShipmentRow): string[] {
     String(row.coolType),          //  3: クール区分（0=通常, 2=冷蔵）
     '',                            //  4: 伝票番号（空=自動採番）
     row.shipDate,                  //  5: 出荷予定日
-    row.deliveryDate || '',        //  6: お届け予定日
+    row.deliveryDate && isAfterToday(row.deliveryDate) ? row.deliveryDate : '',  //  6: お届け予定日
     row.deliveryTimeSlot || '',    //  7: 配達時間帯
     '',                            //  8: お届け先コード
     row.recipientPhone,            //  9: お届け先電話番号
