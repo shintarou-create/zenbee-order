@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { generateFreeeCSV, billingMonthToDate } from '@/lib/freee-csv'
-import type { FreeeInvoiceRow } from '@/lib/freee-csv'
+import { generateFreeeCSV } from '@/lib/freee-csv'
+import type { FreeeInvoiceData, FreeeLineItem } from '@/lib/freee-csv'
+import type { ShippingCsvRequest } from '@/types'
 
 export async function POST(req: NextRequest) {
   // 管理者認証チェック
@@ -20,21 +21,17 @@ export async function POST(req: NextRequest) {
 
     const supabase = createServiceClient()
 
-    // 請求書 → 請求明細 → 注文 → 注文明細 + 送料明細 を一括取得
+    // 請求書 → 請求明細 → 注文 → 注文明細（商品ごと）＋送料明細 を取得
     const { data: invoices, error } = await supabase
       .from('invoices')
       .select(`
-        *,
+        invoice_number,
         company:companies (company_name),
         invoice_items (
-          id,
-          order_id,
-          amount,
           order:orders (
-            id,
-            order_number,
-            order_items (subtotal),
-            order_shipping (cost)
+            shipping_date,
+            order_items (product_name, quantity, unit, unit_price),
+            order_shipping (label, cost)
           )
         )
       `)
@@ -47,51 +44,77 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '対象月の請求書がありません' }, { status: 404 })
     }
 
-    // 発行日 = 請求月末日
-    const date = billingMonthToDate(billingMonth)
+    // 発行日 = 請求月末日（YYYY/MM/DD）
+    const [yearNum, monthNum] = billingMonth.split('-').map(Number)
+    const lastDay = new Date(yearNum, monthNum, 0)
+    const date = [
+      lastDay.getFullYear(),
+      String(lastDay.getMonth() + 1).padStart(2, '0'),
+      String(lastDay.getDate()).padStart(2, '0'),
+    ].join('/')
 
-    const rows: FreeeInvoiceRow[] = []
+    const csvInvoices: FreeeInvoiceData[] = []
 
     for (const invoice of invoices) {
       const company = invoice.company as { company_name?: string } | undefined
       const partnerName = company?.company_name || ''
+      const lineItems: FreeeLineItem[] = []
 
-      let foodTotal = 0
-      let shippingTotal = 0
-
-      const items = (invoice.invoice_items || []) as Array<{
+      type InvoiceItemRow = {
         order?: {
-          order_items?: Array<{ subtotal: number }>
-          order_shipping?: Array<{ cost: number }>
+          shipping_date?: string | null
+          order_items?: Array<{ product_name: string; quantity: number; unit: string; unit_price: number }>
+          order_shipping?: Array<{ label: string; cost: number }>
         } | null
-      }>
-
-      for (const item of items) {
-        const order = item.order
-        if (!order) continue
-
-        const orderFood = (order.order_items || []).reduce(
-          (sum: number, oi: { subtotal: number }) => sum + oi.subtotal, 0
-        )
-        const orderShipping = (order.order_shipping || []).reduce(
-          (sum: number, os: { cost: number }) => sum + os.cost, 0
-        )
-
-        foodTotal += orderFood
-        shippingTotal += orderShipping
       }
 
-      rows.push({
+      const invoiceItems = (invoice.invoice_items || []) as InvoiceItemRow[]
+
+      for (const invItem of invoiceItems) {
+        const order = invItem.order
+        if (!order) continue
+
+        // 出荷日を "M/D" 形式に変換
+        const sd = order.shipping_date || ''
+        const parts = sd.split('-')
+        const md = parts[1] && parts[2]
+          ? `${parseInt(parts[1])}/${parseInt(parts[2])}`
+          : ''
+
+        // 商品明細（8%軽減税率）
+        for (const oi of order.order_items || []) {
+          lineItems.push({
+            description: `${md}納品 ${oi.product_name}`,
+            unitPrice: oi.unit_price,
+            quantity: oi.quantity,
+            unit: oi.unit,
+            taxRate: '8',
+          })
+        }
+
+        // 送料明細（10%標準税率）
+        for (const os of order.order_shipping || []) {
+          if (!os.cost) continue
+          lineItems.push({
+            description: `${md} 送料（${os.label}）`,
+            unitPrice: os.cost,
+            quantity: 1,
+            unit: '',
+            taxRate: '10',
+          })
+        }
+      }
+
+      csvInvoices.push({
         invoiceNumber: invoice.invoice_number,
         date,
         billingMonth,
         partnerName,
-        foodTotal,
-        shippingTotal,
+        items: lineItems,
       })
     }
 
-    const csvBuffer = generateFreeeCSV(rows)
+    const csvBuffer = generateFreeeCSV(csvInvoices)
     const filename = `freee_${billingMonth.replace('-', '')}.csv`
 
     const stream = new ReadableStream({

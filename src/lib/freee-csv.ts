@@ -1,148 +1,93 @@
-export interface FreeeInvoiceRow {
-  invoiceNumber: string
-  date: string          // YYYY/MM/DD（請求月末日）
-  billingMonth: string  // YYYY-MM
-  partnerName: string
-  foodTotal: number
-  shippingTotal: number
+// freee 請求書インポート CSV 生成（36列）
+// 「本文」行 + 「明細」行の構造
+
+export interface FreeeLineItem {
+  description: string   // 摘要: "M/D納品 商品名" or "M/D 送料（ラベル名）"
+  unitPrice: number     // 単価（税込）
+  quantity: number      // 数量
+  unit: string          // 単位（kg, 本, ケース 等。送料は空文字）
+  taxRate: '8' | '10'   // 8%=食品（軽減税率）, 10%=送料（標準税率）
 }
 
-// freee 請求書インポートCSV ヘッダー（36列）
+export interface FreeeInvoiceData {
+  invoiceNumber: string   // 請求書番号
+  date: string            // 発行日 YYYY/MM/DD（月末日）
+  billingMonth: string    // YYYY-MM（件名に使用）
+  partnerName: string     // 取引先名称
+  items: FreeeLineItem[]  // 明細行（商品＋送料）
+}
+
 const CSV_HEADERS = [
-  '行形式',
-  '発行日',
-  '番号',
-  '枝番',
-  '件名',
-  '発行元担当者氏名',
-  '社内メモ',
-  '備考',
-  '消費税の表示方法',
-  '消費税端数の計算方法',
-  '金額端数の計算方法',
-  '取引先名称',
-  '取引先宛名',
-  '取引先敬称',
-  '取引先郵便番号',
-  '取引先都道府県',
-  '取引先市区町村・番地',
-  '取引先建物名・部屋番号',
-  '取引先部署',
-  '取引先担当者氏名',
-  '行の種類',
-  '摘要',
-  '単価',
-  '数量',
-  '単位',
-  '税率',
-  '源泉徴収',
-  '発生日',
-  '勘定科目',
-  '税区分',
-  '部門',
-  '品目',
-  'メモ',
-  'セグメント1',
-  'セグメント2',
-  'セグメント3',
+  '行形式', '発行日', '番号', '枝番', '件名',
+  '発行元担当者氏名', '社内メモ', '備考',
+  '消費税の表示方法', '消費税端数の計算方法', '金額端数の計算方法',
+  '取引先名称', '取引先宛名', '取引先敬称',
+  '取引先郵便番号', '取引先都道府県', '取引先市区町村・番地', '取引先建物名・部屋番号',
+  '取引先部署', '取引先担当者氏名',
+  '行の種類', '摘要', '単価', '数量', '単位', '税率', '源泉徴収',
+  '発生日', '勘定科目', '税区分', '部門', '品目', 'メモ',
+  'セグメント1', 'セグメント2', 'セグメント3',
 ]
 
-function escapeCSVField(value: string | number | undefined | null): string {
-  if (value === null || value === undefined) return ''
-  const str = String(value)
-  if (str.includes(',') || str.includes('\n') || str.includes('"')) {
-    return `"${str.replace(/"/g, '""')}"`
+function escapeCSV(value: string): string {
+  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+    return `"${value.replace(/"/g, '""')}"`
   }
-  return str
+  return value
 }
 
-function makeRow(fields: (string | number | undefined | null)[]): string {
-  return fields.map(escapeCSVField).join(',')
+function makeHeaderRow(invoice: FreeeInvoiceData): string[] {
+  const [y, m] = invoice.billingMonth.split('-')
+  const subject = `${y}年${parseInt(m)}月分 ご請求書`
+
+  const row = new Array(36).fill('')
+  row[0] = '本文'                 // 行形式
+  row[1] = invoice.date           // 発行日
+  row[2] = invoice.invoiceNumber  // 番号
+  // row[3] 枝番: 空
+  row[4] = subject                // 件名
+  // row[5] 発行元担当者氏名: 空
+  // row[6] 社内メモ: 空
+  // row[7] 備考: 空
+  row[8] = '内税'                 // 消費税の表示方法
+  row[9] = '切り捨て'             // 消費税端数の計算方法
+  row[10] = '切り捨て'            // 金額端数の計算方法
+  row[11] = invoice.partnerName   // 取引先名称
+  row[12] = invoice.partnerName   // 取引先宛名
+  row[13] = '様'                  // 取引先敬称
+  // row[14]〜row[19] 住所・部署・担当者: 空（freee側の取引先マスタに任せる）
+  return row
 }
 
-function emptyRow(): (string | number)[] {
-  return Array(36).fill('')
+function makeDetailRow(item: FreeeLineItem): string[] {
+  const row = new Array(36).fill('')
+  row[0] = '明細'                 // 行形式
+  row[20] = '通常'                // 行の種類
+  row[21] = item.description      // 摘要
+  row[22] = String(item.unitPrice) // 単価
+  row[23] = String(item.quantity)  // 数量
+  row[24] = item.unit             // 単位
+  row[25] = item.taxRate === '8' ? '8%（税込）' : '10%（税込）'  // 税率
+  // row[26] 源泉徴収: 空
+  // row[27] 発生日: 空
+  row[28] = '売上高'              // 勘定科目
+  row[29] = item.taxRate === '8' ? '課税売上8%（軽）' : '課税売上10%'  // 税区分
+  return row
 }
 
-export function generateFreeeCSV(rows: FreeeInvoiceRow[]): Uint8Array {
+export function generateFreeeCSV(invoices: FreeeInvoiceData[]): Uint8Array {
   const lines: string[] = []
 
-  lines.push(makeRow(CSV_HEADERS))
+  lines.push(CSV_HEADERS.map(escapeCSV).join(','))
 
-  for (const row of rows) {
-    const [year, month] = row.billingMonth.split('-')
-    const subject = `${year}年${parseInt(month)}月分`
+  for (const invoice of invoices) {
+    lines.push(makeHeaderRow(invoice).map(escapeCSV).join(','))
 
-    // ヘッダー行（請求書1件につき1行）
-    const header = emptyRow()
-    header[0] = 'ヘッダー'
-    header[1] = row.date
-    header[2] = row.invoiceNumber
-    // [3] 枝番: 空
-    header[4] = subject
-    // [5] 発行元担当者氏名: 空
-    // [6] 社内メモ: 空
-    // [7] 備考: 空
-    header[8] = '内税'
-    // [9] 消費税端数の計算方法: 空
-    // [10] 金額端数の計算方法: 空
-    header[11] = row.partnerName
-    header[12] = row.partnerName
-    header[13] = '御中'
-    // [14-19] 取引先住所系: 空
-    // [20-35] 明細列: 空（ヘッダー行には不要）
-    lines.push(makeRow(header))
-
-    // 食品明細行（8%軽減税率）
-    if (row.foodTotal > 0) {
-      const food = emptyRow()
-      food[0] = '明細'
-      // [1-13] 請求書ヘッダー情報: 空（ヘッダー行から引き継ぎ）
-      food[20] = '品目'
-      food[21] = '農産物'
-      food[22] = row.foodTotal
-      food[23] = 1
-      food[24] = '式'
-      food[25] = 0.08
-      // [26] 源泉徴収: 空
-      food[27] = row.date
-      food[28] = '売上高'
-      food[29] = '課税売上8%（軽）'
-      // [30-35] 部門・品目・メモ・セグメント: 空
-      lines.push(makeRow(food))
-    }
-
-    // 送料明細行（10%標準税率）
-    if (row.shippingTotal > 0) {
-      const shipping = emptyRow()
-      shipping[0] = '明細'
-      shipping[20] = '品目'
-      shipping[21] = '送料'
-      shipping[22] = row.shippingTotal
-      shipping[23] = 1
-      shipping[24] = '式'
-      shipping[25] = 0.1
-      shipping[27] = row.date
-      shipping[28] = '売上高'
-      shipping[29] = '課税売上10%'
-      lines.push(makeRow(shipping))
+    for (const item of invoice.items) {
+      lines.push(makeDetailRow(item).map(escapeCSV).join(','))
     }
   }
 
-  const csvText = lines.join('\r\n')
-
-  // BOM付きUTF-8（freee推奨）
-  const bom = '﻿'
-  const buf = Buffer.from(bom + csvText, 'utf-8')
-  return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength)
-}
-
-export function billingMonthToDate(billingMonth: string): string {
-  const [year, month] = billingMonth.split('-').map(Number)
-  const lastDay = new Date(year, month, 0)
-  return [
-    lastDay.getFullYear(),
-    String(lastDay.getMonth() + 1).padStart(2, '0'),
-    String(lastDay.getDate()).padStart(2, '0'),
-  ].join('/')
+  const csvString = '﻿' + lines.join('\n')
+  return new TextEncoder().encode(csvString)
 }
