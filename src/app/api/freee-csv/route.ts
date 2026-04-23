@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
         invoice_items (
           order:orders (
             shipping_date,
-            order_items (product_name, quantity, unit, unit_price),
+            order_items (quantity, unit_price, product:products (name, unit)),
             order_shipping (label, cost)
           )
         )
@@ -63,7 +63,11 @@ export async function POST(req: NextRequest) {
       type InvoiceItemRow = {
         order?: {
           shipping_date?: string | null
-          order_items?: Array<{ product_name: string; quantity: number; unit: string; unit_price: number }>
+          order_items?: Array<{
+            quantity: number
+            unit_price: number
+            product?: { name: string; unit: string } | null
+          }>
           order_shipping?: Array<{ label: string; cost: number }>
         } | null
       }
@@ -84,10 +88,10 @@ export async function POST(req: NextRequest) {
         // 商品明細（8%軽減税率）
         for (const oi of order.order_items || []) {
           lineItems.push({
-            description: `${md}納品 ${oi.product_name}`,
+            description: `${md}納品 ${oi.product?.name || ''}`,
             unitPrice: oi.unit_price,
             quantity: oi.quantity,
-            unit: oi.unit,
+            unit: oi.product?.unit || '',
             taxRate: '8',
           })
         }
