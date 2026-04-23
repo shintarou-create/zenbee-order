@@ -43,14 +43,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '対象月の請求書がありません' }, { status: 404 })
     }
 
-    // 発行日 = 請求月末日（YYYY/MM/DD）
-    const [yearNum, monthNum] = billingMonth.split('-').map(Number)
-    const lastDay = new Date(yearNum, monthNum, 0)
-    const date = [
-      lastDay.getFullYear(),
-      String(lastDay.getMonth() + 1).padStart(2, '0'),
-      String(lastDay.getDate()).padStart(2, '0'),
-    ].join('/')
+    // 発行日 = 本日（JST）
+    const now = new Date()
+    const jstNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }))
+    const date = `${jstNow.getFullYear()}/${String(jstNow.getMonth() + 1).padStart(2, '0')}/${String(jstNow.getDate()).padStart(2, '0')}`
 
     const csvInvoices: FreeeInvoiceData[] = []
 
