@@ -67,7 +67,7 @@ function makeDetailRow(item: FreeeLineItem): string[] {
   row[22] = String(item.unitPrice) // 単価
   row[23] = String(item.quantity)  // 数量
   row[24] = item.unit             // 単位
-  row[25] = item.taxRate === '8' ? '8%（税込）' : '10%（税込）'  // 税率
+  row[25] = item.taxRate === '8' ? '8%' : '10%'  // 税率
   // row[26] 源泉徴収: 空
   // row[27] 発生日: 空
   row[28] = '売上高'              // 勘定科目
