@@ -248,14 +248,19 @@ export async function POST(req: NextRequest) {
         .map((item) => `・${item.product_name} ${item.quantity}${item.unit}`)
         .join('\n')
 
-      notifyOrderCreated(
-        lineUser.line_user_id,
-        orderNumber,
-        totalAmount,
-        company.company_name,
-        productSummary,
-        adminLineId
-      ).catch((err) => console.error('LINE通知エラー:', err))
+      try {
+        await notifyOrderCreated(
+          lineUser.line_user_id,
+          orderNumber,
+          totalAmount,
+          company.company_name,
+          productSummary,
+          adminLineId
+        )
+      } catch (err) {
+        console.error('LINE通知エラー:', err)
+        // 通知失敗しても注文は完了扱いのまま
+      }
     }
 
     return NextResponse.json({
