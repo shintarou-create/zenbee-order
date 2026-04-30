@@ -1,6 +1,23 @@
 'use client'
 
+import { useState } from 'react'
+import { useLiff } from '@/hooks/useLiff'
+
 export default function NotRegisteredPage() {
+  const { userId, isLoading } = useLiff()
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    if (!userId) return
+    try {
+      await navigator.clipboard.writeText(userId)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error('コピー失敗:', err)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-green-50 flex items-center justify-center p-4">
       <div className="max-w-sm w-full text-center">
@@ -37,6 +54,37 @@ export default function NotRegisteredPage() {
           <p className="text-sm text-gray-600 mt-1">
             TEL: 0737-62-xxxx
           </p>
+        </div>
+
+        {/* LINE User ID */}
+        <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-4 text-left">
+          <p className="text-sm font-medium text-gray-700 mb-2">
+            あなたの LINE User ID
+          </p>
+          {isLoading ? (
+            <p className="text-sm text-gray-500">ID を取得中…</p>
+          ) : userId ? (
+            <>
+              <p className="font-mono text-xs text-gray-800 break-all select-all bg-white border border-gray-200 rounded p-2 mb-2">
+                {userId}
+              </p>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition"
+              >
+                {copied ? 'コピーしました ✓' : 'コピーする'}
+              </button>
+              <p className="text-xs text-gray-500 mt-3 leading-relaxed">
+                このIDは、取引先登録時の本人確認に使います。<br />
+                善兵衛農園からお問い合わせがあった際は、このIDをお伝えください。
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-red-500">
+              IDが取得できませんでした。LINEアプリから再度アクセスしてください。
+            </p>
+          )}
         </div>
 
         {/* 注意書き */}
