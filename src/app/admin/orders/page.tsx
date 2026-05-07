@@ -169,6 +169,7 @@ export default function AdminOrdersPage() {
         ) : (
           <OrderTable
             orders={orders}
+            showCheckbox={false}
             onUnmarkLabel={handleUnmarkLabel}
             onUndoDeliveryNotePrinted={handleUndoDeliveryNotePrinted}
             onUndoShipped={handleUndoShipped}
