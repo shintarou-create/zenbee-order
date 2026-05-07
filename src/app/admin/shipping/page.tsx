@@ -70,6 +70,28 @@ export default function AdminShippingPage() {
     await fetchOrders()
   }
 
+  async function handleUndoShippingLabelPrinted(orderId: string) {
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('orders')
+      .update({ shipping_label_printed: false })
+      .eq('id', orderId)
+    if (error) throw error
+    await fetchOrders()
+  }
+
+  useEffect(() => {
+    if (selectedIds.length === 0) return
+    const selectedOrders = orders.filter((o) => selectedIds.includes(o.id))
+    const dates = selectedOrders
+      .map((o) => o.delivery_date)
+      .filter(Boolean)
+      .sort() as string[]
+    if (dates.length > 0) {
+      setShipDate(dates[0])
+    }
+  }, [selectedIds, orders]) // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleYamatoCSV() {
     if (selectedIds.length === 0) return
     setCsvExporting(true)
@@ -158,12 +180,6 @@ export default function AdminShippingPage() {
         <div className="bg-green-50 rounded-xl border border-green-200 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
           <span className="text-green-800 font-medium text-sm">{selectedIds.length}件選択中</span>
           <div className="flex items-center gap-2 flex-wrap">
-            <input
-              type="date"
-              value={shipDate}
-              onChange={(e) => setShipDate(e.target.value)}
-              className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white"
-            />
             <button
               onClick={() => window.open(`/admin/orders/bulk-print?ids=${selectedIds.join(',')}`, '_blank')}
               disabled={csvExporting}
@@ -174,6 +190,13 @@ export default function AdminShippingPage() {
               </svg>
               納品書印刷
             </button>
+            <span className="text-sm text-gray-700 whitespace-nowrap">お届け予定日:</span>
+            <input
+              type="date"
+              value={shipDate}
+              onChange={(e) => setShipDate(e.target.value)}
+              className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white"
+            />
             <button
               onClick={handleYamatoCSV}
               disabled={csvExporting}
@@ -204,8 +227,10 @@ export default function AdminShippingPage() {
             showCheckbox={true}
             selectedIds={selectedIds}
             onSelectChange={setSelectedIds}
+            onUnmarkLabel={handleUndoShippingLabelPrinted}
             onUndoDeliveryNotePrinted={handleUndoDeliveryNotePrinted}
             onUndoShipped={handleUndoShipped}
+            detailLinkSuffix="?from=shipping"
           />
         )}
       </div>

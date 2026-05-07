@@ -18,6 +18,7 @@ interface OrderTableProps {
   onUnmarkLabel?: (orderId: string) => void
   onUndoDeliveryNotePrinted?: (orderId: string) => Promise<void>
   onUndoShipped?: (orderId: string) => Promise<void>
+  detailLinkSuffix?: string
 }
 
 function getDisplayStatusLabel(order: Order): string {
@@ -47,6 +48,7 @@ export default function OrderTable({
   onUnmarkLabel,
   onUndoDeliveryNotePrinted,
   onUndoShipped,
+  detailLinkSuffix = '',
 }: OrderTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('delivery_date')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -260,7 +262,7 @@ export default function OrderTable({
                 {/* 詳細リンク */}
                 <td className="px-4 py-3 text-center">
                   <Link
-                    href={`${basePath}/${order.id}`}
+                    href={`${basePath}/${order.id}${detailLinkSuffix}`}
                     className="text-green-600 hover:text-green-800 font-medium text-xs"
                   >
                     詳細

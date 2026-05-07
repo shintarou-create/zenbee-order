@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import type { Order, OrderStatus } from '@/types'
@@ -16,6 +16,8 @@ const STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
 
 export default function AdminOrderDetailPage() {
   const params = useParams()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const orderId = params.id as string
 
   const [order, setOrder] = useState<Order | null>(null)
@@ -104,6 +106,10 @@ export default function AdminOrderDetailPage() {
 
       setOrder((prev) => prev ? { ...prev, status, admin_notes: adminNotes } : null)
       setMessage({ type: 'success', text: '注文を更新しました' })
+      const from = searchParams.get('from')
+      if (from === 'shipping') {
+        router.push('/admin/shipping')
+      }
     } catch (err) {
       console.error('注文更新エラー:', err)
       setMessage({ type: 'error', text: '更新に失敗しました' })
