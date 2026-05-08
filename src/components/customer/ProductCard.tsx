@@ -24,7 +24,6 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
       product.min_order_qty,
       Math.min(product.max_order_qty, value)
     )
-    // step に合わせて丸める
     const stepped = Math.round(clamped / product.step_qty) * product.step_qty
     setQuantity(parseFloat(stepped.toFixed(2)))
   }
@@ -57,8 +56,8 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
         coolType: product.cool_type as CoolType,
         stepQty: product.step_qty,
         minOrderQty: product.min_order_qty,
+        imageUrl: product.image_url,
       })
-      // カート追加後に数量をリセット
       setQuantity(product.min_order_qty)
     } finally {
       setTimeout(() => setAdding(false), 500)
@@ -67,6 +66,18 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      {/* 商品画像 */}
+      {product.image_url && (
+        <div className="w-full h-32 overflow-hidden bg-gray-50">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={product.image_url}
+            alt={product.name}
+            className="w-full h-full object-cover"
+          />
+        </div>
+      )}
+
       {/* 商品ヘッダー */}
       <div className="bg-green-50 px-4 py-3 flex items-start justify-between gap-2">
         <div>

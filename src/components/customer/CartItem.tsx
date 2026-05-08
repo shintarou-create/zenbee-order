@@ -33,6 +33,12 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
       <div className="flex items-start justify-between gap-3">
+        {item.imageUrl && (
+          <div className="w-12 h-12 flex-shrink-0 rounded-lg overflow-hidden border border-gray-100">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={item.imageUrl} alt={item.productName} className="w-full h-full object-cover" />
+          </div>
+        )}
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <h3 className="font-bold text-gray-900 text-base">{item.productName}</h3>

@@ -6,6 +6,14 @@ import ProductForm from '@/components/admin/ProductForm'
 import type { Product, PriceRank } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 
+const CATEGORY_EMOJI: Record<string, string> = {
+  みかん: '🍊',
+  びわ: '🍑',
+  レモン: '🍋',
+  ジュース: '🧃',
+  その他: '📦',
+}
+
 export default function AdminProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -235,6 +243,15 @@ export default function AdminProductsPage() {
             return (
               <div key={product.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                 <div className="flex items-start justify-between gap-3">
+                  {/* サムネ */}
+                  <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border border-gray-100 bg-gray-50 flex items-center justify-center text-2xl">
+                    {product.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                    ) : (
+                      CATEGORY_EMOJI[product.category] || '📦'
+                    )}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`text-xs px-2 py-0.5 rounded-full ${

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { Product, PriceRank } from '@/types'
 
 interface ProductFormProps {
@@ -33,14 +33,18 @@ export default function ProductForm({ product, onSubmit, onCancel }: ProductForm
   const [seasonEnd, setSeasonEnd] = useState(product?.season_end || '')
   const [sortOrder, setSortOrder] = useState(product?.sort_order || 0)
   const [description, setDescription] = useState(product?.description || '')
+  const [imageUrl, setImageUrl] = useState<string | null>(product?.image_url || null)
   const [prices, setPrices] = useState<Record<PriceRank, number>>({
     standard: 0,
     premium: 0,
     vip: 0,
   })
   const [submitting, setSubmitting] = useState(false)
+  const [imageUploading, setImageUploading] = useState(false)
+  const [imageError, setImageError] = useState<string | null>(null)
+  const [hasFile, setHasFile] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 既存の価格を設定
   useEffect(() => {
     if (product?.product_prices) {
       const priceMap: Record<PriceRank, number> = { standard: 0, premium: 0, vip: 0 }
@@ -50,6 +54,62 @@ export default function ProductForm({ product, onSubmit, onCancel }: ProductForm
       setPrices(priceMap)
     }
   }, [product])
+
+  async function handleImageUpload() {
+    const file = fileInputRef.current?.files?.[0]
+    if (!file || !product?.id) return
+
+    setImageUploading(true)
+    setImageError(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch(`/api/admin/products/${product.id}/image`, {
+        method: 'POST',
+        body: formData,
+      })
+      const json = await res.json()
+
+      if (!res.ok) {
+        setImageError(json.error || 'アップロードに失敗しました')
+        return
+      }
+
+      setImageUrl(json.image_url)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+        setHasFile(false)
+      }
+    } catch {
+      setImageError('アップロードに失敗しました')
+    } finally {
+      setImageUploading(false)
+    }
+  }
+
+  async function handleImageDelete() {
+    if (!product?.id) return
+    if (!window.confirm('画像を削除しますか？')) return
+
+    setImageUploading(true)
+    setImageError(null)
+    try {
+      const res = await fetch(`/api/admin/products/${product.id}/image`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const json = await res.json()
+        setImageError(json.error || '削除に失敗しました')
+        return
+      }
+      setImageUrl(null)
+    } catch {
+      setImageError('削除に失敗しました')
+    } finally {
+      setImageUploading(false)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -72,7 +132,7 @@ export default function ProductForm({ product, onSubmit, onCancel }: ProductForm
           sort_order: sortOrder,
           description: description.trim() || null,
           is_active: product?.is_active ?? true,
-          image_url: product?.image_url || null,
+          image_url: imageUrl,
         },
         prices
       )
@@ -83,6 +143,58 @@ export default function ProductForm({ product, onSubmit, onCancel }: ProductForm
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* 商品画像 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">商品画像</label>
+        {!product?.id ? (
+          <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+            商品を保存してから画像をアップロードできます
+          </p>
+        ) : (
+          <div className="flex items-start gap-4">
+            <div className="w-40 h-40 flex-shrink-0 border border-gray-200 rounded-lg overflow-hidden bg-gray-50 flex items-center justify-center">
+              {imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={imageUrl} alt="商品画像" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-gray-400 text-xs">画像未設定</span>
+              )}
+            </div>
+            <div className="flex-1 space-y-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg"
+                onChange={(e) => setHasFile(!!e.target.files?.length)}
+                className="w-full text-xs text-gray-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-gray-200 file:text-xs file:font-medium file:text-gray-600 file:bg-white hover:file:bg-gray-50"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleImageUpload}
+                  disabled={imageUploading || !hasFile}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+                >
+                  {imageUploading ? 'アップロード中...' : 'アップロード'}
+                </button>
+                {imageUrl && (
+                  <button
+                    type="button"
+                    onClick={handleImageDelete}
+                    disabled={imageUploading}
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                  >
+                    削除
+                  </button>
+                )}
+              </div>
+              {imageError && <p className="text-xs text-red-600">{imageError}</p>}
+              <p className="text-xs text-gray-400">JPEG のみ・最大 5MB</p>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* 商品名 */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">

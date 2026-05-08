@@ -10,6 +10,11 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'profile.line-scdn.net',
       },
+      {
+        protocol: 'https',
+        hostname: 'cczywqsmxnzziulanwqy.supabase.co',
+        pathname: '/storage/v1/object/public/**',
+      },
     ],
   },
   // LIFF の外部スクリプト許可

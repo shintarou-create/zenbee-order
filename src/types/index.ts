@@ -245,6 +245,7 @@ export interface CartItem {
   coolType: CoolType
   stepQty: number
   minOrderQty: number
+  imageUrl?: string | null
 }
 
 export interface CartState {
