@@ -146,11 +146,11 @@ export default function AdminProductsPage() {
       if (editingProduct) {
         await supabase.from('products').update(productData).eq('id', editingProduct.id)
         for (const [rank, price] of Object.entries(prices)) {
-          await supabase.from('product_prices').upsert({
-            product_id: editingProduct.id,
-            price_rank: rank,
-            price_per_unit: price,
-          })
+          const { error: priceError } = await supabase.from('product_prices').upsert(
+            { product_id: editingProduct.id, price_rank: rank, price_per_unit: price },
+            { onConflict: 'product_id,price_rank' }
+          )
+          if (priceError) throw priceError
         }
         showMsg('success', '商品を更新しました')
       } else {
