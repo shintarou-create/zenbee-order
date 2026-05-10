@@ -102,15 +102,31 @@ export default function DeliveryNoteLayout({ order }: Props) {
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => (
-            <tr key={item.id} style={{ borderBottom: '0.5px solid #e5e5e5' }}>
-              <td style={{ padding: '6px 8px' }}>{item.product_name}</td>
-              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{item.quantity}{item.unit}</td>
-              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatCurrency(item.unit_price)}</td>
-              <td style={{ padding: '6px 8px', textAlign: 'center', fontSize: '11px' }}>8%※</td>
-              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatCurrency(item.subtotal)}</td>
-            </tr>
-          ))}
+          {items.map((item) => {
+            const hasTier = !!item.tier_quantity
+            const realBottles = hasTier ? item.quantity * item.tier_quantity! : null
+            return (
+              <tr key={item.id} style={{ borderBottom: '0.5px solid #e5e5e5' }}>
+                <td style={{ padding: '6px 8px' }}>
+                  {item.product_name}
+                  {item.tier_label && (
+                    <span style={{ marginLeft: '6px', fontSize: '10px', color: '#888', background: '#f3f4f6', borderRadius: '3px', padding: '1px 4px' }}>
+                      {item.tier_label}
+                    </span>
+                  )}
+                </td>
+                <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                  {hasTier
+                    ? `${item.quantity}ケース（${realBottles}本）`
+                    : `${item.quantity}${item.unit}`
+                  }
+                </td>
+                <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatCurrency(item.unit_price)}</td>
+                <td style={{ padding: '6px 8px', textAlign: 'center', fontSize: '11px' }}>8%※</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatCurrency(item.subtotal)}</td>
+              </tr>
+            )
+          })}
           {shipping.map((line) => (
             <tr key={line.id} style={{ borderBottom: '0.5px solid #e5e5e5' }}>
               <td style={{ padding: '6px 8px', color: '#777' }}>（送料）{line.label}</td>

@@ -29,6 +29,7 @@ export interface ProductForCsv {
 
 export interface OrderItemForCsv {
   quantity: number
+  tier_quantity?: number | null
   product: ProductForCsv
 }
 
@@ -188,8 +189,14 @@ function calcAmbientBoxes(items: OrderItemForCsv[]): number {
     if ((cat === '柑橘' || cat === 'その他') && item.product.unit === 'kg') {
       kgTotal += item.quantity
     } else if (cat === 'ジュース') {
-      const stepQty = item.product.step_qty || 1
-      juiceCases += Math.ceil(item.quantity / stepQty)
+      if (item.tier_quantity != null) {
+        // 新仕様: quantity = ケース数（tier_quantityは箱数計算不要、ケース単位で既にカウント済み）
+        juiceCases += item.quantity
+      } else {
+        // 旧仕様: quantity = 実本数、step_qty = ケースあたり本数
+        const stepQty = item.product.step_qty || 1
+        juiceCases += Math.ceil(item.quantity / stepQty)
+      }
     }
   }
   const kgBoxes = kgTotal > 0 ? (kgTotal <= 10 ? 1 : Math.ceil(kgTotal / 10)) : 0

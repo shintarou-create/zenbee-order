@@ -54,10 +54,10 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
         setOrderCount(orderRows.length)
         const orderIds = orderRows.map((o) => o.id)
 
-        // Step2: order_items を取得（product_id, quantity のみ）
+        // Step2: order_items を取得
         const { data: items, error: itemsError } = await supabase
           .from('order_items')
-          .select('product_id, quantity')
+          .select('product_id, quantity, tier_quantity')
           .in('order_id', orderIds)
         if (itemsError) throw itemsError
 
@@ -74,21 +74,22 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
 
         const productMap = new Map((products ?? []).map((p) => [p.id, p]))
 
-        // Step4: JS側で product_id ごとに数量を集計
+        // Step4: JS側で product_id ごとに数量を集計（tiered商品は実本数で集計）
         const summaryMap = new Map<string, ProductSummary>()
         for (const item of items) {
           const product = productMap.get(item.product_id)
           if (!product) continue
+          const realQty = item.tier_quantity ? item.quantity * item.tier_quantity : item.quantity
           const existing = summaryMap.get(item.product_id)
           if (existing) {
-            existing.totalQty += item.quantity
+            existing.totalQty += realQty
           } else {
             summaryMap.set(item.product_id, {
               productId: item.product_id,
               name: product.name,
-              unit: product.unit,
+              unit: item.tier_quantity ? '本' : product.unit,
               category: product.category || 'その他',
-              totalQty: item.quantity,
+              totalQty: realQty,
             })
           }
         }

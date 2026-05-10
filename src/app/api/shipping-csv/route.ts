@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
         company:companies (*),
         order_items (
           quantity,
+          tier_quantity,
           product:products (category, unit, step_qty)
         )
       `)
@@ -68,6 +69,7 @@ export async function POST(req: NextRequest) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         items: (order.order_items || []).map((item: any) => ({
           quantity: item.quantity,
+          tier_quantity: item.tier_quantity ?? null,
           product: {
             category: item.product?.category || 'その他',
             unit: item.product?.unit || 'kg',

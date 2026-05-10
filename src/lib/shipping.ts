@@ -67,7 +67,7 @@ export function calculateShipping(items: CartItem[]): ShippingBreakdown {
   // ジュース720ml: 24本=1ケース¥3,700
   const total720ml = items
     .filter((i) => i.unit === '本' && i.productName.includes('720ml'))
-    .reduce((sum, i) => sum + i.quantity, 0)
+    .reduce((sum, i) => sum + i.quantity * (i.tierQuantity ?? 1), 0)
 
   if (total720ml > 0) {
     const cases = Math.ceil(total720ml / 24)
@@ -82,7 +82,7 @@ export function calculateShipping(items: CartItem[]): ShippingBreakdown {
   // ジュース180ml: 30本=1ケース¥1,300
   const total180ml = items
     .filter((i) => i.unit === '本' && i.productName.includes('180ml'))
-    .reduce((sum, i) => sum + i.quantity, 0)
+    .reduce((sum, i) => sum + i.quantity * (i.tierQuantity ?? 1), 0)
 
   if (total180ml > 0) {
     const cases = Math.ceil(total180ml / 30)

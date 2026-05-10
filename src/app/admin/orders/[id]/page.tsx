@@ -233,14 +233,30 @@ export default function AdminOrderDetailPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {(order.order_items || []).map((item) => (
-              <tr key={item.id}>
-                <td className="px-4 py-3 text-gray-900">{item.product_name}</td>
-                <td className="px-4 py-3 text-right">{item.quantity}{item.unit}</td>
-                <td className="px-4 py-3 text-right">{formatCurrency(item.unit_price)}</td>
-                <td className="px-4 py-3 text-right font-medium">{formatCurrency(item.subtotal)}</td>
-              </tr>
-            ))}
+            {(order.order_items || []).map((item) => {
+              const hasTier = !!item.tier_quantity
+              const realBottles = hasTier ? item.quantity * item.tier_quantity! : null
+              return (
+                <tr key={item.id}>
+                  <td className="px-4 py-3 text-gray-900">
+                    {item.product_name}
+                    {item.tier_label && (
+                      <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
+                        {item.tier_label}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {hasTier
+                      ? `${item.quantity}ケース（${realBottles}本）`
+                      : `${item.quantity}${item.unit}`
+                    }
+                  </td>
+                  <td className="px-4 py-3 text-right">{formatCurrency(item.unit_price)}</td>
+                  <td className="px-4 py-3 text-right font-medium">{formatCurrency(item.subtotal)}</td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
         {/* 送料明細 */}
