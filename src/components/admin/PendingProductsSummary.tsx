@@ -12,7 +12,6 @@ interface ProductSummary {
 }
 
 interface CategoryMeta {
-  emoji: string
   display_order: number
 }
 
@@ -36,11 +35,11 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
         // カテゴリマスタを取得（絵文字・順序のため）
         const { data: cats } = await supabase
           .from('categories')
-          .select('name, emoji, display_order')
+          .select('name, display_order')
           .order('display_order', { ascending: true })
         const metaMap: Record<string, CategoryMeta> = {}
         for (const c of cats ?? []) {
-          metaMap[c.name] = { emoji: c.emoji || '📦', display_order: c.display_order }
+          metaMap[c.name] = { display_order: c.display_order }
         }
         setCategoryMeta(metaMap)
 
@@ -125,7 +124,6 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
     })
     .map((cat) => ({
       cat,
-      emoji: categoryMeta[cat]?.emoji || '📦',
       items: summaries
         .filter((s) => s.category === cat && s.totalQty > 0)
         .sort((a, b) => b.totalQty - a.totalQty),
@@ -135,7 +133,7 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-        <h2 className="font-bold text-gray-900">📦 未発送の商品合計</h2>
+        <h2 className="font-bold text-gray-900">未発送の商品合計</h2>
         {!isLoading && (
           <span className="text-sm text-gray-500">{orderCount}件の注文</span>
         )}
@@ -151,11 +149,11 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
         </div>
       ) : (
         <div>
-          {grouped.map(({ cat, emoji, items }) => (
+          {grouped.map(({ cat, items }) => (
             <div key={cat}>
               <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 first:border-t-0">
                 <span className="text-sm font-semibold text-gray-600">
-                  {emoji} {cat}
+                  {cat}
                 </span>
               </div>
               <table className="w-full text-sm">

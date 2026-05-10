@@ -29,7 +29,6 @@ export default function CategoryAccordion({ categories, cartItems, onAddToCart }
     <div className="space-y-2">
       {categories.map((cat) => {
         const isOpen = openIds.has(cat.id)
-        const emoji = cat.emoji || '📦'
         const cartCount = cartItems.filter((ci) =>
           cat.products.some((p) => p.id === ci.productId)
         ).length
@@ -41,7 +40,6 @@ export default function CategoryAccordion({ categories, cartItems, onAddToCart }
               className="w-full flex items-center justify-between px-4 py-4 text-left hover:bg-gray-50 transition-colors"
             >
               <div className="flex items-center gap-3">
-                <span className="text-2xl">{emoji}</span>
                 <div>
                   <span className="font-bold text-gray-900">{cat.name}</span>
                   <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">

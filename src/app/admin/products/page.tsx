@@ -216,22 +216,22 @@ export default function AdminProductsPage() {
   }
 
   // カテゴリ管理コールバック
-  async function handleCategoryAdd(name: string, emoji: string) {
+  async function handleCategoryAdd(name: string) {
     const res = await fetch('/api/admin/categories', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
-      body: JSON.stringify({ name, emoji }),
+      body: JSON.stringify({ name }),
     })
     const json = await res.json()
     if (!res.ok) throw new Error(json.error)
     await fetchData()
   }
 
-  async function handleCategoryRename(id: string, name: string, emoji: string) {
+  async function handleCategoryRename(id: string, name: string) {
     const res = await fetch(`/api/admin/categories/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
-      body: JSON.stringify({ name, emoji }),
+      body: JSON.stringify({ name }),
     })
     const json = await res.json()
     if (!res.ok) throw new Error(json.error)
