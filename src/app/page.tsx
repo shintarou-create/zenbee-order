@@ -1,32 +1,29 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useLiff } from '@/hooks/useLiff'
 import { useProducts } from '@/hooks/useProducts'
 import { useCart } from '@/hooks/useCart'
 import { createClient } from '@/lib/supabase/client'
+import CategoryAccordion from '@/components/customer/CategoryAccordion'
 import ProductCard from '@/components/customer/ProductCard'
-import type { Company, PriceRank } from '@/types'
-
-const CATEGORIES = ['全商品', '柑橘', 'びわ', 'ジュース', 'その他']
+import type { Company, PriceRank, Category } from '@/types'
 
 export default function HomePage() {
   const router = useRouter()
   const { userId, isLoading: liffLoading, error: liffError } = useLiff()
   const [company, setCompany] = useState<Company | null>(null)
   const [customerLoading, setCustomerLoading] = useState(false)
-  const [selectedCategory, setSelectedCategory] = useState('全商品')
 
   const priceRank: PriceRank = company?.price_rank || 'standard'
   const { products, isLoading: productsLoading } = useProducts({
     priceRank,
-    category: selectedCategory,
+    withTiers: true,
   })
   const { items: cartItems, addToCart, itemCount } = useCart()
 
-  // 顧客情報の取得
   useEffect(() => {
     if (!userId) return
 
@@ -35,7 +32,6 @@ export default function HomePage() {
       try {
         const supabase = createClient()
 
-        // admin_usersテーブルをチェック → 管理者なら /admin へリダイレクト
         const { data: adminUser } = await supabase
           .from('admin_users')
           .select('id')
@@ -47,7 +43,6 @@ export default function HomePage() {
           return
         }
 
-        // line_users → companies で会社情報を取得
         const { data: lineUser, error } = await supabase
           .from('line_users')
           .select('*, company:companies (*)')
@@ -70,6 +65,31 @@ export default function HomePage() {
 
     fetchCustomer()
   }, [userId, router])
+
+  // カテゴリ×商品のグループを構築
+  const categorizedProducts = useMemo(() => {
+    // category_info を持つ商品からカテゴリ情報を収集
+    const categoryMap = new Map<string, Category & { products: typeof products }>()
+
+    for (const p of products) {
+      if (p.category_info) {
+        const info = p.category_info
+        if (!categoryMap.has(info.id)) {
+          categoryMap.set(info.id, { ...info, products: [] })
+        }
+        categoryMap.get(info.id)!.products.push(p)
+      }
+    }
+
+    // display_order 順に並べる
+    return Array.from(categoryMap.values()).sort(
+      (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
+    )
+  }, [products])
+
+  // カテゴリ情報がない（DBマイグレーション前）商品の旧カテゴリタブ対応フォールバック
+  const hasCategories = categorizedProducts.length > 0
+  const uncategorized = products.filter((p) => !p.category_info)
 
   if (liffLoading || customerLoading) {
     return (
@@ -118,7 +138,7 @@ export default function HomePage() {
               カート
               {itemCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                  {itemCount > 99 ? '99+' : Math.floor(itemCount)}
+                  {cartItems.length > 99 ? '99+' : cartItems.length}
                 </span>
               )}
             </Link>
@@ -126,39 +146,32 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* カテゴリタブ */}
-      <div className="bg-white border-b border-gray-200 sticky top-14 z-10">
-        <div className="max-w-2xl mx-auto px-4">
-          <div className="flex overflow-x-auto gap-1 py-2 scrollbar-hide">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                  selectedCategory === cat
-                    ? 'bg-green-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
       {/* 商品一覧 */}
       <main className="max-w-2xl mx-auto px-4 py-4">
         {productsLoading ? (
           <div className="flex justify-center py-12">
             <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
           </div>
+        ) : hasCategories ? (
+          <>
+            <CategoryAccordion
+              categories={categorizedProducts}
+              cartItems={cartItems}
+              onAddToCart={addToCart}
+            />
+            {uncategorized.length > 0 && (
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* カテゴリ未設定商品はそのまま表示 */}
+              </div>
+            )}
+          </>
         ) : products.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
             <p className="text-lg">この時期の商品はありません</p>
-            <p className="text-sm mt-2">他のカテゴリをご確認ください</p>
+            <p className="text-sm mt-2">しばらくお待ちください</p>
           </div>
         ) : (
+          // DBマイグレーション前フォールバック: 全商品をカテゴリタブなしで表示
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {products.map((product) => (
               <ProductCard

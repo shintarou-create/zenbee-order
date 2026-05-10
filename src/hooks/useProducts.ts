@@ -7,7 +7,7 @@ import { isInSeason } from '@/lib/utils'
 
 interface UseProductsOptions {
   priceRank?: PriceRank
-  category?: string
+  withTiers?: boolean
 }
 
 interface UseProductsReturn {
@@ -18,7 +18,7 @@ interface UseProductsReturn {
 }
 
 export function useProducts(options: UseProductsOptions = {}): UseProductsReturn {
-  const { priceRank = 'standard', category } = options
+  const { priceRank = 'standard', withTiers = false } = options
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -34,7 +34,11 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
       try {
         const supabase = createClient()
 
-        let query = supabase
+        const tiersSelect = withTiers
+          ? `, pricing_tiers:product_pricing_tiers!inner(id, product_id, tier_label, quantity, unit_price, display_order, is_active)`
+          : ''
+
+        const { data, error: fetchError } = await supabase
           .from('products')
           .select(`
             *,
@@ -50,30 +54,54 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
               available_qty,
               reserved_qty,
               updated_at
-            )
+            ),
+            category_info:categories (id, name, display_order)
+            ${tiersSelect}
           `)
           .eq('is_active', true)
           .eq('product_prices.price_rank', priceRank)
-          .order('sort_order', { ascending: true })
+          .order('display_order', { ascending: true })
 
-        if (category && category !== '全商品') {
-          query = query.eq('category', category)
+        if (fetchError) {
+          // display_order カラムがまだない場合は sort_order でフォールバック
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from('products')
+            .select(`
+              *,
+              product_prices!inner (id, product_id, price_rank, price_per_unit),
+              inventory (id, product_id, available_qty, reserved_qty, updated_at)
+            `)
+            .eq('is_active', true)
+            .eq('product_prices.price_rank', priceRank)
+            .order('sort_order', { ascending: true })
+
+          if (fallbackError) throw fallbackError
+
+          if (mounted && fallbackData) {
+            const filtered = (fallbackData as Product[]).filter((p) => isInSeason(p))
+            setProducts(filtered.map((p) => ({
+              ...p,
+              current_price: p.product_prices?.find((pp) => pp.price_rank === priceRank)?.price_per_unit || 0,
+            })))
+          }
+          return
         }
 
-        const { data, error: fetchError } = await query
-
-        if (fetchError) throw fetchError
-
         if (mounted && data) {
-          // 旬の商品フィルタリング
-          const filteredProducts = (data as Product[]).filter((p) => isInSeason(p))
+          const filtered = (data as unknown as Product[]).filter((p) => isInSeason(p))
 
-          // current_price を設定
-          const productsWithPrice = filteredProducts.map((p) => {
+          // 価格段階ありの場合、is_activeなものだけ残してdisplay_order順に並べる
+          const productsWithPrice = filtered.map((p) => {
             const priceEntry = p.product_prices?.find((pp) => pp.price_rank === priceRank)
+            const activeTiers = withTiers
+              ? (p.pricing_tiers ?? [])
+                  .filter((t) => t.is_active)
+                  .sort((a, b) => a.display_order - b.display_order)
+              : undefined
             return {
               ...p,
               current_price: priceEntry?.price_per_unit || 0,
+              pricing_tiers: activeTiers,
             }
           })
 
@@ -96,7 +124,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
     return () => {
       mounted = false
     }
-  }, [priceRank, category, fetchTrigger])
+  }, [priceRank, withTiers, fetchTrigger])
 
   const refetch = () => setFetchTrigger((n) => n + 1)
 
