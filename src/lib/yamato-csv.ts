@@ -116,6 +116,10 @@ function getSenderInfo() {
   }
 }
 
+function getYamatoCustomerCode() {
+  return process.env.YAMATO_CUSTOMER_CODE || '09069864632'
+}
+
 // ────────────────────────────────────────────────────────────
 // CSV フィールドエスケープ
 // ────────────────────────────────────────────────────────────
@@ -259,7 +263,7 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
       company.representativeName,                  // 16: お届け先名
       '',                                          // 17: お届け先名略称カナ
       '',                                          // 18: 敬称
-      '09069864632',                               // 19: ご依頼主コード
+      getYamatoCustomerCode(),                       // 19: ご依頼主コード
       sender.phone,                                // 20: ご依頼主電話番号
       '',                                          // 21: ご依頼主電話番号枝
       sender.postalCode,                           // 22: ご依頼主郵便番号
@@ -280,7 +284,7 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
       '',                                          // 37: 営業所コード
       String(boxCount),                            // 38: 発行枚数
       '',                                          // 39: 個数口枠の印字
-      '09069864632',                               // 40: ご請求先顧客コード
+      getYamatoCustomerCode(),                       // 40: ご請求先顧客コード
       '',                                          // 41: ご請求先分類コード
       '',                                          // 42: 運賃管理番号
       '',                                          // 43: 備考
