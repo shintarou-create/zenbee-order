@@ -11,6 +11,7 @@ export type PriceRank = 'standard' | 'premium' | 'vip'
 export interface Category {
   id: string
   name: string
+  emoji: string
   display_order: number
   is_active: boolean
   created_at: string

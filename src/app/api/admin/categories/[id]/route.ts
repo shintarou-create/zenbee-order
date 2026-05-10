@@ -11,14 +11,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
   }
   try {
-    const { name } = await req.json()
+    const { name, emoji } = await req.json()
     if (!name?.trim()) {
       return NextResponse.json({ error: 'カテゴリ名が必要です' }, { status: 400 })
     }
     const supabase = createServiceClient()
+    const updatePayload: Record<string, string> = { name: name.trim(), updated_at: new Date().toISOString() }
+    if (emoji?.trim()) updatePayload.emoji = emoji.trim()
     const { data, error } = await supabase
       .from('categories')
-      .update({ name: name.trim(), updated_at: new Date().toISOString() })
+      .update(updatePayload)
       .eq('id', params.id)
       .select()
       .single()

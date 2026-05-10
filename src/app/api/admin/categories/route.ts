@@ -29,9 +29,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
   }
   try {
-    const { name } = await req.json()
+    const { name, emoji } = await req.json()
     if (!name?.trim()) {
       return NextResponse.json({ error: 'カテゴリ名が必要です' }, { status: 400 })
+    }
+    if (!emoji?.trim()) {
+      return NextResponse.json({ error: '絵文字が必要です' }, { status: 400 })
     }
     const supabase = createServiceClient()
     const { data: maxRow } = await supabase
@@ -43,7 +46,7 @@ export async function POST(req: NextRequest) {
     const nextOrder = ((maxRow as { display_order: number } | null)?.display_order ?? 0) + 1
     const { data, error } = await supabase
       .from('categories')
-      .insert({ name: name.trim(), display_order: nextOrder })
+      .insert({ name: name.trim(), emoji: emoji.trim(), display_order: nextOrder })
       .select()
       .single()
     if (error) throw error
