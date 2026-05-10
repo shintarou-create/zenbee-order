@@ -131,7 +131,8 @@ export async function POST(req: NextRequest) {
       } else {
         // 段階なし: product_prices から取得
         const priceEntry = Array.isArray(product.product_prices)
-          ? product.product_prices.find((pp: { price_rank: string }) => pp.price_rank === company.price_rank)
+          ? (product.product_prices.find((pp: { price_rank: string }) => pp.price_rank === company.price_rank)
+             ?? product.product_prices.find((pp: { price_rank: string }) => pp.price_rank === 'standard'))
           : null
         unitPrice = priceEntry?.price_per_unit || 0
       }

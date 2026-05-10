@@ -42,7 +42,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
           .from('products')
           .select(`
             *,
-            product_prices!inner (
+            product_prices (
               id,
               product_id,
               price_rank,
@@ -52,7 +52,6 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
             ${tiersSelect}
           `)
           .eq('is_active', true)
-          .eq('product_prices.price_rank', priceRank)
           .order('display_order', { ascending: true })
 
         if (fetchError) {
@@ -61,10 +60,9 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
             .from('products')
             .select(`
               *,
-              product_prices!inner (id, product_id, price_rank, price_per_unit)
+              product_prices (id, product_id, price_rank, price_per_unit)
             `)
             .eq('is_active', true)
-            .eq('product_prices.price_rank', priceRank)
             .order('sort_order', { ascending: true })
 
           if (fallbackError) throw fallbackError
@@ -73,7 +71,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
             const filtered = (fallbackData as Product[]).filter((p) => isInSeason(p))
             setProducts(filtered.map((p) => ({
               ...p,
-              current_price: p.product_prices?.find((pp) => pp.price_rank === priceRank)?.price_per_unit || 0,
+              current_price: (p.product_prices?.find((pp) => pp.price_rank === priceRank) ?? p.product_prices?.find((pp) => pp.price_rank === 'standard'))?.price_per_unit || 0,
             })))
           }
           return
@@ -85,6 +83,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
           // 価格段階ありの場合、is_activeなものだけ残してdisplay_order順に並べる
           const productsWithPrice = filtered.map((p) => {
             const priceEntry = p.product_prices?.find((pp) => pp.price_rank === priceRank)
+              ?? p.product_prices?.find((pp) => pp.price_rank === 'standard')
             const activeTiers = withTiers
               ? (p.pricing_tiers ?? [])
                   .filter((t) => t.is_active)
