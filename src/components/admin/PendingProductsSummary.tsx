@@ -11,20 +11,19 @@ interface ProductSummary {
   totalQty: number
 }
 
+interface CategoryMeta {
+  emoji: string
+  display_order: number
+}
+
 interface PendingProductsSummaryProps {
   dateFrom?: string
   dateTo?: string
 }
 
-const CATEGORY_CONFIG: Record<string, { label: string; icon: string; order: number }> = {
-  '柑橘':   { label: '柑橘',     icon: '🍊', order: 0 },
-  'びわ':   { label: 'びわ',     icon: '🫒', order: 1 },
-  'ジュース': { label: 'ジュース', icon: '🧃', order: 2 },
-  'その他': { label: 'その他',   icon: '📦', order: 3 },
-}
-
 export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProductsSummaryProps) {
   const [summaries, setSummaries] = useState<ProductSummary[]>([])
+  const [categoryMeta, setCategoryMeta] = useState<Record<string, CategoryMeta>>({})
   const [orderCount, setOrderCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -33,6 +32,17 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
       setIsLoading(true)
       try {
         const supabase = createClient()
+
+        // カテゴリマスタを取得（絵文字・順序のため）
+        const { data: cats } = await supabase
+          .from('categories')
+          .select('name, emoji, display_order')
+          .order('display_order', { ascending: true })
+        const metaMap: Record<string, CategoryMeta> = {}
+        for (const c of cats ?? []) {
+          metaMap[c.name] = { emoji: c.emoji || '📦', display_order: c.display_order }
+        }
+        setCategoryMeta(metaMap)
 
         // Step1: pending注文IDを取得（納品日フィルター付き）
         let ordersQuery = supabase
@@ -105,12 +115,17 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
     fetchSummary()
   }, [dateFrom, dateTo])
 
-  // カテゴリでグループ化、各グループ内は合計数量の多い順
-  const grouped = Object.entries(CATEGORY_CONFIG)
-    .sort(([, a], [, b]) => a.order - b.order)
-    .map(([cat, config]) => ({
+  // カテゴリでグループ化（DB由来の display_order で並べ替え）
+  const categoryNames = Array.from(new Set(summaries.map((s) => s.category)))
+  const grouped = categoryNames
+    .sort((a, b) => {
+      const orderA = categoryMeta[a]?.display_order ?? 999
+      const orderB = categoryMeta[b]?.display_order ?? 999
+      return orderA - orderB
+    })
+    .map((cat) => ({
       cat,
-      config,
+      emoji: categoryMeta[cat]?.emoji || '📦',
       items: summaries
         .filter((s) => s.category === cat && s.totalQty > 0)
         .sort((a, b) => b.totalQty - a.totalQty),
@@ -136,11 +151,11 @@ export default function PendingProductsSummary({ dateFrom, dateTo }: PendingProd
         </div>
       ) : (
         <div>
-          {grouped.map(({ cat, config, items }) => (
+          {grouped.map(({ cat, emoji, items }) => (
             <div key={cat}>
               <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 first:border-t-0">
                 <span className="text-sm font-semibold text-gray-600">
-                  {config.icon} {config.label}
+                  {emoji} {cat}
                 </span>
               </div>
               <table className="w-full text-sm">

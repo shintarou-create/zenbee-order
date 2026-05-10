@@ -8,13 +8,6 @@ import { CSS } from '@dnd-kit/utilities'
 import type { Category, Product, PriceRank } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 
-const CATEGORY_EMOJI: Record<string, string> = {
-  柑橘: '🍊',
-  びわ: '🫐',
-  ジュース: '🥤',
-  その他: '📦',
-}
-
 interface CategorySectionProps {
   category: Category
   products: Product[]
@@ -27,11 +20,13 @@ interface CategorySectionProps {
 
 function SortableProductRow({
   product,
+  categoryEmoji,
   onEdit,
   onToggleActive,
   onPricingTiers,
 }: {
   product: Product
+  categoryEmoji: string
   onEdit: (p: Product) => void
   onToggleActive: (p: Product) => void
   onPricingTiers: (p: Product) => void
@@ -65,7 +60,7 @@ function SortableProductRow({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
         ) : (
-          CATEGORY_EMOJI[product.category] || '📦'
+          categoryEmoji || '📦'
         )}
       </div>
 
@@ -152,7 +147,7 @@ export default function CategorySection({
         >
           ≡
         </span>
-        <span className="text-lg">{CATEGORY_EMOJI[category.name] || '📁'}</span>
+        <span className="text-lg">{category.emoji || '📦'}</span>
         <h3 className="font-bold text-gray-900">{category.name}</h3>
         <span className="text-sm text-gray-400">（{products.length}品目）</span>
       </div>
@@ -169,6 +164,7 @@ export default function CategorySection({
                   <SortableProductRow
                     key={product.id}
                     product={product}
+                    categoryEmoji={category.emoji || '📦'}
                     onEdit={onEdit}
                     onToggleActive={onToggleActive}
                     onPricingTiers={onPricingTiers}

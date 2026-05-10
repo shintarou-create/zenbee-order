@@ -4,13 +4,6 @@ import { useState } from 'react'
 import type { Product, Category, CartItem } from '@/types'
 import ProductCard from './ProductCard'
 
-const CATEGORY_EMOJI: Record<string, string> = {
-  柑橘: '🍊',
-  びわ: '🫐',
-  ジュース: '🥤',
-  その他: '📦',
-}
-
 interface CategoryAccordionProps {
   categories: Array<Category & { products: Product[] }>
   cartItems: CartItem[]
@@ -36,7 +29,7 @@ export default function CategoryAccordion({ categories, cartItems, onAddToCart }
     <div className="space-y-2">
       {categories.map((cat) => {
         const isOpen = openIds.has(cat.id)
-        const emoji = CATEGORY_EMOJI[cat.name] || '📁'
+        const emoji = cat.emoji || '📦'
         const cartCount = cartItems.filter((ci) =>
           cat.products.some((p) => p.id === ci.productId)
         ).length
