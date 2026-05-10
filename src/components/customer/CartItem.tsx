@@ -30,6 +30,9 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
     onUpdateQuantity(item.productId, parseFloat(clamped.toFixed(3)))
   }
 
+  const hasTier = !!item.tierQuantity
+  const totalBottles = hasTier ? item.quantity * (item.tierQuantity ?? 1) : null
+
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
       <div className="flex items-start justify-between gap-3">
@@ -40,14 +43,24 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
           </div>
         )}
         <div className="flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-bold text-gray-900 text-base">{item.productName}</h3>
+            {item.tierLabel && (
+              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+                {item.tierLabel}
+              </span>
+            )}
             {item.coolType === 1 && (
               <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
                 冷蔵
               </span>
             )}
           </div>
+          {hasTier && totalBottles !== null && (
+            <p className="text-xs text-gray-500 mt-0.5">
+              {item.quantity}ケース（計{totalBottles}本）
+            </p>
+          )}
         </div>
         <button
           onClick={() => onRemove(item.productId)}
@@ -79,7 +92,9 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
               step={stepQty}
               className="w-16 text-center font-bold border border-gray-200 rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
             />
-            <span className="text-sm text-gray-500">{item.unit}</span>
+            <span className="text-sm text-gray-500">
+              {hasTier ? 'ケース' : item.unit}
+            </span>
           </div>
           <button
             onClick={handleIncrement}
@@ -88,7 +103,9 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
             ＋
           </button>
         </div>
-
+        <div className="text-right">
+          <p className="font-bold text-gray-900">¥{item.subtotal.toLocaleString()}</p>
+        </div>
       </div>
     </div>
   )

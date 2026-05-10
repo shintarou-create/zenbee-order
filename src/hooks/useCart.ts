@@ -25,6 +25,10 @@ function saveCartToStorage(items: CartItem[]): void {
   }
 }
 
+function calcSubtotal(item: Omit<CartItem, 'subtotal'>): number {
+  return item.unitPrice * (item.tierQuantity ?? 1) * item.quantity
+}
+
 function calcTotal(items: CartItem[]): number {
   return items.reduce((sum, item) => sum + item.subtotal, 0)
 }
@@ -58,27 +62,35 @@ export function useCart(): UseCartReturn {
     setItems((prev) => {
       const existing = prev.find((i) => i.productId === item.productId)
       if (existing) {
-        // 既存のアイテムを更新
-        return prev.map((i) => {
-          if (i.productId === item.productId) {
-            const newQty = i.quantity + item.quantity
-            return {
-              ...i,
-              quantity: newQty,
-              subtotal: newQty * i.unitPrice,
-            }
+        if (item.pricingTierId != null) {
+          // 段階あり: 段階が同じなら数量加算、違うなら差し替え
+          if (existing.pricingTierId === item.pricingTierId) {
+            return prev.map((i) => {
+              if (i.productId === item.productId) {
+                const newQty = i.quantity + item.quantity
+                return { ...i, quantity: newQty, subtotal: i.unitPrice * (i.tierQuantity ?? 1) * newQty }
+              }
+              return i
+            })
+          } else {
+            return prev.map((i) =>
+              i.productId === item.productId
+                ? { ...item, subtotal: calcSubtotal(item) }
+                : i
+            )
           }
-          return i
-        })
+        } else {
+          // 段階なし: 数量加算
+          return prev.map((i) => {
+            if (i.productId === item.productId) {
+              const newQty = i.quantity + item.quantity
+              return { ...i, quantity: newQty, subtotal: newQty * i.unitPrice }
+            }
+            return i
+          })
+        }
       }
-      // 新しいアイテムを追加
-      return [
-        ...prev,
-        {
-          ...item,
-          subtotal: item.quantity * item.unitPrice,
-        },
-      ]
+      return [...prev, { ...item, subtotal: calcSubtotal(item) }]
     })
   }, [])
 
@@ -97,7 +109,7 @@ export function useCart(): UseCartReturn {
           return {
             ...i,
             quantity,
-            subtotal: quantity * i.unitPrice,
+            subtotal: i.unitPrice * (i.tierQuantity ?? 1) * quantity,
           }
         }
         return i
