@@ -1,92 +1,162 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import type { DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { createClient } from '@/lib/supabase/client'
 import ProductForm from '@/components/admin/ProductForm'
-import type { Product, PriceRank } from '@/types'
-import { formatCurrency } from '@/lib/utils'
+import CategorySection from '@/components/admin/CategorySection'
+import CategoryManageModal from '@/components/admin/CategoryManageModal'
+import PricingTiersModal from '@/components/admin/PricingTiersModal'
+import type { Product, Category, PriceRank } from '@/types'
 
-const CATEGORY_EMOJI: Record<string, string> = {
-  みかん: '🍊',
-  びわ: '🍑',
-  レモン: '🍋',
-  ジュース: '🧃',
-  その他: '📦',
+function SortableCategoryWrapper({
+  category,
+  products,
+  onProductReorder,
+  onEdit,
+  onToggleActive,
+  onPricingTiers,
+}: {
+  category: Category
+  products: Product[]
+  onProductReorder: (categoryId: string, reordered: Product[]) => void
+  onEdit: (p: Product) => void
+  onToggleActive: (p: Product) => void
+  onPricingTiers: (p: Product) => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: category.id,
+  })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <CategorySection
+        category={category}
+        products={products}
+        dragHandle={{ attributes, listeners }}
+        onProductReorder={onProductReorder}
+        onEdit={onEdit}
+        onToggleActive={onToggleActive}
+        onPricingTiers={onPricingTiers}
+      />
+    </div>
+  )
 }
 
 export default function AdminProductsPage() {
+  const [categories, setCategories] = useState<Category[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+  const [showCategoryModal, setShowCategoryModal] = useState(false)
+  const [pricingTiersProduct, setPricingTiersProduct] = useState<Product | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [inventoryEditing, setInventoryEditing] = useState<Record<string, string>>({})
 
-  useEffect(() => {
-    fetchProducts()
-  }, [])
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
-  async function fetchProducts() {
+  const fetchData = useCallback(async () => {
     setIsLoading(true)
     try {
       const supabase = createClient()
-      const { data, error } = await supabase
-        .from('products')
-        .select(`
+      const [catRes, prodRes] = await Promise.all([
+        fetch('/api/admin/categories', { headers: { 'x-admin-token': '1' } }).then((r) => r.json()),
+        supabase.from('products').select(`
           *,
           product_prices (id, product_id, price_rank, price_per_unit),
-          inventory (id, product_id, available_qty, reserved_qty, updated_at)
-        `)
-        .order('sort_order', { ascending: true })
-
-      if (error) throw error
-      setProducts((data || []) as Product[])
+          inventory (id, product_id, available_qty, reserved_qty, updated_at),
+          pricing_tiers:product_pricing_tiers (id, product_id, tier_label, quantity, unit_price, display_order, is_active)
+        `).order('display_order', { ascending: true }),
+      ])
+      setCategories(catRes.data || [])
+      setProducts((prodRes.data || []) as Product[])
     } catch (err) {
-      console.error('商品取得エラー:', err)
+      console.error('データ取得エラー:', err)
     } finally {
       setIsLoading(false)
     }
+  }, [])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  function showMsg(type: 'success' | 'error', text: string) {
+    setMessage({ type, text })
+    setTimeout(() => setMessage(null), 3000)
   }
 
-  async function handleSubmit(
-    productData: Partial<Product>,
-    prices: Record<PriceRank, number>
-  ) {
+  // カテゴリ別に商品をグループ化
+  function getProductsByCategory(categoryId: string) {
+    return products
+      .filter((p) => p.category_id === categoryId)
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+  }
+
+  // カテゴリに紐づかない商品
+  const uncategorizedProducts = products.filter((p) => !p.category_id)
+
+  async function handleCategoryDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = categories.findIndex((c) => c.id === active.id)
+    const newIndex = categories.findIndex((c) => c.id === over.id)
+    const reordered = arrayMove(categories, oldIndex, newIndex)
+    setCategories(reordered)
+    try {
+      await fetch('/api/admin/categories/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
+        body: JSON.stringify({ orderedIds: reordered.map((c) => c.id) }),
+      })
+    } catch {
+      fetchData()
+    }
+  }
+
+  async function handleProductReorder(categoryId: string, reordered: Product[]) {
+    setProducts((prev) => {
+      const others = prev.filter((p) => p.category_id !== categoryId)
+      const updated = reordered.map((p, i) => ({ ...p, display_order: i + 1 }))
+      return [...others, ...updated]
+    })
+    try {
+      await fetch('/api/admin/products/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
+        body: JSON.stringify({ categoryId, orderedIds: reordered.map((p) => p.id) }),
+      })
+    } catch {
+      fetchData()
+    }
+  }
+
+  async function handleSubmit(productData: Partial<Product>, prices: Record<PriceRank, number>) {
     try {
       const supabase = createClient()
-
       if (editingProduct) {
-        // 更新
-        const { error: updateError } = await supabase
-          .from('products')
-          .update(productData)
-          .eq('id', editingProduct.id)
-
-        if (updateError) throw updateError
-
-        // 価格を更新
+        await supabase.from('products').update(productData).eq('id', editingProduct.id)
         for (const [rank, price] of Object.entries(prices)) {
-          await supabase
-            .from('product_prices')
-            .upsert({
-              product_id: editingProduct.id,
-              price_rank: rank,
-              price_per_unit: price,
-            })
+          await supabase.from('product_prices').upsert({
+            product_id: editingProduct.id,
+            price_rank: rank,
+            price_per_unit: price,
+          })
         }
-
-        setMessage({ type: 'success', text: '商品を更新しました' })
+        showMsg('success', '商品を更新しました')
       } else {
-        // 新規作成
-        const { data: newProduct, error: insertError } = await supabase
+        const { data: newProduct, error } = await supabase
           .from('products')
           .insert(productData)
           .select()
           .single()
-
-        if (insertError || !newProduct) throw insertError || new Error('作成失敗')
-
-        // 価格を作成
+        if (error || !newProduct) throw error || new Error('作成失敗')
         await supabase.from('product_prices').insert(
           Object.entries(prices).map(([rank, price]) => ({
             product_id: newProduct.id,
@@ -94,36 +164,26 @@ export default function AdminProductsPage() {
             price_per_unit: price,
           }))
         )
-
-        // 在庫レコードを作成
         await supabase.from('inventory').insert({
           product_id: newProduct.id,
           available_qty: 0,
           reserved_qty: 0,
         })
-
-        setMessage({ type: 'success', text: '商品を追加しました' })
+        showMsg('success', '商品を追加しました')
       }
-
       setShowForm(false)
       setEditingProduct(null)
-      await fetchProducts()
+      await fetchData()
     } catch (err) {
-      console.error('商品保存エラー:', err)
-      setMessage({ type: 'error', text: '保存に失敗しました' })
-    } finally {
-      setTimeout(() => setMessage(null), 3000)
+      console.error('保存エラー:', err)
+      showMsg('error', '保存に失敗しました')
     }
   }
 
   async function handleToggleActive(product: Product) {
     try {
       const supabase = createClient()
-      await supabase
-        .from('products')
-        .update({ is_active: !product.is_active })
-        .eq('id', product.id)
-
+      await supabase.from('products').update({ is_active: !product.is_active }).eq('id', product.id)
       setProducts((prev) =>
         prev.map((p) => (p.id === product.id ? { ...p, is_active: !product.is_active } : p))
       )
@@ -132,60 +192,44 @@ export default function AdminProductsPage() {
     }
   }
 
-  async function handleInventoryUpdate(productId: string) {
-    const newQty = parseFloat(inventoryEditing[productId] || '0')
-    if (isNaN(newQty)) return
-
-    try {
-      const supabase = createClient()
-      await supabase
-        .from('inventory')
-        .update({ available_qty: newQty })
-        .eq('product_id', productId)
-
-      setProducts((prev) =>
-        prev.map((p) => {
-          if (p.id === productId && p.inventory) {
-            const inv = Array.isArray(p.inventory) ? p.inventory[0] : p.inventory
-            return { ...p, inventory: { ...inv, available_qty: newQty } }
-          }
-          return p
-        })
-      )
-
-      setInventoryEditing((prev) => {
-        const next = { ...prev }
-        delete next[productId]
-        return next
-      })
-
-      setMessage({ type: 'success', text: '在庫を更新しました' })
-      setTimeout(() => setMessage(null), 2000)
-    } catch (err) {
-      console.error('在庫更新エラー:', err)
-    }
+  // カテゴリ管理コールバック
+  async function handleCategoryAdd(name: string) {
+    const res = await fetch('/api/admin/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
+      body: JSON.stringify({ name }),
+    })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error)
+    await fetchData()
   }
 
-  function handleEdit(product: Product) {
-    setEditingProduct(product)
-    setShowForm(true)
+  async function handleCategoryRename(id: string, name: string) {
+    const res = await fetch(`/api/admin/categories/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
+      body: JSON.stringify({ name }),
+    })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error)
+    await fetchData()
   }
 
-  function handleAddNew() {
-    setEditingProduct(null)
-    setShowForm(true)
-  }
-
-  function handleCancel() {
-    setShowForm(false)
-    setEditingProduct(null)
+  async function handleCategoryDelete(id: string) {
+    const res = await fetch(`/api/admin/categories/${id}`, {
+      method: 'DELETE',
+      headers: { 'x-admin-token': '1' },
+    })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error)
+    await fetchData()
   }
 
   if (showForm) {
     return (
       <div className="max-w-2xl space-y-4">
         <div className="flex items-center gap-3">
-          <button onClick={handleCancel} className="text-gray-500 hover:text-gray-700">
+          <button onClick={() => { setShowForm(false); setEditingProduct(null) }} className="text-gray-500 hover:text-gray-700">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
@@ -194,12 +238,12 @@ export default function AdminProductsPage() {
             {editingProduct ? '商品を編集' : '商品を追加'}
           </h1>
         </div>
-
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
           <ProductForm
             product={editingProduct || undefined}
+            categories={categories}
             onSubmit={handleSubmit}
-            onCancel={handleCancel}
+            onCancel={() => { setShowForm(false); setEditingProduct(null) }}
           />
         </div>
       </div>
@@ -210,15 +254,26 @@ export default function AdminProductsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">商品管理</h1>
-        <button
-          onClick={handleAddNew}
-          className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          商品を追加
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCategoryModal(true)}
+            className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            カテゴリ管理
+          </button>
+          <button
+            onClick={() => { setEditingProduct(null); setShowForm(true) }}
+            className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            商品を追加
+          </button>
+        </div>
       </div>
 
       {message && (
@@ -235,105 +290,63 @@ export default function AdminProductsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {products.map((product) => {
-            const inv = Array.isArray(product.inventory) ? product.inventory[0] : product.inventory
-            const netQty = inv ? inv.available_qty - inv.reserved_qty : 0
-            const standardPrice = product.product_prices?.find((pp) => pp.price_rank === 'standard')
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleCategoryDragEnd}>
+            <SortableContext items={categories.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+              {categories.map((cat) => (
+                <SortableCategoryWrapper
+                  key={cat.id}
+                  category={cat}
+                  products={getProductsByCategory(cat.id)}
+                  onProductReorder={handleProductReorder}
+                  onEdit={(p) => { setEditingProduct(p); setShowForm(true) }}
+                  onToggleActive={handleToggleActive}
+                  onPricingTiers={(p) => setPricingTiersProduct(p)}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
 
-            return (
-              <div key={product.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                <div className="flex items-start justify-between gap-3">
-                  {/* サムネ */}
-                  <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden border border-gray-100 bg-gray-50 flex items-center justify-center text-2xl">
-                    {product.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
-                    ) : (
-                      CATEGORY_EMOJI[product.category] || '📦'
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        product.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
-                      }`}>
-                        {product.is_active ? '販売中' : '非表示'}
-                      </span>
-                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                        {product.category}
-                      </span>
-                      {product.cool_type === 1 && (
-                        <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">冷蔵</span>
-                      )}
-                      {product.is_seasonal && (
-                        <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
-                          発送時期 ({product.season_start}〜{product.season_end})
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="font-bold text-gray-900 mt-1">{product.name}</h3>
-                    {standardPrice && (
-                      <p className="text-sm text-green-700 font-medium">
-                        {formatCurrency(standardPrice.price_per_unit)}/{product.unit}〜
-                      </p>
-                    )}
-                  </div>
-
-                  {/* 操作ボタン */}
-                  <div className="flex items-center gap-2">
+          {uncategorizedProducts.length > 0 && (
+            <div className="bg-white rounded-xl border border-orange-200 p-4">
+              <h3 className="text-sm font-bold text-orange-600 mb-2">
+                ⚠ カテゴリ未設定の商品（{uncategorizedProducts.length}件）
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                DBのカテゴリ移行後に自動解消されます。手動で設定する場合は「編集」から更新してください。
+              </p>
+              <div className="space-y-2">
+                {uncategorizedProducts.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between bg-orange-50 rounded-lg px-3 py-2">
+                    <span className="text-sm text-gray-700">{p.name}</span>
                     <button
-                      onClick={() => handleToggleActive(product)}
-                      className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
-                        product.is_active
-                          ? 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                          : 'border-green-200 text-green-600 hover:bg-green-50'
-                      }`}
-                    >
-                      {product.is_active ? '非表示' : '表示'}
-                    </button>
-                    <button
-                      onClick={() => handleEdit(product)}
-                      className="text-xs font-medium px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors"
+                      onClick={() => { setEditingProduct(p); setShowForm(true) }}
+                      className="text-xs text-blue-600 hover:text-blue-700 border border-blue-200 px-2 py-1 rounded"
                     >
                       編集
                     </button>
                   </div>
-                </div>
-
-                {/* 在庫管理 */}
-                <div className="mt-3 flex items-center gap-3 pt-3 border-t border-gray-50">
-                  <span className="text-xs text-gray-500">在庫:</span>
-                  <span className={`text-sm font-bold ${
-                    netQty <= 0 ? 'text-red-600' : netQty < 10 ? 'text-yellow-600' : 'text-green-600'
-                  }`}>
-                    {netQty}{product.unit}
-                  </span>
-                  <span className="text-xs text-gray-400">(引当済: {inv?.reserved_qty || 0}{product.unit})</span>
-
-                  <div className="flex items-center gap-1 ml-auto">
-                    <input
-                      type="number"
-                      value={inventoryEditing[product.id] ?? inv?.available_qty ?? 0}
-                      onChange={(e) =>
-                        setInventoryEditing((prev) => ({ ...prev, [product.id]: e.target.value }))
-                      }
-                      className="w-20 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-green-400"
-                    />
-                    <span className="text-xs text-gray-500">{product.unit}</span>
-                    {product.id in inventoryEditing && (
-                      <button
-                        onClick={() => handleInventoryUpdate(product.id)}
-                        className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition-colors"
-                      >
-                        更新
-                      </button>
-                    )}
-                  </div>
-                </div>
+                ))}
               </div>
-            )
-          })}
+            </div>
+          )}
         </div>
+      )}
+
+      {showCategoryModal && (
+        <CategoryManageModal
+          categories={categories}
+          onClose={() => setShowCategoryModal(false)}
+          onAdd={handleCategoryAdd}
+          onRename={handleCategoryRename}
+          onDelete={handleCategoryDelete}
+        />
+      )}
+
+      {pricingTiersProduct && (
+        <PricingTiersModal
+          product={pricingTiersProduct}
+          onClose={() => { setPricingTiersProduct(null); fetchData() }}
+        />
       )}
     </div>
   )

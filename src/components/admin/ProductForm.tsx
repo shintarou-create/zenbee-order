@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import type { Product, PriceRank } from '@/types'
+import type { Product, PriceRank, Category } from '@/types'
 
 interface ProductFormProps {
   product?: Product
+  categories?: Category[]
   onSubmit: (
     product: Partial<Product>,
     prices: Record<PriceRank, number>
@@ -12,17 +13,17 @@ interface ProductFormProps {
   onCancel: () => void
 }
 
-const CATEGORIES = ['みかん', 'びわ', 'レモン', 'ジュース', 'その他']
-const UNITS = ['kg', '個', '箱', '袋', 'L', 'ml']
+const UNITS = ['kg', '本', '個', '箱', '袋', 'パック', 'L', 'ml']
 const PRICE_RANKS: { value: PriceRank; label: string }[] = [
   { value: 'standard', label: 'スタンダード' },
   { value: 'premium', label: 'プレミアム' },
   { value: 'vip', label: 'VIP' },
 ]
 
-export default function ProductForm({ product, onSubmit, onCancel }: ProductFormProps) {
+export default function ProductForm({ product, categories = [], onSubmit, onCancel }: ProductFormProps) {
   const [name, setName] = useState(product?.name || '')
-  const [category, setCategory] = useState(product?.category || 'みかん')
+  const [category, setCategory] = useState(product?.category || (categories[0]?.name ?? ''))
+  const [categoryId, setCategoryId] = useState<string | null>(product?.category_id ?? null)
   const [unit, setUnit] = useState(product?.unit || 'kg')
   const [minOrderQty, setMinOrderQty] = useState(product?.min_order_qty || 0.1)
   const [maxOrderQty, setMaxOrderQty] = useState(product?.max_order_qty || 200)
@@ -31,7 +32,7 @@ export default function ProductForm({ product, onSubmit, onCancel }: ProductForm
   const [isSeasonal, setIsSeasonal] = useState(product?.is_seasonal || false)
   const [seasonStart, setSeasonStart] = useState(product?.season_start || '')
   const [seasonEnd, setSeasonEnd] = useState(product?.season_end || '')
-  const [sortOrder, setSortOrder] = useState(product?.sort_order || 0)
+  const [sortOrder, setSortOrder] = useState(product?.sort_order ?? 0)
   const [description, setDescription] = useState(product?.description || '')
   const [imageUrl, setImageUrl] = useState<string | null>(product?.image_url || null)
   const [prices, setPrices] = useState<Record<PriceRank, number>>({
@@ -121,6 +122,7 @@ export default function ProductForm({ product, onSubmit, onCancel }: ProductForm
         {
           name: name.trim(),
           category,
+          category_id: categoryId,
           unit,
           min_order_qty: minOrderQty,
           max_order_qty: maxOrderQty,
@@ -214,12 +216,17 @@ export default function ProductForm({ product, onSubmit, onCancel }: ProductForm
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">カテゴリ</label>
           <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            value={categoryId ?? ''}
+            onChange={(e) => {
+              const selected = categories.find((c) => c.id === e.target.value)
+              setCategoryId(e.target.value || null)
+              setCategory(selected?.name ?? e.target.value)
+            }}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
           >
-            {CATEGORIES.map((cat) => (
-              <option key={cat} value={cat}>{cat}</option>
+            <option value="">-- 未設定 --</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>{cat.name}</option>
             ))}
           </select>
         </div>
