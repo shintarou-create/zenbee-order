@@ -105,6 +105,39 @@ export async function POST(req: NextRequest) {
         )
       }
 
+      let unitPrice = 0
+      let tierLabel: string | null = null
+      let tierQuantity: number | null = null
+      let pricingTierId: string | null = null
+
+      if (item.pricingTierId) {
+        // 段階あり: DBから価格を取得（クライアント送信値は信用しない）
+        const { data: tier } = await supabase
+          .from('product_pricing_tiers')
+          .select('id, tier_label, quantity, unit_price')
+          .eq('id', item.pricingTierId)
+          .eq('product_id', item.productId)
+          .eq('is_active', true)
+          .single()
+
+        if (!tier) {
+          return NextResponse.json(
+            { error: `価格段階が見つかりません: ${product.name}` },
+            { status: 400 }
+          )
+        }
+        unitPrice = tier.unit_price
+        tierLabel = tier.tier_label
+        tierQuantity = tier.quantity
+        pricingTierId = tier.id
+      } else {
+        // 段階なし: product_prices から取得
+        const priceEntry = Array.isArray(product.product_prices)
+          ? product.product_prices.find((pp: { price_rank: string }) => pp.price_rank === company.price_rank)
+          : null
+        unitPrice = priceEntry?.price_per_unit || 0
+      }
+
       // 在庫確認
       const inv = product.inventory?.[0] || product.inventory
       if (inv) {
@@ -121,13 +154,9 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      // 価格取得
-      const priceEntry = Array.isArray(product.product_prices)
-        ? product.product_prices.find((pp: { price_rank: string }) => pp.price_rank === company.price_rank)
-        : null
-      const unitPrice = priceEntry?.price_per_unit || 0
-
-      const subtotal = unitPrice * item.quantity
+      const subtotal = tierQuantity
+        ? unitPrice * tierQuantity * item.quantity
+        : unitPrice * item.quantity
       totalAmount += subtotal
 
       orderItemsData.push({
@@ -137,9 +166,11 @@ export async function POST(req: NextRequest) {
         unit: product.unit,
         unit_price: unitPrice,
         subtotal,
+        pricing_tier_id: pricingTierId,
+        tier_label: tierLabel,
+        tier_quantity: tierQuantity,
       })
 
-      // 送料計算用のCartItem形式に変換
       cartItemsForShipping.push({
         productId: product.id,
         productName: product.name,
@@ -150,6 +181,7 @@ export async function POST(req: NextRequest) {
         coolType: product.cool_type as CoolType,
         stepQty: product.step_qty,
         minOrderQty: product.min_order_qty,
+        tierQuantity: tierQuantity ?? undefined,
       })
     }
 
@@ -245,7 +277,13 @@ export async function POST(req: NextRequest) {
     const adminLineId = process.env.LINE_ADMIN_USER_ID
     if (adminLineId) {
       const productSummary = orderItemsData
-        .map((item) => `・${item.product_name} ${item.quantity}${item.unit}`)
+        .map((item) => {
+          if (item.tier_label && item.tier_quantity) {
+            const totalBottles = item.quantity * item.tier_quantity
+            return `・${item.product_name} [${item.tier_label}] × ${item.quantity}ケース（${totalBottles}本）`
+          }
+          return `・${item.product_name} ${item.quantity}${item.unit}`
+        })
         .join('\n')
 
       try {
