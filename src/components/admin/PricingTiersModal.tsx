@@ -7,6 +7,7 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from '@dnd-kit/utilities'
 import type { Product, ProductPricingTier } from '@/types'
 import { formatCurrency } from '@/lib/utils'
+import PriceInput from './PriceInput'
 
 interface PricingTiersModalProps {
   product: Product
@@ -16,7 +17,7 @@ interface PricingTiersModalProps {
 interface TierFormState {
   tier_label: string
   quantity: string
-  unit_price: string
+  unit_price: number
 }
 
 function SortableTierRow({
@@ -69,7 +70,7 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [editingTier, setEditingTier] = useState<ProductPricingTier | null>(null)
-  const [form, setForm] = useState<TierFormState>({ tier_label: '', quantity: '', unit_price: '' })
+  const [form, setForm] = useState<TierFormState>({ tier_label: '', quantity: '', unit_price: 0 })
   const [saving, setSaving] = useState(false)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
@@ -105,7 +106,7 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
           body: JSON.stringify({
             tier_label: form.tier_label.trim(),
             quantity: Number(form.quantity),
-            unit_price: Number(form.unit_price),
+            unit_price: form.unit_price,
           }),
         })
         if (!res.ok) {
@@ -119,7 +120,7 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
           body: JSON.stringify({
             tier_label: form.tier_label.trim(),
             quantity: Number(form.quantity),
-            unit_price: Number(form.unit_price),
+            unit_price: form.unit_price,
           }),
         })
         if (!res.ok) {
@@ -130,7 +131,7 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
       await fetchTiers()
       setShowForm(false)
       setEditingTier(null)
-      setForm({ tier_label: '', quantity: '', unit_price: '' })
+      setForm({ tier_label: '', quantity: '', unit_price: 0 })
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存に失敗しました')
     } finally {
@@ -183,14 +184,14 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
     setForm({
       tier_label: tier.tier_label,
       quantity: String(tier.quantity),
-      unit_price: String(tier.unit_price),
+      unit_price: tier.unit_price,
     })
     setShowForm(true)
   }
 
   function openNew() {
     setEditingTier(null)
-    setForm({ tier_label: '', quantity: '', unit_price: '' })
+    setForm({ tier_label: '', quantity: '', unit_price: 0 })
     setShowForm(true)
   }
 
@@ -261,12 +262,9 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">単価（円/本）</label>
-                  <input
-                    type="number"
+                  <PriceInput
                     value={form.unit_price}
-                    onChange={(e) => setForm((f) => ({ ...f, unit_price: e.target.value }))}
-                    min={0}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                    onChange={(v) => setForm((f) => ({ ...f, unit_price: v }))}
                   />
                 </div>
               </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import type { Product, PriceRank, Category, StockStatus } from '@/types'
+import PriceInput from './PriceInput'
 
 interface ProductFormProps {
   product?: Product
@@ -359,16 +360,10 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
             <div key={rank.value} className="flex items-center gap-3">
               <span className="text-sm text-gray-600 w-24 flex-shrink-0">{rank.label}</span>
               <div className="flex items-center gap-1">
-                <span className="text-gray-500 text-sm">¥</span>
-                <input
-                  type="number"
+                <PriceInput
                   value={prices[rank.value]}
-                  onChange={(e) =>
-                    setPrices((prev) => ({ ...prev, [rank.value]: parseFloat(e.target.value) || 0 }))
-                  }
-                  min={0}
-                  step={1}
-                  className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                  onChange={(v) => setPrices((prev) => ({ ...prev, [rank.value]: v }))}
+                  className="w-28"
                 />
                 <span className="text-gray-500 text-sm">/{unit}</span>
               </div>
