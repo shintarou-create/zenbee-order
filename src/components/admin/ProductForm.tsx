@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import type { Product, PriceRank, Category } from '@/types'
+import type { Product, PriceRank, Category, StockStatus } from '@/types'
 
 interface ProductFormProps {
   product?: Product
@@ -32,6 +32,7 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
   const [isSeasonal, setIsSeasonal] = useState(product?.is_seasonal || false)
   const [seasonStart, setSeasonStart] = useState(product?.season_start || '')
   const [seasonEnd, setSeasonEnd] = useState(product?.season_end || '')
+  const [stockStatus, setStockStatus] = useState<StockStatus>(product?.stock_status ?? 'circle')
   const [sortOrder, setSortOrder] = useState(product?.sort_order ?? 0)
   const [description, setDescription] = useState(product?.description || '')
   const [imageUrl, setImageUrl] = useState<string | null>(product?.image_url || null)
@@ -134,6 +135,7 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
           sort_order: sortOrder,
           description: description.trim() || null,
           is_active: product?.is_active ?? true,
+          stock_status: stockStatus,
           image_url: imageUrl,
         },
         prices
@@ -333,6 +335,20 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
             </div>
           </div>
         )}
+      </div>
+
+      {/* 在庫ステータス */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">在庫ステータス</label>
+        <select
+          value={stockStatus}
+          onChange={(e) => setStockStatus(e.target.value as StockStatus)}
+          className="w-full md:w-auto border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+        >
+          <option value="circle">○ 通常</option>
+          <option value="triangle">△ 残りわずか</option>
+          <option value="cross">× 在庫なし</option>
+        </select>
       </div>
 
       {/* 価格設定 */}

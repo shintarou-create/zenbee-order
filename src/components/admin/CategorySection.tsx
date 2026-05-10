@@ -1,12 +1,24 @@
 'use client'
 
+import { useState } from 'react'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import type { DragEndEvent, DraggableAttributes } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities'
 import { CSS } from '@dnd-kit/utilities'
-import type { Category, Product, PriceRank } from '@/types'
+import type { Category, Product, PriceRank, StockStatus } from '@/types'
 import { formatCurrency } from '@/lib/utils'
+
+const STOCK_STATUS_LABELS: Record<StockStatus, string> = {
+  circle: '○',
+  triangle: '△',
+  cross: '×',
+}
+const STOCK_STATUS_CLASSES: Record<StockStatus, string> = {
+  circle: 'bg-green-100 text-green-800',
+  triangle: 'bg-yellow-100 text-yellow-800',
+  cross: 'bg-red-100 text-red-800',
+}
 
 interface CategorySectionProps {
   category: Category
@@ -16,6 +28,7 @@ interface CategorySectionProps {
   onEdit: (product: Product) => void
   onToggleActive: (product: Product) => void
   onPricingTiers: (product: Product) => void
+  onStockStatusToggle: (product: Product) => void
 }
 
 function SortableProductRow({
@@ -24,13 +37,16 @@ function SortableProductRow({
   onEdit,
   onToggleActive,
   onPricingTiers,
+  onStockStatusToggle,
 }: {
   product: Product
   categoryEmoji: string
   onEdit: (p: Product) => void
   onToggleActive: (p: Product) => void
   onPricingTiers: (p: Product) => void
+  onStockStatusToggle: (p: Product) => void
 }) {
+  const [updating, setUpdating] = useState(false)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: product.id,
   })
@@ -87,6 +103,25 @@ function SortableProductRow({
         )}
       </div>
 
+      {/* 在庫ステータスバッジ */}
+      <button
+        onClick={async () => {
+          setUpdating(true)
+          try {
+            await onStockStatusToggle(product)
+          } finally {
+            setUpdating(false)
+          }
+        }}
+        disabled={updating}
+        className={`flex-shrink-0 text-sm font-bold w-8 h-8 rounded-full flex items-center justify-center transition-opacity ${
+          STOCK_STATUS_CLASSES[product.stock_status ?? 'circle']
+        } ${updating ? 'opacity-40' : 'hover:opacity-80'}`}
+        title="クリックで在庫ステータスを切り替え（○→△→×→○）"
+      >
+        {STOCK_STATUS_LABELS[product.stock_status ?? 'circle']}
+      </button>
+
       {/* 操作ボタン */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
         <button
@@ -124,6 +159,7 @@ export default function CategorySection({
   onEdit,
   onToggleActive,
   onPricingTiers,
+  onStockStatusToggle,
 }: CategorySectionProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -168,6 +204,7 @@ export default function CategorySection({
                     onEdit={onEdit}
                     onToggleActive={onToggleActive}
                     onPricingTiers={onPricingTiers}
+                    onStockStatusToggle={onStockStatusToggle}
                   />
                 ))}
               </div>

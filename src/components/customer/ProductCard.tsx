@@ -18,10 +18,8 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
   const tiers = product.pricing_tiers ?? []
   const hasTiers = tiers.length > 0
 
-  const inventory = product.inventory
-  const availableQty = inventory ? inventory.available_qty - inventory.reserved_qty : 0
-  const isSoldOut = availableQty <= 0
-  const isLowStock = !isSoldOut && availableQty < 10
+  const isUnavailable = product.stock_status === 'cross'
+  const isLowStock = product.stock_status === 'triangle'
   const currentPrice = product.current_price || 0
 
   function handleQuantityChange(value: number) {
@@ -34,7 +32,7 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
   }
 
   async function handleAddToCart() {
-    if (isSoldOut) return
+    if (isUnavailable) return
     if (hasTiers && !selectedTier) return
     if (!hasTiers && !currentPrice) return
 
@@ -81,7 +79,7 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
   const tierTotalBottles = hasTiers && selectedTier ? selectedTier.quantity * quantity : null
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+    <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${isUnavailable ? 'opacity-60' : ''}`}>
       {/* 商品画像 */}
       {product.image_url && (
         <div className="w-full h-32 overflow-hidden bg-gray-50">
@@ -103,13 +101,11 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
           </div>
           <h3 className="font-bold text-gray-900 mt-1 text-base leading-tight">{product.name}</h3>
         </div>
-        {isSoldOut ? (
-          <span className="flex-shrink-0 bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded-full">売切</span>
+        {isUnavailable ? (
+          <span className="flex-shrink-0 bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded-full">在庫なし</span>
         ) : isLowStock ? (
           <span className="flex-shrink-0 bg-yellow-100 text-yellow-700 text-xs font-bold px-2 py-1 rounded-full">残りわずか</span>
-        ) : (
-          <span className="flex-shrink-0 bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">在庫あり</span>
-        )}
+        ) : null}
       </div>
 
       <div className="p-4">
@@ -125,7 +121,7 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
           </div>
         )}
 
-        {!isSoldOut && (
+        {!isUnavailable && (
           <>
             {/* 価格段階ラジオ */}
             {hasTiers && (
@@ -226,9 +222,9 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
           </>
         )}
 
-        {isSoldOut && (
+        {isUnavailable && (
           <div className="w-full py-3 rounded-xl bg-gray-100 text-gray-400 text-sm font-bold text-center">
-            現在品切れ中
+            現在在庫がありません
           </div>
         )}
       </div>

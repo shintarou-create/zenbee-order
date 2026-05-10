@@ -48,13 +48,6 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
               price_rank,
               price_per_unit
             ),
-            inventory (
-              id,
-              product_id,
-              available_qty,
-              reserved_qty,
-              updated_at
-            ),
             category_info:categories (id, name, display_order)
             ${tiersSelect}
           `)
@@ -68,8 +61,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
             .from('products')
             .select(`
               *,
-              product_prices!inner (id, product_id, price_rank, price_per_unit),
-              inventory (id, product_id, available_qty, reserved_qty, updated_at)
+              product_prices!inner (id, product_id, price_rank, price_per_unit)
             `)
             .eq('is_active', true)
             .eq('product_prices.price_rank', priceRank)

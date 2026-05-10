@@ -34,7 +34,6 @@ export type OrderStatus = 'pending' | 'shipped' | 'done' | 'cancelled'
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue'
 export type CoolType = 0 | 1
 export type AdminRole = 'admin' | 'superadmin'
-export type StockStatus = 'ok' | 'low' | 'out'
 
 // ============================================================
 // Company（旧 Customer）
@@ -96,6 +95,8 @@ export type LineUserInput = Omit<LineUser, 'id' | 'created_at' | 'updated_at' | 
 // ============================================================
 // Product
 // ============================================================
+export type StockStatus = 'circle' | 'triangle' | 'cross'
+
 export interface Product {
   id: string
   name: string
@@ -112,6 +113,7 @@ export interface Product {
   sort_order: number
   display_order: number
   is_active: boolean
+  stock_status: StockStatus
   image_url: string | null
   description: string | null
   created_at: string

@@ -10,7 +10,8 @@ import ProductForm from '@/components/admin/ProductForm'
 import CategorySection from '@/components/admin/CategorySection'
 import CategoryManageModal from '@/components/admin/CategoryManageModal'
 import PricingTiersModal from '@/components/admin/PricingTiersModal'
-import type { Product, Category, PriceRank } from '@/types'
+import type { Product, Category, PriceRank, StockStatus } from '@/types'
+
 
 function SortableCategoryWrapper({
   category,
@@ -19,6 +20,7 @@ function SortableCategoryWrapper({
   onEdit,
   onToggleActive,
   onPricingTiers,
+  onStockStatusToggle,
 }: {
   category: Category
   products: Product[]
@@ -26,6 +28,7 @@ function SortableCategoryWrapper({
   onEdit: (p: Product) => void
   onToggleActive: (p: Product) => void
   onPricingTiers: (p: Product) => void
+  onStockStatusToggle: (p: Product) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: category.id,
@@ -46,6 +49,7 @@ function SortableCategoryWrapper({
         onEdit={onEdit}
         onToggleActive={onToggleActive}
         onPricingTiers={onPricingTiers}
+        onStockStatusToggle={onStockStatusToggle}
       />
     </div>
   )
@@ -72,7 +76,6 @@ export default function AdminProductsPage() {
         supabase.from('products').select(`
           *,
           product_prices (id, product_id, price_rank, price_per_unit),
-          inventory (id, product_id, available_qty, reserved_qty, updated_at),
           pricing_tiers:product_pricing_tiers (id, product_id, tier_label, quantity, unit_price, display_order, is_active)
         `).order('display_order', { ascending: true }),
       ])
@@ -192,6 +195,26 @@ export default function AdminProductsPage() {
     }
   }
 
+  async function handleStockStatusToggle(product: Product) {
+    let next: StockStatus
+    switch (product.stock_status) {
+      case 'circle': next = 'triangle'; break
+      case 'triangle': next = 'cross'; break
+      default: next = 'circle'
+    }
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.from('products').update({ stock_status: next }).eq('id', product.id)
+      if (error) throw error
+      setProducts((prev) =>
+        prev.map((p) => (p.id === product.id ? { ...p, stock_status: next } : p))
+      )
+    } catch (err) {
+      console.error('在庫ステータス更新エラー:', err)
+      showMsg('error', '在庫ステータスの更新に失敗しました')
+    }
+  }
+
   // カテゴリ管理コールバック
   async function handleCategoryAdd(name: string, emoji: string) {
     const res = await fetch('/api/admin/categories', {
@@ -301,6 +324,7 @@ export default function AdminProductsPage() {
                   onEdit={(p) => { setEditingProduct(p); setShowForm(true) }}
                   onToggleActive={handleToggleActive}
                   onPricingTiers={(p) => setPricingTiersProduct(p)}
+                  onStockStatusToggle={handleStockStatusToggle}
                 />
               ))}
             </SortableContext>

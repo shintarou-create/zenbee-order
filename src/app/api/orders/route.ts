@@ -77,8 +77,7 @@ export async function POST(req: NextRequest) {
       .from('products')
       .select(`
         *,
-        product_prices (price_rank, price_per_unit),
-        inventory (available_qty, reserved_qty)
+        product_prices (price_rank, price_per_unit)
       `)
       .in('id', productIds)
       .eq('is_active', true)
@@ -93,7 +92,6 @@ export async function POST(req: NextRequest) {
     // 在庫確認と金額計算
     let totalAmount = 0
     const orderItemsData = []
-    const inventoryUpdates: Array<{ productId: string; newReserved: number }> = []
     const cartItemsForShipping: CartItem[] = []
 
     for (const item of items) {
@@ -139,19 +137,11 @@ export async function POST(req: NextRequest) {
       }
 
       // 在庫確認
-      const inv = product.inventory?.[0] || product.inventory
-      if (inv) {
-        const available = (inv.available_qty || 0) - (inv.reserved_qty || 0)
-        if (available < item.quantity) {
-          return NextResponse.json(
-            { error: `${product.name} の在庫が不足しています（在庫: ${available}${product.unit}）` },
-            { status: 400 }
-          )
-        }
-        inventoryUpdates.push({
-          productId: product.id,
-          newReserved: (inv.reserved_qty || 0) + item.quantity,
-        })
+      if (product.stock_status === 'cross') {
+        return NextResponse.json(
+          { error: `${product.name} は現在在庫がありません` },
+          { status: 400 }
+        )
       }
 
       const subtotal = tierQuantity
@@ -263,14 +253,6 @@ export async function POST(req: NextRequest) {
         console.error('送料明細作成エラー:', shippingError)
         // 送料保存失敗しても注文は完了扱い（後から管理画面で修正可能）
       }
-    }
-
-    // 在庫のreserved_qtyを更新
-    for (const update of inventoryUpdates) {
-      await supabase
-        .from('inventory')
-        .update({ reserved_qty: update.newReserved })
-        .eq('product_id', update.productId)
     }
 
     // LINE通知を送信（非同期、失敗しても注文は完了）
