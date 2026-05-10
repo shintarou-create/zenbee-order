@@ -35,7 +35,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
         const supabase = createClient()
 
         const tiersSelect = withTiers
-          ? `, pricing_tiers:product_pricing_tiers!inner(id, product_id, tier_label, quantity, unit_price, display_order, is_active)`
+          ? `, pricing_tiers:product_pricing_tiers(id, product_id, tier_label, quantity, unit_price, display_order, is_active)`
           : ''
 
         const { data, error: fetchError } = await supabase
