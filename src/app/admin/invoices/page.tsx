@@ -127,13 +127,14 @@ export default function AdminInvoicesPage() {
         if (invoiceError || !invoice) continue
 
         // 請求明細を作成
-        await supabase.from('invoice_items').insert(
+        const { error: itemsError } = await supabase.from('invoice_items').insert(
           compOrders.map((order) => ({
             invoice_id: invoice.id,
             order_id: order.id,
             amount: order.total_amount,
           }))
         )
+        if (itemsError) throw itemsError
 
         created++
       }

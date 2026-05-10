@@ -144,7 +144,8 @@ export default function AdminProductsPage() {
     try {
       const supabase = createClient()
       if (editingProduct) {
-        await supabase.from('products').update(productData).eq('id', editingProduct.id)
+        const { error: productError } = await supabase.from('products').update(productData).eq('id', editingProduct.id)
+        if (productError) throw productError
         for (const [rank, price] of Object.entries(prices)) {
           const { error: priceError } = await supabase.from('product_prices').upsert(
             { product_id: editingProduct.id, price_rank: rank, price_per_unit: price },
@@ -160,18 +161,20 @@ export default function AdminProductsPage() {
           .select()
           .single()
         if (error || !newProduct) throw error || new Error('作成失敗')
-        await supabase.from('product_prices').insert(
+        const { error: pricesError } = await supabase.from('product_prices').insert(
           Object.entries(prices).map(([rank, price]) => ({
             product_id: newProduct.id,
             price_rank: rank,
             price_per_unit: price,
           }))
         )
-        await supabase.from('inventory').insert({
+        if (pricesError) throw pricesError
+        const { error: inventoryError } = await supabase.from('inventory').insert({
           product_id: newProduct.id,
           available_qty: 0,
           reserved_qty: 0,
         })
+        if (inventoryError) throw inventoryError
         showMsg('success', '商品を追加しました')
       }
       setShowForm(false)
@@ -186,7 +189,8 @@ export default function AdminProductsPage() {
   async function handleToggleActive(product: Product) {
     try {
       const supabase = createClient()
-      await supabase.from('products').update({ is_active: !product.is_active }).eq('id', product.id)
+      const { error: toggleError } = await supabase.from('products').update({ is_active: !product.is_active }).eq('id', product.id)
+      if (toggleError) throw toggleError
       setProducts((prev) =>
         prev.map((p) => (p.id === product.id ? { ...p, is_active: !product.is_active } : p))
       )
