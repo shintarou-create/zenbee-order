@@ -4,6 +4,31 @@
 // ============================================================
 
 export type PriceRank = 'standard' | 'premium' | 'vip'
+
+// ============================================================
+// Category
+// ============================================================
+export interface Category {
+  id: string
+  name: string
+  display_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+// ============================================================
+// ProductPricingTier
+// ============================================================
+export interface ProductPricingTier {
+  id: string
+  product_id: string
+  tier_label: string
+  quantity: number
+  unit_price: number
+  display_order: number
+  is_active: boolean
+}
 export type OrderStatus = 'pending' | 'shipped' | 'done' | 'cancelled'
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue'
 export type CoolType = 0 | 1
@@ -74,6 +99,7 @@ export interface Product {
   id: string
   name: string
   category: string
+  category_id: string | null
   unit: string
   min_order_qty: number
   max_order_qty: number
@@ -83,6 +109,7 @@ export interface Product {
   season_start: string | null
   season_end: string | null
   sort_order: number
+  display_order: number
   is_active: boolean
   image_url: string | null
   description: string | null
@@ -92,9 +119,11 @@ export interface Product {
   product_prices?: ProductPrice[]
   inventory?: Inventory | null
   current_price?: number
+  pricing_tiers?: ProductPricingTier[]
+  category_info?: Category | null
 }
 
-export type ProductInput = Omit<Product, 'id' | 'created_at' | 'updated_at' | 'product_prices' | 'inventory' | 'current_price'>
+export type ProductInput = Omit<Product, 'id' | 'created_at' | 'updated_at' | 'product_prices' | 'inventory' | 'current_price' | 'pricing_tiers' | 'category_info'>
 export type ProductUpdate = Partial<ProductInput>
 
 // ============================================================
@@ -168,6 +197,9 @@ export interface OrderItem {
   unit: string
   unit_price: number
   subtotal: number
+  pricing_tier_id?: string | null
+  tier_label?: string | null
+  tier_quantity?: number | null
   // Joined fields
   product?: Product
 }
@@ -246,6 +278,9 @@ export interface CartItem {
   stepQty: number
   minOrderQty: number
   imageUrl?: string | null
+  pricingTierId?: string | null
+  tierLabel?: string | null
+  tierQuantity?: number | null
 }
 
 export interface CartState {
@@ -267,6 +302,10 @@ export interface CreateOrderRequest {
   items: {
     productId: string
     quantity: number
+    pricingTierId?: string | null
+    tierLabel?: string | null
+    tierQuantity?: number | null
+    unitPrice?: number
   }[]
   notes?: string
   deliveryDate?: string
