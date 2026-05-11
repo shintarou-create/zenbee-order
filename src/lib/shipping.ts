@@ -64,34 +64,43 @@ export function calculateShipping(items: CartItem[]): ShippingBreakdown {
     })
   }
 
-  // ジュース720ml: 24本=1ケース¥3,700
+  // ジュース720ml: 12本=1箱¥1,500（1〜12本→¥1,500 / 13〜24本→¥3,000 / 25〜36本→¥4,500）
   const total720ml = items
     .filter((i) => i.unit === '本' && i.productName.includes('720ml'))
     .reduce((sum, i) => sum + i.quantity * (i.tierQuantity ?? 1), 0)
 
   if (total720ml > 0) {
-    const cases = Math.ceil(total720ml / 24)
+    const boxes = Math.ceil(total720ml / 12)
     lines.push({
-      label: 'ジュース720ml（24本/ケース）',
-      quantity: cases,
-      unitCost: 3700,
-      cost: cases * 3700,
+      label: 'ジュース720ml（12本/箱）',
+      quantity: boxes,
+      unitCost: 1500,
+      cost: boxes * 1500,
     })
   }
 
-  // ジュース180ml: 30本=1ケース¥1,300
+  // ジュース180ml: 10本以内¥1,000 / 11〜30本¥1,300（以降30本/ケース単位）
   const total180ml = items
     .filter((i) => i.unit === '本' && i.productName.includes('180ml'))
     .reduce((sum, i) => sum + i.quantity * (i.tierQuantity ?? 1), 0)
 
   if (total180ml > 0) {
-    const cases = Math.ceil(total180ml / 30)
-    lines.push({
-      label: 'ジュース180ml（30本/ケース）',
-      quantity: cases,
-      unitCost: 1300,
-      cost: cases * 1300,
-    })
+    if (total180ml <= 10) {
+      lines.push({
+        label: 'ジュース180ml（小口便）',
+        quantity: 1,
+        unitCost: 1000,
+        cost: 1000,
+      })
+    } else {
+      const boxes = Math.ceil(total180ml / 30)
+      lines.push({
+        label: 'ジュース180ml（30本/ケース）',
+        quantity: boxes,
+        unitCost: 1300,
+        cost: boxes * 1300,
+      })
+    }
   }
 
   // 冷凍20Lジュース: 1箱¥3,000 / 2箱¥4,000 / 3箱¥5,000 / 4箱以上エラー
