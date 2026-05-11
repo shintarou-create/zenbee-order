@@ -236,8 +236,9 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
   const deliveryDate = rawDelivery && isAfterToday(rawDelivery) ? rawDelivery : ''
 
   // cool_type でベース分類: 0=常温 / 1=冷蔵(びわ) / 2=冷凍(20Lジュース)
-  const frozenItems = items.filter(i => i.product.cool_type === 2)
-  const coolItems = items.filter(i => i.product.cool_type === 1)
+  // DB制約の都合でびわが誤って cool_type=2 になっている場合も unit='個' で冷凍ジュースのみを識別
+  const frozenItems = items.filter(i => i.product.cool_type === 2 && i.product.unit === '個')
+  const coolItems = items.filter(i => i.product.cool_type === 1 || (i.product.cool_type === 2 && i.product.unit === 'パック'))
   const ambientItems = items.filter(i => i.product.cool_type === 0)
   const typeCount = [ambientItems, coolItems, frozenItems].filter(a => a.length > 0).length
 

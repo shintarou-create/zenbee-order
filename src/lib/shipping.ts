@@ -116,8 +116,9 @@ export function calculateShipping(items: CartItem[]): ShippingBreakdown {
   }
 
   // 冷凍20Lジュース: 1箱¥3,000 / 2箱¥4,000 / 3箱¥5,000 / 4箱以上エラー
+  // unit==='個' で冷凍20Lジュースのみを識別（びわ等の冷蔵商品を誤カウントしない）
   const totalFrozen = items
-    .filter((i) => i.coolType === 2)
+    .filter((i) => i.coolType === 2 && i.unit === '個')
     .reduce((sum, i) => sum + i.quantity, 0)
 
   if (totalFrozen > 0) {
