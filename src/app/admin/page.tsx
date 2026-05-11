@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Order, Product, Inventory } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
 import PendingProductsSummary from '@/components/admin/PendingProductsSummary'
+import FreeeExportBanner from '@/components/admin/FreeeExportBanner'
 
 interface LowStockItem {
   product: Product
@@ -106,6 +107,9 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
+
+      {/* freee CSV リマインドバナー */}
+      <FreeeExportBanner />
 
       {/* サマリーカード */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

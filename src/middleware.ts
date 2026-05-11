@@ -65,6 +65,11 @@ export async function middleware(req: NextRequest) {
     if (!rows?.[0]?.role) {
       return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
     }
+
+    // Forward lineUserId to route handlers so they can log it without re-calling LINE API
+    const requestHeaders = new Headers(req.headers)
+    requestHeaders.set('x-line-user-id', lineUserId)
+    return NextResponse.next({ request: { headers: requestHeaders } })
   }
 
   // Rate limit: customer orders — 10 req/min/IP
