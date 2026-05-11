@@ -40,12 +40,15 @@ export async function middleware(req: NextRequest) {
       const res = await fetch('https://api.line.me/v2/profile', {
         headers: { Authorization: `Bearer ${token}` },
       })
+      // DEBUG: remove after diagnosis
+      console.log(`[middleware] LINE API status=${res.status} path=${pathname}`)
       if (!res.ok) {
         return NextResponse.json({ error: '認証に失敗しました' }, { status: 401 })
       }
       const profile = (await res.json()) as { userId: string }
       lineUserId = profile.userId
-    } catch {
+    } catch (e) {
+      console.error('[middleware] LINE API fetch error:', e)
       return NextResponse.json({ error: '認証サーバーへの接続に失敗しました' }, { status: 503 })
     }
 
@@ -63,8 +66,11 @@ export async function middleware(req: NextRequest) {
     )
     const rows = (await dbRes.json()) as Array<{ role: string }>
     if (!rows?.[0]?.role) {
+      console.log(`[middleware] no admin role for lineUserId=${lineUserId} path=${pathname}`)
       return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
     }
+    // DEBUG: remove after diagnosis
+    console.log(`[middleware] auth ok lineUserId=${lineUserId} path=${pathname}`)
 
     // Forward lineUserId to route handlers so they can log it without re-calling LINE API
     const requestHeaders = new Headers(req.headers)

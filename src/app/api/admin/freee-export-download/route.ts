@@ -23,24 +23,33 @@ function getTargetYearMonth(from: string, to: string): string {
 }
 
 type OrderRow = {
+  id: string
   company_id: string
   shipping_date: string | null
   company: { company_name?: string } | null
-  order_items: Array<{
-    quantity: number
-    unit_price: number
-    subtotal: number
-    tier_label: string | null
-    tier_quantity: number | null
-    product: { name: string; unit: string; category: string } | null
-  }>
-  order_shipping: Array<{ label: string; cost: number }>
+}
+type OrderItemRow = {
+  order_id: string
+  quantity: number
+  unit_price: number
+  subtotal: number
+  tier_label: string | null
+  tier_quantity: number | null
+  product: { name: string; unit: string; category: string } | null
+}
+type OrderShippingRow = {
+  order_id: string
+  label: string
+  cost: number
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as { from: string; to: string }
     const { from, to } = body
+
+    // DEBUG: remove after diagnosis
+    console.log('[freee-export-download] handler reached, from:', from, 'to:', to)
 
     if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
       return NextResponse.json({ error: '日付形式が正しくありません (YYYY-MM-DD)' }, { status: 400 })
@@ -53,55 +62,101 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '期間は180日以内で指定してください' }, { status: 400 })
     }
 
-    const supabase = createServiceClient()
-
-    // Convert JST date range to UTC for reliable Supabase comparison
-    // (timezone-offset strings like +09:00 are not reliably handled by PostgREST string comparison)
     const fromUtc = new Date(`${from}T00:00:00+09:00`).toISOString()
     const toUtc = new Date(`${to}T23:59:59.999+09:00`).toISOString()
+    console.log('[freee-export-download] fromUtc:', fromUtc, 'toUtc:', toUtc)
 
+    const supabase = createServiceClient()
+
+    // Stage 1: orders + company (avoids FK embed reliability issues)
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
-      .select(`
-        company_id,
-        shipping_date,
-        company:companies (company_name),
-        order_items (quantity, unit_price, subtotal, tier_label, tier_quantity, product:products (name, unit, category)),
-        order_shipping (label, cost)
-      `)
+      .select('id, company_id, shipping_date, company:companies(company_name)')
       .gte('created_at', fromUtc)
       .lte('created_at', toUtc)
       .order('created_at', { ascending: true })
 
-    if (ordersError) throw ordersError
+    if (ordersError) {
+      console.error('[freee-export-download] ordersError:', ordersError.message)
+      throw ordersError
+    }
+    const orderList = (orders ?? []) as OrderRow[]
+    console.log('[freee-export-download] orders.length:', orderList.length)
 
-    // Group line items by company
+    const orderIds = orderList.map(o => o.id)
+
+    let allItems: OrderItemRow[] = []
+    let allShipping: OrderShippingRow[] = []
+
+    if (orderIds.length > 0) {
+      // Stage 2a: order_items
+      const { data: items, error: itemsError } = await supabase
+        .from('order_items')
+        .select('order_id, quantity, unit_price, subtotal, tier_label, tier_quantity, product:products(name, unit, category)')
+        .in('order_id', orderIds)
+
+      if (itemsError) {
+        console.error('[freee-export-download] itemsError:', itemsError.message)
+        throw itemsError
+      }
+      allItems = (items ?? []) as OrderItemRow[]
+
+      // Stage 2b: order_shipping
+      const { data: shipping, error: shippingError } = await supabase
+        .from('order_shipping')
+        .select('order_id, label, cost')
+        .in('order_id', orderIds)
+
+      if (shippingError) {
+        console.error('[freee-export-download] shippingError:', shippingError.message)
+        throw shippingError
+      }
+      allShipping = (shipping ?? []) as OrderShippingRow[]
+    }
+
+    console.log('[freee-export-download] allItems:', allItems.length, 'allShipping:', allShipping.length)
+
+    // Index by order_id for O(1) lookup
+    const itemsByOrder = new Map<string, OrderItemRow[]>()
+    for (const item of allItems) {
+      const list = itemsByOrder.get(item.order_id) ?? []
+      list.push(item)
+      itemsByOrder.set(item.order_id, list)
+    }
+    const shippingByOrder = new Map<string, OrderShippingRow[]>()
+    for (const s of allShipping) {
+      const list = shippingByOrder.get(s.order_id) ?? []
+      list.push(s)
+      shippingByOrder.set(s.order_id, list)
+    }
+
+    // Group FreeeLineItems by company
     const companiesMap = new Map<string, { companyName: string; items: FreeeLineItem[] }>()
 
-    for (const order of (orders ?? []) as OrderRow[]) {
+    for (const order of orderList) {
       const cid = order.company_id
-      const companyName = (order.company as { company_name?: string } | null)?.company_name || ''
+      const companyName = (order.company as { company_name?: string } | null)?.company_name ?? ''
 
       if (!companiesMap.has(cid)) {
         companiesMap.set(cid, { companyName, items: [] })
       }
 
-      const sd = order.shipping_date || ''
+      const sd = order.shipping_date ?? ''
       const parts = sd.split('-')
       const md = parts[1] && parts[2] ? `${parseInt(parts[1])}/${parseInt(parts[2])}` : ''
       const entry = companiesMap.get(cid)!
 
-      for (const oi of order.order_items || []) {
+      for (const oi of itemsByOrder.get(order.id) ?? []) {
         const realQty = oi.tier_quantity ? oi.quantity * oi.tier_quantity : oi.quantity
         const unitPrice = oi.unit_price || oi.subtotal
         const quantity = oi.unit_price ? realQty : 1
         const desc = oi.tier_label
-          ? `${md}納品 ${oi.product?.name || ''}（${oi.tier_label}）`
-          : `${md}納品 ${oi.product?.name || ''}`
-        entry.items.push({ description: desc, unitPrice, quantity, unit: oi.product?.unit || '', taxRate: '8' })
+          ? `${md}納品 ${oi.product?.name ?? ''}（${oi.tier_label}）`
+          : `${md}納品 ${oi.product?.name ?? ''}`
+        entry.items.push({ description: desc, unitPrice, quantity, unit: oi.product?.unit ?? '', taxRate: '8' })
       }
 
-      for (const os of order.order_shipping || []) {
+      for (const os of shippingByOrder.get(order.id) ?? []) {
         if (!os.cost) continue
         entry.items.push({
           description: `${md}納品 送料（${os.label}）`,
@@ -112,6 +167,8 @@ export async function POST(req: NextRequest) {
         })
       }
     }
+
+    console.log('[freee-export-download] companiesMap.size:', companiesMap.size)
 
     const now = new Date()
     const jstNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }))
@@ -135,26 +192,29 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    console.log('[freee-export-download] csvInvoices.length:', csvInvoices.length)
+
     const csvBuffer = generateFreeeCSV(csvInvoices)
 
     const targetYearMonth = getTargetYearMonth(from, to)
     const lineUserId = req.headers.get('x-line-user-id') ?? null
 
-    // Insert log — if freee_export_log table doesn't exist yet, don't fail the download
-    try {
-      await supabase.from('freee_export_log').insert({
-        target_year_month: targetYearMonth,
-        order_count: (orders ?? []).length,
-        exported_by_line_user_id: lineUserId,
-      })
-    } catch (logErr) {
-      console.error('freee_export_log insert error (non-fatal):', logErr)
+    // Log export (non-fatal if freee_export_log table not yet created)
+    const { error: logError } = await supabase.from('freee_export_log').insert({
+      target_year_month: targetYearMonth,
+      order_count: orderList.length,
+      exported_by_line_user_id: lineUserId,
+    })
+    if (logError) {
+      console.error('[freee-export-download] freee_export_log insert (non-fatal):', logError.message)
     }
 
     const isWholeMonth = !targetYearMonth.startsWith('custom_')
     const filename = isWholeMonth
       ? `zenbee-freee-${billingMonth}.csv`
       : `zenbee-freee-${from}_to_${to}.csv`
+
+    console.log('[freee-export-download] success filename:', filename, 'bytes:', csvBuffer.length)
 
     const stream = new ReadableStream({
       start(controller) {
@@ -172,7 +232,8 @@ export async function POST(req: NextRequest) {
       },
     })
   } catch (err) {
-    console.error('freee-export-download error:', err)
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[freee-export-download] fatal error:', msg)
     return NextResponse.json({ error: 'CSV生成に失敗しました' }, { status: 500 })
   }
 }
