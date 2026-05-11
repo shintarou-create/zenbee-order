@@ -129,7 +129,7 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
           min_order_qty: minOrderQty,
           max_order_qty: maxOrderQty,
           step_qty: stepQty,
-          cool_type: coolType as 0 | 1,
+          cool_type: coolType as 0 | 1 | 2,
           is_seasonal: isSeasonal,
           season_start: isSeasonal ? seasonStart : null,
           season_end: isSeasonal ? seasonEnd : null,
@@ -293,6 +293,7 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
         >
           <option value={0}>通常</option>
           <option value={1}>冷蔵</option>
+          <option value={2}>冷凍</option>
         </select>
       </div>
 

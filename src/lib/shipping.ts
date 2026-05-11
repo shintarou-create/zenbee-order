@@ -94,6 +94,25 @@ export function calculateShipping(items: CartItem[]): ShippingBreakdown {
     })
   }
 
+  // 冷凍20Lジュース: 1箱¥3,000 / 2箱¥4,000 / 3箱¥5,000 / 4箱以上エラー
+  const totalFrozen = items
+    .filter((i) => i.coolType === 2)
+    .reduce((sum, i) => sum + i.quantity, 0)
+
+  if (totalFrozen > 0) {
+    if (totalFrozen >= 4) {
+      throw new Error('冷凍20Lジュースは3箱までしか同時注文できません')
+    }
+    const FROZEN_COSTS: Record<number, number> = { 1: 3000, 2: 4000, 3: 5000 }
+    const frozenCost = FROZEN_COSTS[totalFrozen]
+    lines.push({
+      label: '冷凍20Lジュース（冷凍便）',
+      quantity: totalFrozen,
+      unitCost: frozenCost,
+      cost: frozenCost,
+    })
+  }
+
   const total = lines.reduce((sum, l) => sum + l.cost, 0)
   return { lines, total }
 }

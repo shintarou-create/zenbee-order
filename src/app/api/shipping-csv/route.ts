@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
         order_items (
           quantity,
           tier_quantity,
-          product:products (category, unit, step_qty)
+          product:products (category, unit, step_qty, cool_type)
         )
       `)
       .in('id', orderIds)
@@ -74,6 +74,7 @@ export async function POST(req: NextRequest) {
             category: item.product?.category || 'その他',
             unit: item.product?.unit || 'kg',
             step_qty: item.product?.step_qty || 1,
+            cool_type: item.product?.cool_type ?? 0,
           },
         })),
       }

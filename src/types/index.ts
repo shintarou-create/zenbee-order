@@ -32,7 +32,7 @@ export interface ProductPricingTier {
 }
 export type OrderStatus = 'pending' | 'shipped' | 'done' | 'cancelled'
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue'
-export type CoolType = 0 | 1
+export type CoolType = 0 | 1 | 2
 export type AdminRole = 'admin' | 'superadmin'
 
 // ============================================================

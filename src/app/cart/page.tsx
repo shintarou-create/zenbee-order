@@ -7,7 +7,7 @@ import { useCart } from '@/hooks/useCart'
 import { useLiff } from '@/hooks/useLiff'
 import CartItemComponent from '@/components/customer/CartItem'
 import OrderSummary from '@/components/customer/OrderSummary'
-import { calculateShipping } from '@/lib/shipping'
+import { calculateShipping, type ShippingBreakdown } from '@/lib/shipping'
 
 function getMinDeliveryDate(): string {
   const d = new Date()
@@ -24,7 +24,13 @@ function getDefaultDeliveryDate(): string {
 export default function CartPage() {
   const router = useRouter()
   const { items, total, updateQuantity, removeFromCart, clearCart } = useCart()
-  const shipping = calculateShipping(items)
+  let shipping: ShippingBreakdown = { lines: [], total: 0 }
+  let shippingError: string | null = null
+  try {
+    shipping = calculateShipping(items)
+  } catch (err) {
+    shippingError = err instanceof Error ? err.message : '送料計算エラー'
+  }
   const { userId, isLoading: liffLoading } = useLiff()
   const [notes, setNotes] = useState('')
   const [deliveryDate, setDeliveryDate] = useState(getDefaultDeliveryDate())
@@ -139,7 +145,11 @@ export default function CartPage() {
             <OrderSummary items={items} total={total} />
 
             {/* 送料内訳 */}
-            {shipping.lines.length > 0 && (
+            {shippingError ? (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <p className="text-red-700 text-sm font-medium">{shippingError}</p>
+              </div>
+            ) : shipping.lines.length > 0 && (
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                 <h3 className="font-bold text-gray-900 mb-3 text-base">送料内訳</h3>
                 <div className="space-y-1.5">
@@ -197,7 +207,7 @@ export default function CartPage() {
           <div className="max-w-2xl mx-auto">
             <button
               onClick={handleOrder}
-              disabled={submitting || items.length === 0}
+              disabled={submitting || items.length === 0 || !!shippingError}
               className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
                 submitting
                   ? 'bg-green-400 text-white'

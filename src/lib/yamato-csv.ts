@@ -22,9 +22,10 @@ function isAfterToday(dateStr: string): boolean {
 // ────────────────────────────────────────────────────────────
 
 export interface ProductForCsv {
-  category: string  // 'びわ' | '柑橘' | 'ジュース' | 'その他'
-  unit: string      // 'kg' | '本' | 'パック'
+  category: string   // 'びわ' | '柑橘' | 'ジュース' | 'その他'
+  unit: string       // 'kg' | '本' | 'パック'
   step_qty: number
+  cool_type: number  // 0=常温 / 1=冷蔵 / 2=冷凍
 }
 
 export interface OrderItemForCsv {
@@ -212,6 +213,10 @@ function calcCoolBoxes(items: OrderItemForCsv[]): number {
   return packs <= 12 ? 1 : Math.ceil(packs / 12)
 }
 
+function calcFrozenBoxes(items: OrderItemForCsv[]): number {
+  return items.reduce((sum, item) => sum + item.quantity, 0)
+}
+
 // ────────────────────────────────────────────────────────────
 // 1注文 → 1行または2行のCSVフィールド配列を生成
 // ────────────────────────────────────────────────────────────
@@ -230,11 +235,11 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
   const rawDelivery = order.deliveryDate ? order.deliveryDate.replace(/-/g, '/') : ''
   const deliveryDate = rawDelivery && isAfterToday(rawDelivery) ? rawDelivery : ''
 
-  const coolItems = items.filter(i => i.product.category === 'びわ')
-  const ambientItems = items.filter(i =>
-    ['柑橘', 'ジュース', 'その他'].includes(i.product.category)
-  )
-  const hasBoth = coolItems.length > 0 && ambientItems.length > 0
+  // cool_type でベース分類: 0=常温 / 1=冷蔵(びわ) / 2=冷凍(20Lジュース)
+  const frozenItems = items.filter(i => i.product.cool_type === 2)
+  const coolItems = items.filter(i => i.product.cool_type === 1)
+  const ambientItems = items.filter(i => i.product.cool_type === 0)
+  const typeCount = [ambientItems, coolItems, frozenItems].filter(a => a.length > 0).length
 
   function buildRow(
     orderNum: string,
@@ -292,12 +297,14 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
   }
 
   const rows: string[][] = []
+  let suffix = 0
 
   if (ambientItems.length > 0) {
+    suffix++
     const cats = new Set(ambientItems.map(i => i.product.category))
     const [h1, h2] = getAmbientHandling(cats)
     rows.push(buildRow(
-      hasBoth ? `${order.orderNumber}-1` : order.orderNumber,
+      typeCount > 1 ? `${order.orderNumber}-${suffix}` : order.orderNumber,
       0,
       getAmbientItemName(cats),
       h1,
@@ -307,13 +314,26 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
   }
 
   if (coolItems.length > 0) {
+    suffix++
     rows.push(buildRow(
-      hasBoth ? `${order.orderNumber}-2` : order.orderNumber,
-      2,
+      typeCount > 1 ? `${order.orderNumber}-${suffix}` : order.orderNumber,
+      2,  // ヤマト クール区分: 2=冷蔵
       '枇杷',
       '生物',
       '下積み厳禁',
       calcCoolBoxes(coolItems),
+    ))
+  }
+
+  if (frozenItems.length > 0) {
+    suffix++
+    rows.push(buildRow(
+      typeCount > 1 ? `${order.orderNumber}-${suffix}` : order.orderNumber,
+      1,  // ヤマト クール区分: 1=冷凍
+      '冷凍みかんジュース',
+      '',
+      '下積み厳禁',
+      calcFrozenBoxes(frozenItems),
     ))
   }
 

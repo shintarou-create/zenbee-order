@@ -98,6 +98,9 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
             {product.cool_type === 1 && (
               <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">冷蔵</span>
             )}
+            {product.cool_type === 2 && (
+              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">冷凍</span>
+            )}
           </div>
           <h3 className="font-bold text-gray-900 mt-1 text-base leading-tight">{product.name}</h3>
         </div>
