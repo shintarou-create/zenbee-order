@@ -34,20 +34,9 @@ export function useLiff(): UseLiffReturn {
           return
         }
 
-        if (!process.env.NEXT_PUBLIC_LIFF_ID) {
-          throw new Error('LIFF ID が設定されていません')
-        }
-
-        const liffModule = await import('@line/liff')
-        const liff = liffModule.default
-
-        await liff.init({ liffId: process.env.NEXT_PUBLIC_LIFF_ID })
-
-        if (!liff.isLoggedIn()) {
-          // LINEログインにリダイレクト
-          liff.login()
-          return
-        }
+        const { ensureLiffReady } = await import('@/lib/liff-client')
+        const liff = await ensureLiffReady()
+        if (!liff) return
 
         const profile: LiffProfile = await liff.getProfile()
 

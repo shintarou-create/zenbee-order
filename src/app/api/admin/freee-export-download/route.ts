@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
         console.error('[freee-export-download] itemsError:', itemsError.message)
         throw itemsError
       }
-      allItems = (items ?? []) as OrderItemRow[]
+      allItems = (items ?? []) as unknown as OrderItemRow[]
 
       // Stage 2b: order_shipping
       const { data: shipping, error: shippingError } = await supabase
@@ -181,7 +181,7 @@ export async function POST(req: NextRequest) {
     const csvInvoices: FreeeInvoiceData[] = []
     let seq = 0
 
-    for (const [, { companyName, items }] of companiesMap) {
+    for (const [, { companyName, items }] of Array.from(companiesMap)) {
       seq++
       csvInvoices.push({
         invoiceNumber: `${billingMonthLabel}-${String(seq).padStart(3, '0')}`,
