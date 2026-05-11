@@ -20,9 +20,9 @@ function getLastMonthInfo(): {
   const yearMonth = `${year}-${ym}`
   const label = `${year}年${month}月`
 
-  // JST range → ISO 8601 with +09:00 offset (Supabase handles comparison correctly)
-  const startISO = `${year}-${ym}-01T00:00:00+09:00`
-  const endISO = `${year}-${ym}-${String(lastDay).padStart(2, '0')}T23:59:59.999+09:00`
+  // Convert JST range to UTC for reliable PostgREST comparison
+  const startISO = new Date(`${year}-${ym}-01T00:00:00+09:00`).toISOString()
+  const endISO = new Date(`${year}-${ym}-${String(lastDay).padStart(2, '0')}T23:59:59.999+09:00`).toISOString()
 
   return { yearMonth, label, startISO, endISO }
 }

@@ -55,7 +55,11 @@ export async function POST(req: NextRequest) {
 
     const supabase = createServiceClient()
 
-    // Query orders directly by created_at (JST) — works even if invoices don't exist yet
+    // Convert JST date range to UTC for reliable Supabase comparison
+    // (timezone-offset strings like +09:00 are not reliably handled by PostgREST string comparison)
+    const fromUtc = new Date(`${from}T00:00:00+09:00`).toISOString()
+    const toUtc = new Date(`${to}T23:59:59.999+09:00`).toISOString()
+
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
       .select(`
@@ -65,20 +69,16 @@ export async function POST(req: NextRequest) {
         order_items (quantity, unit_price, subtotal, tier_label, tier_quantity, product:products (name, unit, category)),
         order_shipping (label, cost)
       `)
-      .gte('created_at', `${from}T00:00:00+09:00`)
-      .lte('created_at', `${to}T23:59:59.999+09:00`)
+      .gte('created_at', fromUtc)
+      .lte('created_at', toUtc)
       .order('created_at', { ascending: true })
 
     if (ordersError) throw ordersError
 
-    if (!orders || orders.length === 0) {
-      return NextResponse.json({ error: '指定期間に注文がありません' }, { status: 404 })
-    }
-
     // Group line items by company
     const companiesMap = new Map<string, { companyName: string; items: FreeeLineItem[] }>()
 
-    for (const order of orders as OrderRow[]) {
+    for (const order of (orders ?? []) as OrderRow[]) {
       const cid = order.company_id
       const companyName = (order.company as { company_name?: string } | null)?.company_name || ''
 
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
     try {
       await supabase.from('freee_export_log').insert({
         target_year_month: targetYearMonth,
-        order_count: orders.length,
+        order_count: (orders ?? []).length,
         exported_by_line_user_id: lineUserId,
       })
     } catch (logErr) {
