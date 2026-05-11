@@ -4,12 +4,6 @@ import { generateFreeeCSV } from '@/lib/freee-csv'
 import type { FreeeInvoiceData, FreeeLineItem } from '@/lib/freee-csv'
 
 export async function POST(req: NextRequest) {
-  // 管理者認証チェック
-  const adminToken = req.headers.get('x-admin-token')
-  if (!adminToken && process.env.NODE_ENV !== 'development') {
-    return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
-  }
-
   try {
     const body = (await req.json()) as { billingMonth: string }
     const { billingMonth } = body

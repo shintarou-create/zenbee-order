@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Invoice, Order } from '@/types'
 import { formatDate, formatCurrency } from '@/lib/utils'
+import { adminFetch } from '@/lib/admin-fetch'
 
 export default function AdminInvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -180,12 +181,9 @@ export default function AdminInvoicesPage() {
   async function handleDownloadFreeeCsv() {
     setDownloadingCsv(true)
     try {
-      const res = await fetch('/api/freee-csv', {
+      const res = await adminFetch('/api/freee-csv', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-token': 'admin',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ billingMonth: selectedMonth }),
       })
 

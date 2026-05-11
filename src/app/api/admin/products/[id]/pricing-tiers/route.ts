@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 
-function checkAuth(req: NextRequest): boolean {
-  const token = req.headers.get('x-admin-token')
-  return !!(token || process.env.NODE_ENV === 'development')
-}
-
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!checkAuth(req)) {
-    return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
-  }
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = createServiceClient()
     const { data, error } = await supabase
@@ -27,9 +19,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!checkAuth(req)) {
-    return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
-  }
   try {
     const { tier_label, quantity, unit_price } = await req.json()
     if (!tier_label?.trim() || !quantity || !unit_price) {

@@ -11,6 +11,7 @@ import CategorySection from '@/components/admin/CategorySection'
 import CategoryManageModal from '@/components/admin/CategoryManageModal'
 import PricingTiersModal from '@/components/admin/PricingTiersModal'
 import type { Product, Category, PriceRank, StockStatus } from '@/types'
+import { adminFetch } from '@/lib/admin-fetch'
 
 
 function SortableCategoryWrapper({
@@ -72,7 +73,7 @@ export default function AdminProductsPage() {
     try {
       const supabase = createClient()
       const [catRes, prodRes] = await Promise.all([
-        fetch('/api/admin/categories', { headers: { 'x-admin-token': '1' } }).then((r) => r.json()),
+        adminFetch('/api/admin/categories').then((r) => r.json()),
         supabase.from('products').select(`
           *,
           product_prices (id, product_id, price_rank, price_per_unit),
@@ -113,9 +114,9 @@ export default function AdminProductsPage() {
     const reordered = arrayMove(categories, oldIndex, newIndex)
     setCategories(reordered)
     try {
-      await fetch('/api/admin/categories/reorder', {
+      await adminFetch('/api/admin/categories/reorder', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderedIds: reordered.map((c) => c.id) }),
       })
     } catch {
@@ -130,9 +131,9 @@ export default function AdminProductsPage() {
       return [...others, ...updated]
     })
     try {
-      await fetch('/api/admin/products/reorder', {
+      await adminFetch('/api/admin/products/reorder', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ categoryId, orderedIds: reordered.map((p) => p.id) }),
       })
     } catch {
@@ -221,9 +222,9 @@ export default function AdminProductsPage() {
 
   // カテゴリ管理コールバック
   async function handleCategoryAdd(name: string) {
-    const res = await fetch('/api/admin/categories', {
+    const res = await adminFetch('/api/admin/categories', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     })
     const json = await res.json()
@@ -232,9 +233,9 @@ export default function AdminProductsPage() {
   }
 
   async function handleCategoryRename(id: string, name: string) {
-    const res = await fetch(`/api/admin/categories/${id}`, {
+    const res = await adminFetch(`/api/admin/categories/${id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     })
     const json = await res.json()
@@ -243,9 +244,8 @@ export default function AdminProductsPage() {
   }
 
   async function handleCategoryDelete(id: string) {
-    const res = await fetch(`/api/admin/categories/${id}`, {
+    const res = await adminFetch(`/api/admin/categories/${id}`, {
       method: 'DELETE',
-      headers: { 'x-admin-token': '1' },
     })
     const json = await res.json()
     if (!res.ok) throw new Error(json.error)

@@ -6,6 +6,7 @@ import OrderTable from '@/components/admin/OrderTable'
 import PendingProductsSummary from '@/components/admin/PendingProductsSummary'
 import type { Order } from '@/types'
 import { formatDateForInput, getNextBusinessDay } from '@/lib/utils'
+import { adminFetch } from '@/lib/admin-fetch'
 
 export default function AdminShippingPage() {
   const [orders, setOrders] = useState<Order[]>([])
@@ -96,12 +97,9 @@ export default function AdminShippingPage() {
     if (selectedIds.length === 0) return
     setCsvExporting(true)
     try {
-      const response = await fetch('/api/shipping-csv', {
+      const response = await adminFetch('/api/shipping-csv', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-token': 'admin',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderIds: selectedIds, shipDate }),
       })
 

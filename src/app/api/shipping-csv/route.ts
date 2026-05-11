@@ -5,12 +5,6 @@ import type { OrderForCsv } from '@/lib/yamato-csv'
 import type { ShippingCsvRequest } from '@/types'
 
 export async function POST(req: NextRequest) {
-  // 管理者認証チェック
-  const adminToken = req.headers.get('x-admin-token')
-  if (!adminToken && process.env.NODE_ENV !== 'development') {
-    return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
-  }
-
   try {
     const body = (await req.json()) as ShippingCsvRequest
     const { orderIds, shipDate } = body

@@ -1,18 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 
-function checkAuth(req: NextRequest): boolean {
-  const token = req.headers.get('x-admin-token')
-  return !!(token || process.env.NODE_ENV === 'development')
-}
-
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string; tierId: string } }
 ) {
-  if (!checkAuth(req)) {
-    return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
-  }
   try {
     const body = await req.json()
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
@@ -38,15 +30,11 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: { id: string; tierId: string } }
 ) {
-  if (!checkAuth(req)) {
-    return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
-  }
   try {
     const supabase = createServiceClient()
-    // 過去のorder_itemsのFK参照をNULLクリアしてからハード削除（スナップショット列tier_label/tier_quantityは残る）
     await supabase
       .from('order_items')
       .update({ pricing_tier_id: null })

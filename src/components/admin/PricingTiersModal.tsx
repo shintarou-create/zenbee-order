@@ -7,6 +7,7 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from '@dnd-kit/utilities'
 import type { Product, ProductPricingTier } from '@/types'
 import { formatCurrency } from '@/lib/utils'
+import { adminFetch } from '@/lib/admin-fetch'
 import PriceInput from './PriceInput'
 
 interface PricingTiersModalProps {
@@ -82,9 +83,7 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
   async function fetchTiers() {
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/products/${product.id}/pricing-tiers`, {
-        headers: { 'x-admin-token': '1' },
-      })
+      const res = await adminFetch(`/api/admin/products/${product.id}/pricing-tiers`)
       const json = await res.json()
       setTiers(json.data || [])
     } catch {
@@ -100,9 +99,9 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
     setError(null)
     try {
       if (editingTier) {
-        const res = await fetch(`/api/admin/products/${product.id}/pricing-tiers/${editingTier.id}`, {
+        const res = await adminFetch(`/api/admin/products/${product.id}/pricing-tiers/${editingTier.id}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             tier_label: form.tier_label.trim(),
             quantity: Number(form.quantity),
@@ -114,9 +113,9 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
           throw new Error(j.error)
         }
       } else {
-        const res = await fetch(`/api/admin/products/${product.id}/pricing-tiers`, {
+        const res = await adminFetch(`/api/admin/products/${product.id}/pricing-tiers`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             tier_label: form.tier_label.trim(),
             quantity: Number(form.quantity),
@@ -143,9 +142,8 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
     if (!window.confirm('この価格段階を削除しますか？')) return
     setError(null)
     try {
-      const res = await fetch(`/api/admin/products/${product.id}/pricing-tiers/${tierId}`, {
+      const res = await adminFetch(`/api/admin/products/${product.id}/pricing-tiers/${tierId}`, {
         method: 'DELETE',
-        headers: { 'x-admin-token': '1' },
       })
       if (!res.ok) {
         const j = await res.json()
@@ -167,9 +165,9 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
     try {
       await Promise.all(
         reordered.map((t, i) =>
-          fetch(`/api/admin/products/${product.id}/pricing-tiers/${t.id}`, {
+          adminFetch(`/api/admin/products/${product.id}/pricing-tiers/${t.id}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', 'x-admin-token': '1' },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ display_order: i + 1 }),
           })
         )

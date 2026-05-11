@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import type { Product, PriceRank, Category, StockStatus } from '@/types'
+import { adminFetch } from '@/lib/admin-fetch'
 import PriceInput from './PriceInput'
 
 interface ProductFormProps {
@@ -68,7 +69,7 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
       const formData = new FormData()
       formData.append('file', file)
 
-      const res = await fetch(`/api/admin/products/${product.id}/image`, {
+      const res = await adminFetch(`/api/admin/products/${product.id}/image`, {
         method: 'POST',
         body: formData,
       })

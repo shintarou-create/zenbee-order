@@ -17,6 +17,24 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Input validation
+    for (const item of items) {
+      if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 9999) {
+        return NextResponse.json({ error: '数量は1〜9999の整数で指定してください' }, { status: 400 })
+      }
+    }
+    if (notes && notes.length > 500) {
+      return NextResponse.json({ error: '備考は500文字以内で入力してください' }, { status: 400 })
+    }
+    if (deliveryDate) {
+      const d = new Date(deliveryDate)
+      const now = new Date()
+      const maxDate = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000)
+      if (isNaN(d.getTime()) || d < now || d > maxDate) {
+        return NextResponse.json({ error: '納品希望日が無効です（本日〜180日以内）' }, { status: 400 })
+      }
+    }
+
     // LIFF アクセストークンを検証してユーザーIDを取得
     let lineUserId: string
 

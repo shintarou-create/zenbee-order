@@ -2,10 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 
 export async function POST(req: NextRequest) {
-  const token = req.headers.get('x-admin-token')
-  if (!token && process.env.NODE_ENV !== 'development') {
-    return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 })
-  }
   try {
     const { categoryId, orderedIds } = await req.json() as { categoryId: string; orderedIds: string[] }
     if (!categoryId || !Array.isArray(orderedIds) || orderedIds.length === 0) {
