@@ -79,27 +79,39 @@ export function calculateShipping(items: CartItem[]): ShippingBreakdown {
     })
   }
 
-  // ジュース180ml: 10本以内¥1,000 / 11〜30本¥1,300（以降30本/ケース単位）
+  // ジュース180ml: 30本ケース×N(¥1,300each) + 端数10本以内なら小口便(¥1,000) / 11〜29本なら追加ケース(¥1,300)
   const total180ml = items
     .filter((i) => i.unit === '本' && i.productName.includes('180ml'))
     .reduce((sum, i) => sum + i.quantity * (i.tierQuantity ?? 1), 0)
 
   if (total180ml > 0) {
-    if (total180ml <= 10) {
-      lines.push({
-        label: 'ジュース180ml（小口便）',
-        quantity: 1,
-        unitCost: 1000,
-        cost: 1000,
-      })
-    } else {
-      const boxes = Math.ceil(total180ml / 30)
+    const caseCount = Math.floor(total180ml / 30)
+    const remainder = total180ml % 30
+
+    if (caseCount > 0) {
       lines.push({
         label: 'ジュース180ml（30本/ケース）',
-        quantity: boxes,
+        quantity: caseCount,
         unitCost: 1300,
-        cost: boxes * 1300,
+        cost: caseCount * 1300,
       })
+    }
+    if (remainder > 0) {
+      if (remainder <= 10) {
+        lines.push({
+          label: 'ジュース180ml（小口便）',
+          quantity: 1,
+          unitCost: 1000,
+          cost: 1000,
+        })
+      } else {
+        lines.push({
+          label: 'ジュース180ml（30本/ケース）',
+          quantity: 1,
+          unitCost: 1300,
+          cost: 1300,
+        })
+      }
     }
   }
 
