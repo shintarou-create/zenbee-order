@@ -170,9 +170,6 @@ export default function AdminShippingPage() {
         </div>
       </div>
 
-      {/* 未発送商品合計 */}
-      <PendingProductsSummary dateFrom={dateFrom} dateTo={dateTo} />
-
       {/* 選択バナー */}
       {selectedIds.length > 0 && (
         <div className="bg-green-50 rounded-xl border border-green-200 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
@@ -232,6 +229,9 @@ export default function AdminShippingPage() {
           />
         )}
       </div>
+
+      {/* 未発送商品合計 */}
+      <PendingProductsSummary dateFrom={dateFrom} dateTo={dateTo} />
     </div>
   )
 }
