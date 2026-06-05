@@ -86,7 +86,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
               ?? p.product_prices?.find((pp) => pp.price_rank === 'standard')
             const activeTiers = withTiers
               ? (p.pricing_tiers ?? [])
-                  .filter((t) => t.is_active)
+                  .filter((t) => t.is_active !== false)
                   .sort((a, b) => a.display_order - b.display_order)
               : undefined
             return {

@@ -41,6 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         quantity: Number(quantity),
         unit_price: Number(unit_price),
         display_order: nextOrder,
+        is_active: true,
       })
       .select()
       .single()
