@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { adminFetch } from '@/lib/admin-fetch'
 import CustomerTable from '@/components/admin/CustomerTable'
 import type { Company, PriceRank } from '@/types'
 
@@ -11,6 +13,20 @@ const PRICE_RANKS: { value: string; label: string }[] = [
   { value: 'premium', label: '新規取引先' },
   { value: 'vip', label: 'VIP' },
 ]
+
+const LINE_FILTER_OPTIONS = [
+  { value: 'all', label: 'すべて' },
+  { value: 'linked', label: '紐づけ済み' },
+  { value: 'unlinked', label: '未紐づけ' },
+] as const
+
+const ADDRESS_FILTER_OPTIONS = [
+  { value: 'all', label: 'すべて' },
+  { value: 'has', label: '住所あり' },
+  { value: 'missing', label: '住所未取得' },
+] as const
+
+const LINE_USER_ID_RE = /^U[0-9a-f]{32}$/
 
 const initialFormData: Partial<Company> = {
   company_name: '',
@@ -39,11 +55,20 @@ export default function AdminCustomersPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [priceRankFilter, setPriceRankFilter] = useState('all')
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [lineFilter, setLineFilter] = useState<'all' | 'linked' | 'unlinked'>('all')
+  const [addressFilter, setAddressFilter] = useState<'all' | 'has' | 'missing'>('all')
   const [showModal, setShowModal] = useState(false)
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
   const [formData, setFormData] = useState<Partial<Company>>(initialFormData)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  // LINE 紐づけモーダル
+  const [linkingCompany, setLinkingCompany] = useState<Company | null>(null)
+  const [linkLineUserId, setLinkLineUserId] = useState('')
+  const [linkDisplayName, setLinkDisplayName] = useState('')
+  const [linking, setLinking] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchCompanies()
@@ -71,6 +96,10 @@ export default function AdminCustomersPage() {
     if (priceRankFilter !== 'all' && c.price_rank !== priceRankFilter) return false
     if (activeFilter === 'active' && !c.is_active) return false
     if (activeFilter === 'inactive' && c.is_active) return false
+    if (lineFilter === 'linked' && !(c.line_users && c.line_users.length > 0)) return false
+    if (lineFilter === 'unlinked' && c.line_users && c.line_users.length > 0) return false
+    if (addressFilter === 'has' && !c.postal_code && !c.address) return false
+    if (addressFilter === 'missing' && (c.postal_code || c.address)) return false
     return true
   })
 
@@ -84,6 +113,13 @@ export default function AdminCustomersPage() {
     setEditingCompany(null)
     setFormData(initialFormData)
     setShowModal(true)
+  }
+
+  function handleLinkLine(company: Company) {
+    setLinkingCompany(company)
+    setLinkLineUserId('')
+    setLinkDisplayName('')
+    setLinkError(null)
   }
 
   async function handleSave() {
@@ -107,11 +143,17 @@ export default function AdminCustomersPage() {
         is_active: formData.is_active ?? true,
         has_separate_billing: formData.has_separate_billing ?? false,
         billing_name: formData.has_separate_billing ? (formData.billing_name || null) : null,
-        billing_postal_code: formData.has_separate_billing ? (formData.billing_postal_code || null) : null,
-        billing_prefecture: formData.has_separate_billing ? (formData.billing_prefecture || null) : null,
+        billing_postal_code: formData.has_separate_billing
+          ? (formData.billing_postal_code || null)
+          : null,
+        billing_prefecture: formData.has_separate_billing
+          ? (formData.billing_prefecture || null)
+          : null,
         billing_city: formData.has_separate_billing ? (formData.billing_city || null) : null,
         billing_address: formData.has_separate_billing ? (formData.billing_address || null) : null,
-        billing_building: formData.has_separate_billing ? (formData.billing_building || null) : null,
+        billing_building: formData.has_separate_billing
+          ? (formData.billing_building || null)
+          : null,
       }
 
       if (editingCompany) {
@@ -139,31 +181,92 @@ export default function AdminCustomersPage() {
     }
   }
 
+  async function handleLinkSubmit() {
+    if (!linkingCompany) return
+    setLinkError(null)
+
+    const trimmed = linkLineUserId.trim()
+    if (!LINE_USER_ID_RE.test(trimmed)) {
+      setLinkError('LINE User ID の形式が不正です（U + 32桁小文字英数字）')
+      return
+    }
+
+    setLinking(true)
+    try {
+      const res = await adminFetch('/api/admin/line-users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id: linkingCompany.id,
+          line_user_id: trimmed,
+          display_name: linkDisplayName.trim() || undefined,
+        }),
+      })
+      const json = (await res.json()) as { error?: string }
+      if (!res.ok) {
+        setLinkError(json.error || 'エラーが発生しました')
+        return
+      }
+      setMessage({ type: 'success', text: `${linkingCompany.company_name} に LINE を紐づけました` })
+      setLinkingCompany(null)
+      await fetchCompanies()
+      setTimeout(() => setMessage(null), 3000)
+    } catch {
+      setLinkError('通信エラーが発生しました')
+    } finally {
+      setLinking(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">顧客管理</h1>
-        <button
-          onClick={handleAddNew}
-          className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          事前登録
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/admin/customers/import"
+            className="border border-green-600 text-green-600 hover:bg-green-50 font-medium px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+              />
+            </svg>
+            CSVインポート
+          </Link>
+          <button
+            onClick={handleAddNew}
+            className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            事前登録
+          </button>
+        </div>
       </div>
 
       {message && (
-        <div className={`rounded-xl px-4 py-3 text-sm font-medium ${
-          message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-        }`}>
+        <div
+          className={`rounded-xl px-4 py-3 text-sm font-medium ${
+            message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+          }`}
+        >
           {message.text}
         </div>
       )}
 
       {/* フィルター */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3">
+        {/* 価格帯 */}
         <div className="flex flex-wrap gap-2">
           {PRICE_RANKS.map((r) => (
             <button
@@ -179,6 +282,8 @@ export default function AdminCustomersPage() {
             </button>
           ))}
         </div>
+
+        {/* 有効 / 無効 */}
         <div className="flex gap-2">
           {(['all', 'active', 'inactive'] as const).map((f) => (
             <button
@@ -194,6 +299,42 @@ export default function AdminCustomersPage() {
             </button>
           ))}
         </div>
+
+        {/* LINE 紐づけ */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-500 font-medium w-14">LINE</span>
+          {LINE_FILTER_OPTIONS.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => setLineFilter(f.value)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                lineFilter === f.value
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {/* 住所 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-500 font-medium w-14">住所</span>
+          {ADDRESS_FILTER_OPTIONS.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => setAddressFilter(f.value)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                addressFilter === f.value
+                  ? 'bg-yellow-500 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 顧客テーブル */}
@@ -203,11 +344,15 @@ export default function AdminCustomersPage() {
             <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <CustomerTable customers={filteredCompanies} onEdit={handleEdit} />
+          <CustomerTable
+            customers={filteredCompanies}
+            onEdit={handleEdit}
+            onLinkLine={handleLinkLine}
+          />
         )}
       </div>
 
-      {/* モーダル */}
+      {/* 編集モーダル */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowModal(false)} />
@@ -216,12 +361,14 @@ export default function AdminCustomersPage() {
               <h2 className="text-lg font-bold text-gray-900">
                 {editingCompany ? '顧客を編集' : '顧客を事前登録'}
               </h2>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
+              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
@@ -244,7 +391,9 @@ export default function AdminCustomersPage() {
                 <input
                   type="text"
                   value={formData.representative_name || ''}
-                  onChange={(e) => setFormData((p) => ({ ...p, representative_name: e.target.value }))}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, representative_name: e.target.value }))
+                  }
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                 />
               </div>
@@ -292,7 +441,9 @@ export default function AdminCustomersPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">建物名・部屋番号</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  建物名・部屋番号
+                </label>
                 <input
                   type="text"
                   value={formData.building || ''}
@@ -315,7 +466,9 @@ export default function AdminCustomersPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">価格帯</label>
                   <select
                     value={formData.price_rank || 'standard'}
-                    onChange={(e) => setFormData((p) => ({ ...p, price_rank: e.target.value as PriceRank }))}
+                    onChange={(e) =>
+                      setFormData((p) => ({ ...p, price_rank: e.target.value as PriceRank }))
+                    }
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                   >
                     <option value="standard">既存取引先</option>
@@ -332,7 +485,9 @@ export default function AdminCustomersPage() {
                     type="checkbox"
                     id="has_separate_billing"
                     checked={formData.has_separate_billing ?? false}
-                    onChange={(e) => setFormData((p) => ({ ...p, has_separate_billing: e.target.checked }))}
+                    onChange={(e) =>
+                      setFormData((p) => ({ ...p, has_separate_billing: e.target.checked }))
+                    }
                     className="rounded border-gray-300 text-green-600 focus:ring-green-500"
                   />
                   <label htmlFor="has_separate_billing" className="text-sm font-medium text-gray-700">
@@ -345,7 +500,9 @@ export default function AdminCustomersPage() {
                     <input
                       type="text"
                       value={formData.billing_name || ''}
-                      onChange={(e) => setFormData((p) => ({ ...p, billing_name: e.target.value }))}
+                      onChange={(e) =>
+                        setFormData((p) => ({ ...p, billing_name: e.target.value }))
+                      }
                       placeholder="請求先名"
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                     />
@@ -353,14 +510,18 @@ export default function AdminCustomersPage() {
                       <input
                         type="text"
                         value={formData.billing_postal_code || ''}
-                        onChange={(e) => setFormData((p) => ({ ...p, billing_postal_code: e.target.value }))}
+                        onChange={(e) =>
+                          setFormData((p) => ({ ...p, billing_postal_code: e.target.value }))
+                        }
                         placeholder="郵便番号"
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                       />
                       <input
                         type="text"
                         value={formData.billing_prefecture || ''}
-                        onChange={(e) => setFormData((p) => ({ ...p, billing_prefecture: e.target.value }))}
+                        onChange={(e) =>
+                          setFormData((p) => ({ ...p, billing_prefecture: e.target.value }))
+                        }
                         placeholder="都道府県"
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                       />
@@ -368,21 +529,27 @@ export default function AdminCustomersPage() {
                     <input
                       type="text"
                       value={formData.billing_city || ''}
-                      onChange={(e) => setFormData((p) => ({ ...p, billing_city: e.target.value }))}
+                      onChange={(e) =>
+                        setFormData((p) => ({ ...p, billing_city: e.target.value }))
+                      }
                       placeholder="市区町村"
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                     />
                     <input
                       type="text"
                       value={formData.billing_address || ''}
-                      onChange={(e) => setFormData((p) => ({ ...p, billing_address: e.target.value }))}
+                      onChange={(e) =>
+                        setFormData((p) => ({ ...p, billing_address: e.target.value }))
+                      }
                       placeholder="住所"
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                     />
                     <input
                       type="text"
                       value={formData.billing_building || ''}
-                      onChange={(e) => setFormData((p) => ({ ...p, billing_building: e.target.value }))}
+                      onChange={(e) =>
+                        setFormData((p) => ({ ...p, billing_building: e.target.value }))
+                      }
                       placeholder="建物名"
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                     />
@@ -424,6 +591,96 @@ export default function AdminCustomersPage() {
               </button>
               <button
                 onClick={() => setShowModal(false)}
+                className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium px-6 py-2 rounded-lg text-sm transition-colors"
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LINE 紐づけモーダル */}
+      {linkingCompany && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setLinkingCompany(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">LINE User ID 紐づけ</h2>
+              <button
+                onClick={() => setLinkingCompany(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <p className="text-sm text-gray-600">
+                <span className="font-medium text-gray-900">{linkingCompany.company_name}</span>{' '}
+                に紐づける LINE User ID を入力してください。
+              </p>
+
+              {linkingCompany.line_users && linkingCompany.line_users.length > 0 && (
+                <div className="bg-yellow-50 rounded-lg px-3 py-2 text-sm text-yellow-700">
+                  この会社にはすでに {linkingCompany.line_users.length} 名の担当者が登録されています。
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  LINE User ID <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={linkLineUserId}
+                  onChange={(e) => {
+                    setLinkLineUserId(e.target.value)
+                    setLinkError(null)
+                  }}
+                  placeholder="U0000000000000000000000000000000"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  取引先の /not-registered 画面に表示される ID（U + 32桁）
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  担当者名（任意）
+                </label>
+                <input
+                  type="text"
+                  value={linkDisplayName}
+                  onChange={(e) => setLinkDisplayName(e.target.value)}
+                  placeholder="山田 太郎"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+
+              {linkError && (
+                <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{linkError}</p>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-gray-100 flex gap-3">
+              <button
+                onClick={handleLinkSubmit}
+                disabled={linking || !linkLineUserId.trim()}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
+              >
+                {linking ? '紐づけ中...' : '紐づける'}
+              </button>
+              <button
+                onClick={() => setLinkingCompany(null)}
                 className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium px-6 py-2 rounded-lg text-sm transition-colors"
               >
                 キャンセル
