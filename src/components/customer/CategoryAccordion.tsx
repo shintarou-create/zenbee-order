@@ -7,10 +7,11 @@ import ProductCard from './ProductCard'
 interface CategoryAccordionProps {
   categories: Array<Category & { products: Product[] }>
   cartItems: CartItem[]
-  onAddToCart: (item: Omit<CartItem, 'subtotal'>) => void
+  onPendingChange: (productId: string, item: Omit<CartItem, 'subtotal'> | null) => void
+  resetKey: number
 }
 
-export default function CategoryAccordion({ categories, cartItems, onAddToCart }: CategoryAccordionProps) {
+export default function CategoryAccordion({ categories, cartItems, onPendingChange, resetKey }: CategoryAccordionProps) {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set())
 
   function toggle(id: string) {
@@ -69,8 +70,9 @@ export default function CategoryAccordion({ categories, cartItems, onAddToCart }
                     <ProductCard
                       key={product.id}
                       product={product}
-                      onAddToCart={onAddToCart}
+                      onPendingChange={onPendingChange}
                       cartItem={cartItems.find((ci) => ci.productId === product.id)}
+                      resetKey={resetKey}
                     />
                   ))}
                 </div>

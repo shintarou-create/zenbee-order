@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useLiff } from '@/hooks/useLiff'
@@ -9,7 +9,7 @@ import { useCart } from '@/hooks/useCart'
 import { createClient } from '@/lib/supabase/client'
 import CategoryAccordion from '@/components/customer/CategoryAccordion'
 import ProductCard from '@/components/customer/ProductCard'
-import type { Company, PriceRank, Category } from '@/types'
+import type { Company, PriceRank, Category, CartItem } from '@/types'
 
 export default function HomePage() {
   const router = useRouter()
@@ -23,6 +23,36 @@ export default function HomePage() {
     withTiers: true,
   })
   const { items: cartItems, addToCart, itemCount } = useCart()
+
+  // 各商品カードの保留状態（数量入力済みだがまだカートに入れていない）
+  const [pendingItems, setPendingItems] = useState<Map<string, Omit<CartItem, 'subtotal'>>>(new Map())
+  // 一括追加後にカードをリセットするためのキー
+  const [resetKey, setResetKey] = useState(0)
+
+  const handlePendingChange = useCallback(
+    (productId: string, item: Omit<CartItem, 'subtotal'> | null) => {
+      setPendingItems((prev) => {
+        // 変更がない場合は同一参照を返してレンダリングを抑制
+        if (item === null && !prev.has(productId)) return prev
+        const next = new Map(prev)
+        if (item === null) {
+          next.delete(productId)
+        } else {
+          next.set(productId, item)
+        }
+        return next
+      })
+    },
+    []
+  )
+
+  function handleAddAllToCart() {
+    pendingItems.forEach((item) => {
+      addToCart(item)
+    })
+    setResetKey((k) => k + 1)
+    setPendingItems(new Map())
+  }
 
   useEffect(() => {
     if (!userId) return
@@ -68,7 +98,6 @@ export default function HomePage() {
 
   // カテゴリ×商品のグループを構築
   const categorizedProducts = useMemo(() => {
-    // category_info を持つ商品からカテゴリ情報を収集
     const categoryMap = new Map<string, Category & { products: typeof products }>()
 
     for (const p of products) {
@@ -81,15 +110,15 @@ export default function HomePage() {
       }
     }
 
-    // display_order 順に並べる
     return Array.from(categoryMap.values()).sort(
       (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
     )
   }, [products])
 
-  // カテゴリ情報がない（DBマイグレーション前）商品の旧カテゴリタブ対応フォールバック
   const hasCategories = categorizedProducts.length > 0
   const uncategorized = products.filter((p) => !p.category_info)
+
+  const pendingCount = pendingItems.size
 
   if (liffLoading || customerLoading) {
     return (
@@ -147,7 +176,7 @@ export default function HomePage() {
       </header>
 
       {/* 商品一覧 */}
-      <main className="max-w-2xl mx-auto px-4 py-4">
+      <main className="max-w-2xl mx-auto px-4 py-4 pb-24">
         {productsLoading ? (
           <div className="flex justify-center py-12">
             <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
@@ -157,7 +186,8 @@ export default function HomePage() {
             <CategoryAccordion
               categories={categorizedProducts}
               cartItems={cartItems}
-              onAddToCart={addToCart}
+              onPendingChange={handlePendingChange}
+              resetKey={resetKey}
             />
             {uncategorized.length > 0 && (
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -177,16 +207,32 @@ export default function HomePage() {
               <ProductCard
                 key={product.id}
                 product={product}
-                onAddToCart={addToCart}
+                onPendingChange={handlePendingChange}
                 cartItem={cartItems.find((i) => i.productId === product.id)}
+                resetKey={resetKey}
               />
             ))}
           </div>
         )}
       </main>
 
-      {/* カートボタン（下部固定） */}
-      {itemCount > 0 && (
+      {/* 固定フッター：保留品あり→一括追加ボタン、なしでカートあり→カートを見るボタン */}
+      {pendingCount > 0 ? (
+        <div className="fixed bottom-4 left-0 right-0 flex justify-center px-4 z-20">
+          <button
+            onClick={handleAddAllToCart}
+            className="w-full max-w-sm bg-green-600 hover:bg-green-700 active:scale-95 text-white font-bold py-4 px-6 rounded-full shadow-lg flex items-center justify-between transition-all"
+          >
+            <span className="bg-green-500 rounded-full px-2 py-0.5 text-sm">
+              {pendingCount}品
+            </span>
+            <span>カートに追加</span>
+            <svg className="w-5 h-5 text-green-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-4H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+          </button>
+        </div>
+      ) : itemCount > 0 ? (
         <div className="fixed bottom-4 left-0 right-0 flex justify-center px-4 z-20">
           <Link
             href="/cart"
@@ -199,7 +245,7 @@ export default function HomePage() {
             <span className="text-green-200">→</span>
           </Link>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

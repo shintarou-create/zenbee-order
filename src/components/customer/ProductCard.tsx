@@ -1,19 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { Product, CartItem, CoolType, ProductPricingTier } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 
 interface ProductCardProps {
   product: Product
-  onAddToCart: (item: Omit<CartItem, 'subtotal'>) => void
+  onPendingChange: (productId: string, item: Omit<CartItem, 'subtotal'> | null) => void
   cartItem?: CartItem
+  resetKey?: number
 }
 
-export default function ProductCard({ product, onAddToCart, cartItem }: ProductCardProps) {
-  const [quantity, setQuantity] = useState<number>(1)
+export default function ProductCard({ product, onPendingChange, cartItem, resetKey }: ProductCardProps) {
+  const [quantity, setQuantity] = useState<number>(0)
   const [selectedTier, setSelectedTier] = useState<ProductPricingTier | null>(null)
-  const [adding, setAdding] = useState(false)
 
   const tiers = product.pricing_tiers ?? []
   const hasTiers = tiers.length > 0
@@ -22,24 +22,29 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
   const isLowStock = product.stock_status === 'triangle'
   const currentPrice = product.current_price || 0
 
-  function handleQuantityChange(value: number) {
-    const min = hasTiers ? 1 : product.min_order_qty
-    const max = hasTiers ? 999 : product.max_order_qty
-    const step = hasTiers ? 1 : product.step_qty
-    const clamped = Math.max(min, Math.min(max, value))
-    const stepped = Math.round(clamped / step) * step
-    setQuantity(hasTiers ? Math.max(1, Math.floor(stepped)) : parseFloat(stepped.toFixed(2)))
-  }
+  // resetKey が変わったらカード状態をリセット（初回は無視）
+  const prevResetKey = useRef(resetKey ?? 0)
+  useEffect(() => {
+    if (prevResetKey.current === (resetKey ?? 0)) return
+    prevResetKey.current = resetKey ?? 0
+    setQuantity(0)
+    setSelectedTier(null)
+  }, [resetKey])
 
-  async function handleAddToCart() {
-    if (isUnavailable) return
-    if (hasTiers && !selectedTier) return
-    if (!hasTiers && !currentPrice) return
+  // onPendingChange を ref 経由で保持し、effect deps から除外
+  const onPendingChangeRef = useRef(onPendingChange)
+  onPendingChangeRef.current = onPendingChange
 
-    setAdding(true)
-    try {
-      if (hasTiers && selectedTier) {
-        onAddToCart({
+  // quantity / selectedTier / product が変わったら親に保留状態を通知
+  useEffect(() => {
+    const cb = onPendingChangeRef.current
+    if (isUnavailable) {
+      cb(product.id, null)
+      return
+    }
+    if (hasTiers) {
+      if (selectedTier && quantity >= 1) {
+        cb(product.id, {
           productId: product.id,
           productName: product.name,
           quantity,
@@ -54,7 +59,11 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
           tierQuantity: selectedTier.quantity,
         })
       } else {
-        onAddToCart({
+        cb(product.id, null)
+      }
+    } else {
+      if (quantity >= 1) {
+        cb(product.id, {
           productId: product.id,
           productName: product.name,
           quantity,
@@ -65,21 +74,58 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
           minOrderQty: product.min_order_qty,
           imageUrl: product.image_url,
         })
+      } else {
+        cb(product.id, null)
       }
-      setQuantity(hasTiers ? 1 : product.min_order_qty)
-    } finally {
-      setTimeout(() => setAdding(false), 500)
+    }
+  }, [quantity, selectedTier, product, hasTiers, isUnavailable, currentPrice])
+
+  function handleQuantityChange(value: number) {
+    if (value <= 0) {
+      setQuantity(0)
+      return
+    }
+    if (hasTiers) {
+      setQuantity(Math.min(999, Math.floor(value)))
+    } else {
+      const clamped = Math.max(product.min_order_qty, Math.min(product.max_order_qty, value))
+      const stepped = Math.round(clamped / product.step_qty) * product.step_qty
+      setQuantity(parseFloat(stepped.toFixed(2)))
     }
   }
 
-  // 段階あり商品の小計
-  const tierSubtotal = hasTiers && selectedTier
+  function handleDecrement() {
+    if (quantity <= 0) return
+    if (hasTiers) {
+      handleQuantityChange(quantity - 1)
+    } else {
+      // min_order_qty から1step下がると 0（未選択）になる
+      handleQuantityChange(quantity <= product.min_order_qty ? 0 : quantity - product.step_qty)
+    }
+  }
+
+  function handleIncrement() {
+    if (hasTiers) {
+      handleQuantityChange(quantity === 0 ? 1 : quantity + 1)
+    } else {
+      // 0 からの最初の増加は min_order_qty へジャンプ
+      handleQuantityChange(quantity === 0 ? product.min_order_qty : quantity + product.step_qty)
+    }
+  }
+
+  const tierSubtotal = hasTiers && selectedTier && quantity >= 1
     ? selectedTier.unit_price * selectedTier.quantity * quantity
     : null
-  const tierTotalBottles = hasTiers && selectedTier ? selectedTier.quantity * quantity : null
+  const tierTotalBottles = hasTiers && selectedTier && quantity >= 1
+    ? selectedTier.quantity * quantity
+    : null
+
+  const isPending = hasTiers ? (selectedTier !== null && quantity >= 1) : quantity >= 1
 
   return (
-    <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${isUnavailable ? 'opacity-60' : ''}`}>
+    <div className={`bg-white rounded-xl shadow-sm overflow-hidden border-2 transition-colors ${
+      isUnavailable ? 'opacity-60 border-transparent' : isPending ? 'border-green-400' : 'border-transparent'
+    }`}>
       {/* 商品画像 */}
       {product.image_url && (
         <div className="w-full h-32 overflow-hidden bg-gray-50">
@@ -145,6 +191,7 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
                         name={`tier-${product.id}`}
                         value={tier.id}
                         checked={selectedTier?.id === tier.id}
+                        onClick={() => { if (selectedTier?.id === tier.id) setSelectedTier(null) }}
                         onChange={() => setSelectedTier(tier)}
                         className="accent-green-600"
                       />
@@ -155,14 +202,17 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
                     </label>
                   ))}
                 </div>
+                {selectedTier && (
+                  <p className="text-xs text-gray-400 mt-1">選択中の段階をタップで解除</p>
+                )}
               </div>
             )}
 
             {/* 数量入力 */}
             <div className="flex items-center gap-2 mb-3">
               <button
-                onClick={() => handleQuantityChange(quantity - (hasTiers ? 1 : product.step_qty))}
-                disabled={quantity <= (hasTiers ? 1 : product.min_order_qty)}
+                onClick={handleDecrement}
+                disabled={quantity <= 0}
                 className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 flex items-center justify-center text-lg font-bold transition-colors"
               >
                 −
@@ -171,18 +221,26 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
                 <input
                   type="number"
                   value={quantity}
-                  onChange={(e) => handleQuantityChange(parseFloat(e.target.value) || 1)}
-                  min={hasTiers ? 1 : product.min_order_qty}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value)
+                    if (isNaN(v) || v <= 0) { setQuantity(0); return }
+                    handleQuantityChange(v)
+                  }}
+                  min={0}
                   step={hasTiers ? 1 : product.step_qty}
-                  className="w-20 text-center text-lg font-bold border border-gray-200 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-green-400"
+                  className={`w-20 text-center text-lg font-bold border rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-green-400 transition-colors ${
+                    quantity === 0
+                      ? 'text-gray-300 border-gray-200 bg-gray-50'
+                      : 'border-gray-200'
+                  }`}
                 />
-                <span className="text-sm text-gray-500">
+                <span className={`text-sm transition-colors ${quantity === 0 ? 'text-gray-300' : 'text-gray-500'}`}>
                   {hasTiers ? 'ケース' : product.unit}
                 </span>
               </div>
               <button
-                onClick={() => handleQuantityChange(quantity + (hasTiers ? 1 : product.step_qty))}
-                disabled={!hasTiers && quantity >= product.max_order_qty}
+                onClick={handleIncrement}
+                disabled={!hasTiers && quantity > 0 && quantity >= product.max_order_qty}
                 className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 flex items-center justify-center text-lg font-bold transition-colors"
               >
                 ＋
@@ -191,7 +249,7 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
 
             {/* 段階ありの合計表示 */}
             {hasTiers && selectedTier && tierSubtotal !== null && tierTotalBottles !== null && (
-              <div className="mb-3 bg-green-50 rounded-lg px-3 py-2 text-sm">
+              <div className="mb-2 bg-green-50 rounded-lg px-3 py-2 text-sm">
                 <div className="text-gray-600">
                   {selectedTier.quantity}本入 × {quantity}ケース = <strong>{tierTotalBottles}本</strong>
                 </div>
@@ -203,25 +261,10 @@ export default function ProductCard({ product, onAddToCart, cartItem }: ProductC
 
             {/* 段階なしの価格表示 */}
             {!hasTiers && currentPrice > 0 && (
-              <div className="mb-3 text-sm text-gray-600">
+              <div className={`mb-2 text-sm transition-colors ${quantity === 0 ? 'text-gray-400' : 'text-gray-600'}`}>
                 {formatCurrency(currentPrice)}/{product.unit}
               </div>
             )}
-
-            {/* カートに追加ボタン */}
-            <button
-              onClick={handleAddToCart}
-              disabled={adding || (hasTiers && !selectedTier)}
-              className={`w-full py-3 rounded-xl font-bold text-sm transition-all ${
-                adding
-                  ? 'bg-green-400 text-white scale-95'
-                  : hasTiers && !selectedTier
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  : 'bg-green-600 hover:bg-green-700 text-white active:scale-95'
-              }`}
-            >
-              {adding ? '追加しました ✓' : hasTiers && !selectedTier ? '段階を選択してください' : 'カートに追加'}
-            </button>
           </>
         )}
 
