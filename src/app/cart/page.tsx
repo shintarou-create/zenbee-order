@@ -24,10 +24,11 @@ function getDefaultDeliveryDate(): string {
 export default function CartPage() {
   const router = useRouter()
   const { items, total, updateQuantity, removeFromCart, clearCart } = useCart()
+  const activeItems = items.filter((i) => i.quantity > 0)
   let shipping: ShippingBreakdown = { lines: [], total: 0 }
   let shippingError: string | null = null
   try {
-    shipping = calculateShipping(items)
+    shipping = calculateShipping(activeItems)
   } catch (err) {
     shippingError = err instanceof Error ? err.message : '送料計算エラー'
   }
@@ -38,7 +39,7 @@ export default function CartPage() {
   const [error, setError] = useState<string | null>(null)
 
   async function handleOrder() {
-    if (items.length === 0) return
+    if (activeItems.length === 0) return
     if (!userId) {
       setError('ログインが必要です。ページを再読み込みしてください。')
       return
@@ -64,7 +65,7 @@ export default function CartPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          items: items.map((item) => ({
+          items: activeItems.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
           })),
@@ -154,13 +155,32 @@ export default function CartPage() {
                 <h3 className="font-bold text-gray-900 mb-3 text-base">送料内訳</h3>
                 <div className="space-y-1.5">
                   {shipping.lines.map((line, i) => (
-                    <div key={i} className="text-sm text-gray-700">
-                      {line.label} × {line.quantity}
+                    <div key={i} className="flex items-center justify-between text-sm text-gray-700">
+                      <span>{line.label} × {line.quantity}</span>
+                      <span className="font-medium">¥{line.cost.toLocaleString()}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
+
+            {/* 金額合計 */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between text-gray-600">
+                  <span>商品合計</span>
+                  <span>¥{total.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                  <span>送料合計</span>
+                  <span>¥{shipping.total.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between font-bold text-gray-900 border-t border-gray-100 pt-2 mt-1 text-base">
+                  <span>合計（税込）</span>
+                  <span>¥{(total + shipping.total).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
 
             {/* 納品希望日 */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
@@ -207,7 +227,7 @@ export default function CartPage() {
           <div className="max-w-2xl mx-auto">
             <button
               onClick={handleOrder}
-              disabled={submitting || items.length === 0 || !!shippingError}
+              disabled={submitting || activeItems.length === 0 || !!shippingError}
               className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
                 submitting
                   ? 'bg-green-400 text-white'

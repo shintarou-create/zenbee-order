@@ -99,10 +99,7 @@ export function useCart(): UseCartReturn {
   }, [])
 
   const updateQuantity = useCallback((productId: string, quantity: number) => {
-    if (quantity <= 0) {
-      setItems((prev) => prev.filter((i) => i.productId !== productId))
-      return
-    }
+    if (quantity < 0) return
     setItems((prev) =>
       prev.map((i) => {
         if (i.productId === productId) {

@@ -14,7 +14,7 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
 
   function handleDecrement() {
     const next = Math.round((item.quantity - stepQty) * 1000) / 1000
-    onUpdateQuantity(item.productId, Math.max(minOrderQty, next))
+    onUpdateQuantity(item.productId, Math.max(0, next))
   }
 
   function handleIncrement() {
@@ -24,7 +24,10 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = parseFloat(e.target.value)
-    if (isNaN(val)) return
+    if (isNaN(val) || val <= 0) {
+      onUpdateQuantity(item.productId, 0)
+      return
+    }
     const stepped = Math.round(val / stepQty) * stepQty
     const clamped = Math.max(minOrderQty, stepped)
     onUpdateQuantity(item.productId, parseFloat(clamped.toFixed(3)))
@@ -78,7 +81,7 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
         <div className="flex items-center gap-2">
           <button
             onClick={handleDecrement}
-            disabled={item.quantity <= minOrderQty}
+            disabled={item.quantity <= 0}
             className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 flex items-center justify-center text-lg font-bold transition-colors"
           >
             −
@@ -88,11 +91,11 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
               type="number"
               value={item.quantity}
               onChange={handleChange}
-              min={minOrderQty}
+              min={0}
               step={stepQty}
-              className="w-16 text-center font-bold border border-gray-200 rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+              className={`w-16 text-center font-bold border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition-colors ${item.quantity === 0 ? 'text-gray-300 border-gray-200 bg-gray-50' : 'border-gray-200'}`}
             />
-            <span className="text-sm text-gray-500">
+            <span className={`text-sm transition-colors ${item.quantity === 0 ? 'text-gray-300' : 'text-gray-500'}`}>
               {hasTier ? 'ケース' : item.unit}
             </span>
           </div>
@@ -104,7 +107,7 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
           </button>
         </div>
         <div className="text-right">
-          <p className="font-bold text-gray-900">¥{item.subtotal.toLocaleString()}</p>
+          <p className={`font-bold ${item.quantity === 0 ? 'text-gray-300' : 'text-gray-900'}`}>¥{item.subtotal.toLocaleString()}</p>
         </div>
       </div>
     </div>
