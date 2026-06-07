@@ -31,9 +31,9 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
   const [maxOrderQty, setMaxOrderQty] = useState(product?.max_order_qty || 200)
   const [stepQty, setStepQty] = useState(product?.step_qty || 0.1)
   const [coolType, setCoolType] = useState(product?.cool_type || 0)
-  const [isSeasonal, setIsSeasonal] = useState(product?.is_seasonal || false)
-  const [seasonStart, setSeasonStart] = useState(product?.season_start || '')
-  const [seasonEnd, setSeasonEnd] = useState(product?.season_end || '')
+  const [orderStartDate, setOrderStartDate] = useState(product?.order_start_date || '')
+  const [shipStartDate, setShipStartDate] = useState(product?.ship_start_date || '')
+  const [orderEndDate, setOrderEndDate] = useState(product?.order_end_date || '')
   const [stockStatus, setStockStatus] = useState<StockStatus>(product?.stock_status ?? 'circle')
   const [sortOrder, setSortOrder] = useState(product?.sort_order ?? 0)
   const [description, setDescription] = useState(product?.description || '')
@@ -131,9 +131,9 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
           max_order_qty: maxOrderQty,
           step_qty: stepQty,
           cool_type: coolType as 0 | 1 | 2,
-          is_seasonal: isSeasonal,
-          season_start: isSeasonal ? seasonStart : null,
-          season_end: isSeasonal ? seasonEnd : null,
+          order_start_date: orderStartDate || null,
+          ship_start_date: shipStartDate || null,
+          order_end_date: orderEndDate || null,
           sort_order: sortOrder,
           description: description.trim() || null,
           is_active: product?.is_active ?? true,
@@ -298,46 +298,41 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
         </select>
       </div>
 
-      {/* 季節商品 */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <input
-            type="checkbox"
-            id="is_seasonal"
-            checked={isSeasonal}
-            onChange={(e) => setIsSeasonal(e.target.checked)}
-            className="rounded border-gray-300 text-green-600 focus:ring-green-500"
-          />
-          <label htmlFor="is_seasonal" className="text-sm font-medium text-gray-700">
-            季節商品
-          </label>
-        </div>
-        {isSeasonal && (
-          <div className="grid grid-cols-2 gap-3 ml-6">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">解禁日 (MM-DD)</label>
-              <input
-                type="text"
-                value={seasonStart}
-                onChange={(e) => setSeasonStart(e.target.value)}
-                placeholder="11-01"
-                pattern="\d{2}-\d{2}"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">終了日 (MM-DD)</label>
-              <input
-                type="text"
-                value={seasonEnd}
-                onChange={(e) => setSeasonEnd(e.target.value)}
-                placeholder="01-31"
-                pattern="\d{2}-\d{2}"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-              />
-            </div>
+      {/* 販売期間・予約設定 */}
+      <div className="space-y-3">
+        <p className="text-sm font-medium text-gray-700">販売期間・予約設定（空欄=制約なし）</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">受付開始日</label>
+            <input
+              type="date"
+              value={orderStartDate}
+              onChange={(e) => setOrderStartDate(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+            />
+            <p className="mt-0.5 text-xs text-gray-400">この日から商品を表示・受付</p>
           </div>
-        )}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">発送開始日</label>
+            <input
+              type="date"
+              value={shipStartDate}
+              onChange={(e) => setShipStartDate(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+            />
+            <p className="mt-0.5 text-xs text-gray-400">この日より前は「予約受付中」表示</p>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">終了日</label>
+            <input
+              type="date"
+              value={orderEndDate}
+              onChange={(e) => setOrderEndDate(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+            />
+            <p className="mt-0.5 text-xs text-gray-400">この日を過ぎたら非表示</p>
+          </div>
+        </div>
       </div>
 
       {/* 在庫ステータス */}

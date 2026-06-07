@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Product, PriceRank } from '@/types'
-import { isInSeason } from '@/lib/utils'
+import { isProductVisible } from '@/lib/utils'
 
 interface UseProductsOptions {
   priceRank?: PriceRank
@@ -68,7 +68,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
           if (fallbackError) throw fallbackError
 
           if (mounted && fallbackData) {
-            const filtered = (fallbackData as Product[]).filter((p) => isInSeason(p))
+            const filtered = (fallbackData as Product[]).filter((p) => isProductVisible(p))
             setProducts(filtered.map((p) => ({
               ...p,
               current_price: (p.product_prices?.find((pp) => pp.price_rank === priceRank) ?? p.product_prices?.find((pp) => pp.price_rank === 'standard'))?.price_per_unit || 0,
@@ -78,7 +78,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
         }
 
         if (mounted && data) {
-          const filtered = (data as unknown as Product[]).filter((p) => isInSeason(p))
+          const filtered = (data as unknown as Product[]).filter((p) => isProductVisible(p))
 
           // 価格段階ありの場合、is_activeなものだけ残してdisplay_order順に並べる
           const productsWithPrice = filtered.map((p) => {

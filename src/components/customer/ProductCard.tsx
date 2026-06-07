@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import type { Product, CartItem, CoolType, ProductPricingTier } from '@/types'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, isProductPreorder, formatShipStartDate } from '@/lib/utils'
 
 interface ProductCardProps {
   product: Product
@@ -138,8 +138,10 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
       <div className="bg-green-50 px-4 py-3 flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            {product.is_seasonal && (
-              <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">旬</span>
+            {isProductPreorder(product) && (
+              <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">
+                予約受付中・発送は{formatShipStartDate(product.ship_start_date!)}から
+              </span>
             )}
             {product.cool_type === 1 && (
               <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">冷蔵</span>

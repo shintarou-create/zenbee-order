@@ -110,6 +110,9 @@ export interface Product {
   is_seasonal: boolean
   season_start: string | null
   season_end: string | null
+  order_start_date: string | null
+  ship_start_date: string | null
+  order_end_date: string | null
   sort_order: number
   display_order: number
   is_active: boolean

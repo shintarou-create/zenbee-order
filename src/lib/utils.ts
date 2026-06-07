@@ -39,32 +39,29 @@ export function formatDateTime(date: string | Date | null | undefined): string {
   }).format(d)
 }
 
-export function isInSeason(product: Product): boolean {
-  // 季節商品でない場合は常にtrue
-  if (!product.is_seasonal) return true
+// 日本時間で今日の日付を YYYY-MM-DD 形式で返す
+function getTodayJST(): string {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
+}
 
-  // season_start/season_endが未設定の場合はtrue
-  if (!product.season_start || !product.season_end) return true
+// 表示判定：order_start_date〜order_end_date の範囲内か（NULL は制約なし）
+export function isProductVisible(product: Product): boolean {
+  const today = getTodayJST()
+  if (product.order_start_date && today < product.order_start_date) return false
+  if (product.order_end_date && today > product.order_end_date) return false
+  return true
+}
 
-  const now = new Date()
-  const currentMonth = now.getMonth() + 1 // 1-12
-  const currentDay = now.getDate()
+// 予約判定：ship_start_date が設定されていて今日がその日より前
+export function isProductPreorder(product: Product): boolean {
+  if (!product.ship_start_date) return false
+  return getTodayJST() < product.ship_start_date
+}
 
-  const [startMonth, startDay] = product.season_start.split('-').map(Number)
-  const [endMonth, endDay] = product.season_end.split('-').map(Number)
-
-  // 現在の日付をMM-DD形式の数値として比較
-  const current = currentMonth * 100 + currentDay
-  const start = startMonth * 100 + startDay
-  const end = endMonth * 100 + endDay
-
-  if (start <= end) {
-    // 通常の範囲（例: 11-01 〜 01-31 はまたがないケースは少ないが）
-    return current >= start && current <= end
-  } else {
-    // 年をまたぐ場合（例: 11-01 〜 01-31）
-    return current >= start || current <= end
-  }
+// "YYYY-MM-DD" → "M月D日" 形式に変換
+export function formatShipStartDate(dateStr: string): string {
+  const [, month, day] = dateStr.split('-').map(Number)
+  return `${month}月${day}日`
 }
 
 export function getNextBusinessDay(date: Date): Date {
