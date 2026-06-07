@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { adminFetch } from '@/lib/admin-fetch'
 import OrderTable from '@/components/admin/OrderTable'
 import PendingProductsSummary from '@/components/admin/PendingProductsSummary'
 import type { Order } from '@/types'
+import { formatCurrency } from '@/lib/utils'
 
 const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: 'pending', label: '未対応' },
@@ -13,6 +15,71 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: 'all', label: 'すべて' },
 ]
 
+interface DeleteModalProps {
+  orders: Order[]
+  onConfirm: () => Promise<void>
+  onCancel: () => void
+  isDeleting: boolean
+  errorMsg: string | null
+}
+
+function DeleteConfirmModal({ orders, onConfirm, onCancel, isDeleting, errorMsg }: DeleteModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+        <div className="p-5 border-b border-gray-100">
+          <h2 className="text-base font-bold text-gray-900">注文の完全削除</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            この {orders.length} 件を完全に削除します。元に戻せません。よろしいですか？
+          </p>
+        </div>
+
+        <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
+          {orders.map((order) => (
+            <div key={order.id} className="px-5 py-3 flex items-center justify-between gap-3">
+              <div>
+                <span className="text-sm font-medium text-gray-900">{order.order_number}</span>
+                <span className="text-sm text-gray-500 ml-2">
+                  {order.company?.company_name ?? '—'}
+                </span>
+              </div>
+              <span className="text-sm font-medium text-gray-700 flex-shrink-0">
+                {formatCurrency(order.total_amount)}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {errorMsg && (
+          <div className="mx-5 mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            {errorMsg}
+          </div>
+        )}
+
+        <div className="p-4 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+          >
+            キャンセル
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="px-4 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {isDeleting && (
+              <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            )}
+            削除する
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -20,6 +87,10 @@ export default function AdminOrdersPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchOrders() // eslint-disable-line react-hooks/exhaustive-deps
@@ -56,11 +127,18 @@ export default function AdminOrdersPage() {
 
       if (error) throw error
       setOrders((data || []) as Order[])
+      // フィルタ変更時は選択をリセット
+      setSelectedIds([])
     } catch (err) {
       console.error('注文取得エラー:', err)
     } finally {
       setIsLoading(false)
     }
+  }
+
+  function showMsg(type: 'success' | 'error', text: string) {
+    setMessage({ type, text })
+    setTimeout(() => setMessage(null), 4000)
   }
 
   async function handleUndoDeliveryNotePrinted(orderId: string) {
@@ -94,10 +172,35 @@ export default function AdminOrdersPage() {
       await fetchOrders()
     } catch (err) {
       console.error('伝票済み解除エラー:', err)
-      setMessage({ type: 'error', text: '伝票済みの解除に失敗しました' })
-      setTimeout(() => setMessage(null), 3000)
+      showMsg('error', '伝票済みの解除に失敗しました')
     }
   }
+
+  async function handleDeleteConfirm() {
+    if (selectedIds.length === 0) return
+    setIsDeleting(true)
+    setDeleteError(null)
+    try {
+      const res = await adminFetch('/api/admin/orders/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderIds: selectedIds }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || '削除に失敗しました')
+      setShowDeleteModal(false)
+      setSelectedIds([])
+      showMsg('success', `${json.deletedCount}件を削除しました`)
+      await fetchOrders()
+    } catch (err) {
+      console.error('削除エラー:', err)
+      setDeleteError(err instanceof Error ? err.message : '削除に失敗しました')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const selectedOrders = orders.filter((o) => selectedIds.includes(o.id))
 
   return (
     <div className="space-y-4">
@@ -160,6 +263,27 @@ export default function AdminOrdersPage() {
         </div>
       </div>
 
+      {/* 選択バナー */}
+      {selectedIds.length > 0 && (
+        <div className="bg-red-50 rounded-xl border border-red-200 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+          <span className="text-red-800 font-medium text-sm">{selectedIds.length}件選択中</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds([])}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              選択解除
+            </button>
+            <button
+              onClick={() => { setDeleteError(null); setShowDeleteModal(true) }}
+              className="bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-4 py-1.5 rounded-lg transition-colors"
+            >
+              選択した注文を削除
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 注文テーブル */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         {isLoading ? (
@@ -169,7 +293,9 @@ export default function AdminOrdersPage() {
         ) : (
           <OrderTable
             orders={orders}
-            showCheckbox={false}
+            showCheckbox={true}
+            selectedIds={selectedIds}
+            onSelectChange={setSelectedIds}
             onUnmarkLabel={handleUnmarkLabel}
             onUndoDeliveryNotePrinted={handleUndoDeliveryNotePrinted}
             onUndoShipped={handleUndoShipped}
@@ -179,6 +305,17 @@ export default function AdminOrdersPage() {
 
       {/* 未発送商品合計（納品日フィルターと連動） */}
       <PendingProductsSummary dateFrom={dateFrom} dateTo={dateTo} />
+
+      {/* 削除確認モーダル */}
+      {showDeleteModal && (
+        <DeleteConfirmModal
+          orders={selectedOrders}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => { if (!isDeleting) setShowDeleteModal(false) }}
+          isDeleting={isDeleting}
+          errorMsg={deleteError}
+        />
+      )}
     </div>
   )
 }
