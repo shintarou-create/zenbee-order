@@ -143,39 +143,23 @@ export default function AdminProductsPage() {
 
   async function handleSubmit(productData: Partial<Product>, prices: Record<PriceRank, number>) {
     try {
-      const supabase = createClient()
       if (editingProduct) {
-        const { error: productError } = await supabase.from('products').update(productData).eq('id', editingProduct.id)
-        if (productError) throw productError
-        for (const [rank, price] of Object.entries(prices)) {
-          const { error: priceError } = await supabase.from('product_prices').upsert(
-            { product_id: editingProduct.id, price_rank: rank, price_per_unit: price },
-            { onConflict: 'product_id,price_rank' }
-          )
-          if (priceError) throw priceError
-        }
+        const res = await adminFetch(`/api/admin/products/${editingProduct.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...productData, prices }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || '更新に失敗しました')
         showMsg('success', '商品を更新しました')
       } else {
-        const { data: newProduct, error } = await supabase
-          .from('products')
-          .insert(productData)
-          .select()
-          .single()
-        if (error || !newProduct) throw error || new Error('作成失敗')
-        const { error: pricesError } = await supabase.from('product_prices').insert(
-          Object.entries(prices).map(([rank, price]) => ({
-            product_id: newProduct.id,
-            price_rank: rank,
-            price_per_unit: price,
-          }))
-        )
-        if (pricesError) throw pricesError
-        const { error: inventoryError } = await supabase.from('inventory').insert({
-          product_id: newProduct.id,
-          available_qty: 0,
-          reserved_qty: 0,
+        const res = await adminFetch('/api/admin/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...productData, prices }),
         })
-        if (inventoryError) throw inventoryError
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || '作成に失敗しました')
         showMsg('success', '商品を追加しました')
       }
       setShowForm(false)
@@ -189,14 +173,21 @@ export default function AdminProductsPage() {
 
   async function handleToggleActive(product: Product) {
     try {
-      const supabase = createClient()
-      const { error: toggleError } = await supabase.from('products').update({ is_active: !product.is_active }).eq('id', product.id)
-      if (toggleError) throw toggleError
+      const res = await adminFetch(`/api/admin/products/${product.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: !product.is_active }),
+      })
+      if (!res.ok) {
+        const json = await res.json()
+        throw new Error(json.error)
+      }
       setProducts((prev) =>
         prev.map((p) => (p.id === product.id ? { ...p, is_active: !product.is_active } : p))
       )
     } catch (err) {
       console.error('トグルエラー:', err)
+      showMsg('error', '表示切り替えに失敗しました')
     }
   }
 
@@ -208,9 +199,15 @@ export default function AdminProductsPage() {
       default: next = 'circle'
     }
     try {
-      const supabase = createClient()
-      const { error } = await supabase.from('products').update({ stock_status: next }).eq('id', product.id)
-      if (error) throw error
+      const res = await adminFetch(`/api/admin/products/${product.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stock_status: next }),
+      })
+      if (!res.ok) {
+        const json = await res.json()
+        throw new Error(json.error)
+      }
       setProducts((prev) =>
         prev.map((p) => (p.id === product.id ? { ...p, stock_status: next } : p))
       )
