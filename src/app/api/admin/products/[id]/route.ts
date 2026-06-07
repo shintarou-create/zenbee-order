@@ -46,6 +46,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'stock_status が不正です' }, { status: 400 })
   }
 
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceKey) {
+    console.error('[products PATCH] SUPABASE_SERVICE_ROLE_KEY is not set')
+    return NextResponse.json({ error: 'サーバー設定エラー（SERVICE_KEY未設定）' }, { status: 500 })
+  }
+
+  console.log('[products PATCH] productId:', productId, 'fields:', Object.keys(updateData))
+
   const supabase = createServiceClient()
 
   if (Object.keys(updateData).length > 0) {
@@ -55,8 +63,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       .eq('id', productId)
 
     if (updateError) {
-      console.error('[products PATCH] update error:', updateError)
-      return NextResponse.json({ error: '商品の更新に失敗しました' }, { status: 500 })
+      console.error('[products PATCH] update error:', JSON.stringify(updateError))
+      return NextResponse.json({ error: `商品の更新に失敗しました: ${updateError.message}` }, { status: 500 })
     }
   }
 
