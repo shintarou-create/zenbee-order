@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import type { Order, OrderStatus } from '@/types'
+import { adminFetch } from '@/lib/admin-fetch'
+import type { Order, OrderStatus, OrderShippingLine } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
 
 const STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
@@ -29,6 +30,8 @@ export default function AdminOrderDetailPage() {
   const [detailsConfirmed, setDetailsConfirmed] = useState(false)
   const [updating, setUpdating] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [shippingLines, setShippingLines] = useState<{ id?: string; label: string; cost: number }[]>([])
+  const [savingShipping, setSavingShipping] = useState(false)
 
   useEffect(() => {
     if (!orderId) return
@@ -58,6 +61,13 @@ export default function AdminOrderDetailPage() {
         setAdminNotes(data.admin_notes || '')
         setDeliveryDate(data.delivery_date || '')
         setDetailsConfirmed(data.details_confirmed ?? false)
+        setShippingLines(
+          ((data.order_shipping ?? []) as OrderShippingLine[]).map((line) => ({
+            id: line.id,
+            label: line.label,
+            cost: line.cost,
+          }))
+        )
       } catch (err) {
         console.error('注文取得エラー:', err)
         setError('注文の取得に失敗しました')
@@ -84,6 +94,31 @@ export default function AdminOrderDetailPage() {
     } catch (err) {
       console.error('確認済み更新エラー:', err)
       setMessage({ type: 'error', text: '更新に失敗しました' })
+      setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
+  async function handleSaveShipping() {
+    if (!order) return
+    setSavingShipping(true)
+    try {
+      const res = await adminFetch(`/api/admin/orders/${orderId}/shipping`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lines: shippingLines }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setMessage({ type: 'error', text: json.error || '送料の保存に失敗しました' })
+      } else {
+        setOrder((prev) => (prev ? { ...prev, total_amount: json.total_amount } : null))
+        setMessage({ type: 'success', text: '送料を保存しました' })
+      }
+    } catch (err) {
+      console.error('送料保存エラー:', err)
+      setMessage({ type: 'error', text: '送料の保存に失敗しました' })
+    } finally {
+      setSavingShipping(false)
       setTimeout(() => setMessage(null), 3000)
     }
   }
@@ -139,6 +174,7 @@ export default function AdminOrderDetailPage() {
   }
 
   const company = order.company
+  const isShippingEditable = order.status === 'pending' || order.status === 'shipped'
 
   return (
     <div className="space-y-4 max-w-3xl">
@@ -259,26 +295,78 @@ export default function AdminOrderDetailPage() {
             })}
           </tbody>
         </table>
-        {/* 送料明細 */}
-        {order.order_shipping && order.order_shipping.length > 0 && (
-          <>
-            <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
-              <span className="text-xs font-semibold text-gray-500">送料</span>
+        {/* 送料明細（編集可能） */}
+        <div className="border-t border-gray-100">
+          <div className="px-4 py-2 bg-gray-50 flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-500">送料</span>
+            {isShippingEditable && (
+              <button
+                type="button"
+                onClick={() => setShippingLines((prev) => [...prev, { label: '', cost: 0 }])}
+                className="text-xs text-green-600 hover:text-green-700 font-medium"
+              >
+                ＋ 送料行を追加
+              </button>
+            )}
+          </div>
+          {shippingLines.length === 0 && (
+            <div className="px-4 py-2 text-sm text-gray-400">送料なし</div>
+          )}
+          {shippingLines.map((line, idx) =>
+            isShippingEditable ? (
+              <div key={idx} className="flex items-center gap-2 px-4 py-2 border-t border-gray-50">
+                <input
+                  type="text"
+                  value={line.label}
+                  onChange={(e) => {
+                    const next = [...shippingLines]
+                    next[idx] = { ...next[idx], label: e.target.value }
+                    setShippingLines(next)
+                  }}
+                  placeholder="ラベル（例：常温送料）"
+                  className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-green-400"
+                />
+                <input
+                  type="number"
+                  value={line.cost}
+                  min={0}
+                  max={1000000}
+                  onChange={(e) => {
+                    const next = [...shippingLines]
+                    next[idx] = { ...next[idx], cost: Math.max(0, parseInt(e.target.value, 10) || 0) }
+                    setShippingLines(next)
+                  }}
+                  className="w-28 border border-gray-200 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-400"
+                />
+                <span className="text-sm text-gray-500">円</span>
+                <button
+                  type="button"
+                  onClick={() => setShippingLines((prev) => prev.filter((_, i) => i !== idx))}
+                  className="text-red-400 hover:text-red-600 text-sm px-1"
+                >
+                  削除
+                </button>
+              </div>
+            ) : (
+              <div key={line.id ?? idx} className="flex justify-between px-4 py-2 text-sm border-t border-gray-50">
+                <span className="text-gray-600">{line.label}</span>
+                <span className="font-medium">{formatCurrency(line.cost)}</span>
+              </div>
+            )
+          )}
+          {isShippingEditable && (
+            <div className="px-4 py-3 border-t border-gray-50 flex justify-end">
+              <button
+                type="button"
+                onClick={handleSaveShipping}
+                disabled={savingShipping}
+                className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-1.5 rounded-lg disabled:opacity-50 transition-colors"
+              >
+                {savingShipping ? '保存中...' : '送料を保存'}
+              </button>
             </div>
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-gray-50">
-                {order.order_shipping.map((line) => (
-                  <tr key={line.id}>
-                    <td className="px-4 py-2 text-gray-600">{line.label}</td>
-                    <td className="px-4 py-2 text-right text-gray-500">{line.quantity}個</td>
-                    <td className="px-4 py-2 text-right text-gray-500">{formatCurrency(line.unit_cost)}</td>
-                    <td className="px-4 py-2 text-right font-medium">{formatCurrency(line.cost)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
+          )}
+        </div>
         <div className="bg-green-50 px-4 py-3 flex justify-between">
           <span className="font-bold">合計</span>
           <span className="font-bold text-green-700 text-lg">{formatCurrency(order.total_amount)}</span>
