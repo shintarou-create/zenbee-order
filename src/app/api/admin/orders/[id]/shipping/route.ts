@@ -41,6 +41,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const typedLines = lines as { label: string; cost: number }[]
   const supabase = createServiceClient()
 
+  // 注文ステータスを取得して pending/shipped 以外は編集を拒否
+  const { data: orderData } = await supabase
+    .from('orders')
+    .select('status')
+    .eq('id', orderId)
+    .single()
+
+  if (!orderData || !['pending', 'shipped'].includes(orderData.status)) {
+    return NextResponse.json({ error: 'この注文は編集できません' }, { status: 409 })
+  }
+
   // 1. この注文の送料行を全削除
   const { error: deleteError } = await supabase
     .from('order_shipping')
