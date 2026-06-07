@@ -122,6 +122,29 @@ export default function AdminCustomersPage() {
     setLinkError(null)
   }
 
+  async function handlePostalLookup(rawZip: string, prefix: '' | 'billing_') {
+    const digits = rawZip
+      .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+      .replace(/[^0-9]/g, '')
+    if (digits.length !== 7) return
+    try {
+      const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${digits}`)
+      const json = (await res.json()) as {
+        status: number
+        results: { address1: string; address2: string; address3: string }[] | null
+      }
+      if (json.status !== 200 || !json.results) return
+      const { address1, address2, address3 } = json.results[0]
+      if (prefix === 'billing_') {
+        setFormData((p) => ({ ...p, billing_prefecture: address1, billing_city: address2, billing_address: address3 }))
+      } else {
+        setFormData((p) => ({ ...p, prefecture: address1, city: address2, address: address3 }))
+      }
+    } catch (err) {
+      console.error('郵便番号検索エラー:', err)
+    }
+  }
+
   async function handleSave() {
     if (!formData.company_name?.trim()) return
     setSaving(true)
@@ -404,7 +427,11 @@ export default function AdminCustomersPage() {
                   <input
                     type="text"
                     value={formData.postal_code || ''}
-                    onChange={(e) => setFormData((p) => ({ ...p, postal_code: e.target.value }))}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setFormData((p) => ({ ...p, postal_code: v }))
+                      handlePostalLookup(v, '')
+                    }}
                     placeholder="000-0000"
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                   />
@@ -510,9 +537,11 @@ export default function AdminCustomersPage() {
                       <input
                         type="text"
                         value={formData.billing_postal_code || ''}
-                        onChange={(e) =>
-                          setFormData((p) => ({ ...p, billing_postal_code: e.target.value }))
-                        }
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setFormData((p) => ({ ...p, billing_postal_code: v }))
+                          handlePostalLookup(v, 'billing_')
+                        }}
                         placeholder="郵便番号"
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                       />
