@@ -113,7 +113,6 @@ export interface Product {
   order_start_date: string | null
   ship_start_date: string | null
   order_end_date: string | null
-  sort_order: number
   display_order: number
   is_active: boolean
   stock_status: StockStatus

@@ -4,7 +4,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 const ALLOWED_FIELDS = [
   'name', 'category', 'category_id', 'unit',
   'min_order_qty', 'max_order_qty', 'step_qty',
-  'cool_type', 'stock_status', 'description', 'sort_order',
+  'cool_type', 'stock_status', 'description', 'display_order',
   'order_start_date', 'ship_start_date', 'order_end_date',
   'is_active', 'image_url',
 ] as const

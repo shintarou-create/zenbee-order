@@ -35,7 +35,7 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
   const [shipStartDate, setShipStartDate] = useState(product?.ship_start_date || '')
   const [orderEndDate, setOrderEndDate] = useState(product?.order_end_date || '')
   const [stockStatus, setStockStatus] = useState<StockStatus>(product?.stock_status ?? 'circle')
-  const [sortOrder, setSortOrder] = useState(product?.sort_order ?? 0)
+  const [sortOrder, setSortOrder] = useState(product?.display_order ?? 0)
   const [description, setDescription] = useState(product?.description || '')
   const [imageUrl, setImageUrl] = useState<string | null>(product?.image_url || null)
   const [prices, setPrices] = useState<Record<PriceRank, number>>({
@@ -134,7 +134,7 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
           order_start_date: orderStartDate || null,
           ship_start_date: shipStartDate || null,
           order_end_date: orderEndDate || null,
-          sort_order: sortOrder,
+          display_order: sortOrder,
           description: description.trim() || null,
           is_active: product?.is_active ?? true,
           stock_status: stockStatus,

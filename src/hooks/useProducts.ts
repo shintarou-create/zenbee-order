@@ -54,28 +54,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
           .eq('is_active', true)
           .order('display_order', { ascending: true })
 
-        if (fetchError) {
-          // display_order カラムがまだない場合は sort_order でフォールバック
-          const { data: fallbackData, error: fallbackError } = await supabase
-            .from('products')
-            .select(`
-              *,
-              product_prices (id, product_id, price_rank, price_per_unit)
-            `)
-            .eq('is_active', true)
-            .order('sort_order', { ascending: true })
-
-          if (fallbackError) throw fallbackError
-
-          if (mounted && fallbackData) {
-            const filtered = (fallbackData as Product[]).filter((p) => isProductVisible(p))
-            setProducts(filtered.map((p) => ({
-              ...p,
-              current_price: (p.product_prices?.find((pp) => pp.price_rank === priceRank) ?? p.product_prices?.find((pp) => pp.price_rank === 'standard'))?.price_per_unit || 0,
-            })))
-          }
-          return
-        }
+        if (fetchError) throw fetchError
 
         if (mounted && data) {
           const filtered = (data as unknown as Product[]).filter((p) => isProductVisible(p))
