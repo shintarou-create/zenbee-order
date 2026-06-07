@@ -7,7 +7,7 @@ import { useCart } from '@/hooks/useCart'
 import { useLiff } from '@/hooks/useLiff'
 import CartItemComponent from '@/components/customer/CartItem'
 import OrderSummary from '@/components/customer/OrderSummary'
-import { calculateShipping, type ShippingBreakdown } from '@/lib/shipping'
+import { calculateShipping } from '@/lib/shipping'
 
 function getMinDeliveryDate(): string {
   const d = new Date()
@@ -25,10 +25,9 @@ export default function CartPage() {
   const router = useRouter()
   const { items, total, updateQuantity, removeFromCart, clearCart } = useCart()
   const activeItems = items.filter((i) => i.quantity > 0)
-  let shipping: ShippingBreakdown = { lines: [], total: 0 }
   let shippingError: string | null = null
   try {
-    shipping = calculateShipping(activeItems)
+    calculateShipping(activeItems)
   } catch (err) {
     shippingError = err instanceof Error ? err.message : '送料計算エラー'
   }
@@ -146,42 +145,12 @@ export default function CartPage() {
             {/* 注文内容確認 */}
             <OrderSummary items={items} total={total} />
 
-            {/* 送料内訳 */}
-            {shippingError ? (
+            {/* 送料計算エラーのみ表示（金額内訳は非表示） */}
+            {shippingError && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                 <p className="text-red-700 text-sm font-medium">{shippingError}</p>
               </div>
-            ) : shipping.lines.length > 0 && (
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                <h3 className="font-bold text-gray-900 mb-3 text-base">送料内訳</h3>
-                <div className="space-y-1.5">
-                  {shipping.lines.map((line, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm text-gray-700">
-                      <span>{line.label} × {line.quantity}</span>
-                      <span className="font-medium">¥{line.cost.toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
             )}
-
-            {/* 金額合計 */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between text-gray-600">
-                  <span>商品合計</span>
-                  <span>¥{total.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-gray-600">
-                  <span>送料合計</span>
-                  <span>¥{shipping.total.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between font-bold text-gray-900 border-t border-gray-100 pt-2 mt-1 text-base">
-                  <span>合計（税込）</span>
-                  <span>¥{(total + shipping.total).toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
 
             {/* 納品希望日 */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">

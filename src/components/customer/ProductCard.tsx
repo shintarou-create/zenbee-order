@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import type { Product, CartItem, CoolType, ProductPricingTier } from '@/types'
-import { formatCurrency, isProductPreorder, formatShipStartDate } from '@/lib/utils'
+import { isProductPreorder, formatShipStartDate } from '@/lib/utils'
 
 interface ProductCardProps {
   product: Product
@@ -113,9 +113,6 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
     }
   }
 
-  const tierSubtotal = hasTiers && selectedTier && quantity >= 1
-    ? selectedTier.unit_price * selectedTier.quantity * quantity
-    : null
   const tierTotalBottles = hasTiers && selectedTier && quantity >= 1
     ? selectedTier.quantity * quantity
     : null
@@ -198,9 +195,6 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
                         className="accent-green-600"
                       />
                       <span className="text-sm font-medium text-gray-800">{tier.tier_label}</span>
-                      <span className="text-xs text-gray-500 ml-auto">
-                        {tier.quantity}本入 {formatCurrency(tier.unit_price)}/本
-                      </span>
                     </label>
                   ))}
                 </div>
@@ -249,22 +243,12 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
               </button>
             </div>
 
-            {/* 段階ありの合計表示 */}
-            {hasTiers && selectedTier && tierSubtotal !== null && tierTotalBottles !== null && (
+            {/* 段階ありの本数表示 */}
+            {hasTiers && selectedTier && tierTotalBottles !== null && (
               <div className="mb-2 bg-green-50 rounded-lg px-3 py-2 text-sm">
                 <div className="text-gray-600">
                   {selectedTier.quantity}本入 × {quantity}ケース = <strong>{tierTotalBottles}本</strong>
                 </div>
-                <div className="font-bold text-green-800 text-base mt-0.5">
-                  合計 {formatCurrency(tierSubtotal)}
-                </div>
-              </div>
-            )}
-
-            {/* 段階なしの価格表示 */}
-            {!hasTiers && currentPrice > 0 && (
-              <div className={`mb-2 text-sm transition-colors ${quantity === 0 ? 'text-gray-400' : 'text-gray-600'}`}>
-                {formatCurrency(currentPrice)}/{product.unit}
               </div>
             )}
           </>

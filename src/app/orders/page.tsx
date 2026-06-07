@@ -48,6 +48,7 @@ function OrdersContent() {
             order_items (*)
           `)
           .eq('company_id', lineUser.company_id)
+          .neq('status', 'cancelled')
           .order('created_at', { ascending: false })
           .limit(50)
 

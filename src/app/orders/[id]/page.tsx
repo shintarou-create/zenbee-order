@@ -52,6 +52,11 @@ export default function OrderDetailPage() {
           return
         }
 
+        if (data.status === 'cancelled') {
+          setError('注文が見つかりません')
+          return
+        }
+
         setOrder(data as Order)
       } catch (err) {
         console.error('注文取得エラー:', err)

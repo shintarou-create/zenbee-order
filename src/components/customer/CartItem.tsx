@@ -76,7 +76,7 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
         </button>
       </div>
 
-      <div className="flex items-center justify-between mt-3">
+      <div className="flex items-center mt-3">
         {/* 数量調整 */}
         <div className="flex items-center gap-2">
           <button
@@ -105,9 +105,6 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
           >
             ＋
           </button>
-        </div>
-        <div className="text-right">
-          <p className={`font-bold ${item.quantity === 0 ? 'text-gray-300' : 'text-gray-900'}`}>¥{item.subtotal.toLocaleString()}</p>
         </div>
       </div>
     </div>
