@@ -82,6 +82,7 @@ export default function AdminDashboard() {
             *,
             company:companies (company_name, representative_name)
           `)
+          .neq('status', 'cancelled')
           .order('created_at', { ascending: false })
           .limit(10)
 
