@@ -144,6 +144,8 @@ export default function AdminOrderDetailPage() {
       const from = searchParams.get('from')
       if (from === 'shipping') {
         router.push('/admin/shipping')
+      } else {
+        router.push('/admin/orders')
       }
     } catch (err) {
       console.error('注文更新エラー:', err)
