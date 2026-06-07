@@ -128,8 +128,8 @@ export function calculateShipping(items: CartItem[]): ShippingBreakdown {
     const FROZEN_COSTS: Record<number, number> = { 1: 3000, 2: 4000, 3: 5000 }
     const frozenCost = FROZEN_COSTS[totalFrozen]
     lines.push({
-      label: '冷凍20Lジュース（冷凍便）',
-      quantity: totalFrozen,
+      label: `冷凍20Lジュース ${totalFrozen}箱（冷凍便）`,
+      quantity: 1,
       unitCost: frozenCost,
       cost: frozenCost,
     })
