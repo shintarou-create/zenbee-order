@@ -26,6 +26,22 @@ export function formatDate(date: string | Date | null | undefined): string {
   }).format(d)
 }
 
+export function formatDateWithDay(date: string | Date | null | undefined): string {
+  if (!date) return ''
+  const d = typeof date === 'string' ? new Date(date) : date
+  if (isNaN(d.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    month: 'numeric',
+    day: 'numeric',
+    weekday: 'short',
+  }).formatToParts(d)
+  const month = parts.find((p) => p.type === 'month')?.value ?? ''
+  const day = parts.find((p) => p.type === 'day')?.value ?? ''
+  const weekday = parts.find((p) => p.type === 'weekday')?.value ?? ''
+  return `${month}/${day}（${weekday}）`
+}
+
 export function formatDateTime(date: string | Date | null | undefined): string {
   if (!date) return ''
   const d = typeof date === 'string' ? new Date(date) : date

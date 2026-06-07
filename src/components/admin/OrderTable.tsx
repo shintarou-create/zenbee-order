@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import type { Order } from '@/types'
-import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
+import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor, formatDateWithDay } from '@/lib/utils'
 
 type SortKey = 'created_at' | 'delivery_date'
 type SortDir = 'asc' | 'desc'
@@ -31,12 +31,71 @@ function getDisplayStatusColor(order: Order): string {
   return getOrderStatusColor(order.status)
 }
 
-function buildItemSummary(order: Order): string {
-  const items = order.order_items ?? []
-  if (items.length === 0) return ''
-  return items
-    .map((item) => `${item.product_name} × ${item.quantity}`)
-    .join(', ')
+function LabelBadge({
+  order,
+  onUnmarkLabel,
+}: {
+  order: Order
+  onUnmarkLabel?: (id: string) => void
+}) {
+  if (!order.shipping_label_printed) return null
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded${
+        onUnmarkLabel ? ' cursor-pointer hover:bg-blue-100 hover:text-blue-800' : ''
+      }`}
+      onClick={
+        onUnmarkLabel
+          ? (e) => {
+              e.stopPropagation()
+              if (window.confirm('伝票印刷済みマークを解除しますか？')) {
+                onUnmarkLabel(order.id)
+              }
+            }
+          : undefined
+      }
+      title={onUnmarkLabel ? 'クリックして解除' : undefined}
+    >
+      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
+        />
+      </svg>
+      伝票済
+    </span>
+  )
+}
+
+function StatusBadge({
+  order,
+  updatingId,
+  onUndoDeliveryNotePrinted,
+  onUndoShipped,
+  onClick,
+}: {
+  order: Order
+  updatingId: string | null
+  onUndoDeliveryNotePrinted?: (id: string) => Promise<void>
+  onUndoShipped?: (id: string) => Promise<void>
+  onClick: (order: Order) => void
+}) {
+  const isClickable =
+    (order.status === 'pending' && order.delivery_note_printed && !!onUndoDeliveryNotePrinted) ||
+    (order.status === 'shipped' && !!onUndoShipped)
+  const isUpdating = updatingId === order.id
+  return (
+    <span
+      className={`inline-flex text-xs font-bold px-2 py-1 rounded-full transition-opacity whitespace-nowrap ${getDisplayStatusColor(order)}${
+        isClickable && !isUpdating ? ' cursor-pointer hover:opacity-75' : ''
+      }${isUpdating ? ' opacity-50 cursor-wait' : ''}`}
+      onClick={isClickable && !isUpdating ? () => onClick(order) : undefined}
+    >
+      {isUpdating ? '更新中...' : getDisplayStatusLabel(order)}
+    </span>
+  )
 }
 
 export default function OrderTable({
@@ -74,11 +133,6 @@ export default function OrderTable({
       return sortDir === 'asc' ? cmp : -cmp
     })
   }, [orders, sortKey, sortDir])
-
-  function SortIcon({ col }: { col: SortKey }) {
-    if (sortKey !== col) return <span className="ml-1 text-gray-300">↕</span>
-    return <span className="ml-1 text-green-600">{sortDir === 'asc' ? '↑' : '↓'}</span>
-  }
 
   function handleSelectAll(checked: boolean) {
     if (!onSelectChange) return
@@ -129,150 +183,255 @@ export default function OrderTable({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>
-            {showCheckbox && (
-              <th className="px-3 py-3 w-10">
-                <input
-                  type="checkbox"
-                  checked={selectedIds.length === orders.length && orders.length > 0}
-                  onChange={(e) => handleSelectAll(e.target.checked)}
-                  className="rounded border-gray-300 text-green-600 focus:ring-green-500"
-                />
+    <div>
+      {/* ===== PC: Table (md+) ===== */}
+      <div className="hidden md:block overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              {showCheckbox && (
+                <th className="px-3 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.length === orders.length && orders.length > 0}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                  />
+                </th>
+              )}
+              <th className="px-4 py-3 text-left text-gray-600 font-semibold whitespace-nowrap">お客様</th>
+              <th className="px-4 py-3 text-left text-gray-600 font-semibold whitespace-nowrap">注文内容</th>
+              <th
+                className="px-4 py-3 text-left text-gray-600 font-semibold cursor-pointer select-none hover:text-gray-900 whitespace-nowrap"
+                onClick={() => handleSort('delivery_date')}
+              >
+                納品日
+                {sortKey !== 'delivery_date' ? (
+                  <span className="ml-1 text-gray-300">↕</span>
+                ) : (
+                  <span className="ml-1 text-green-600">{sortDir === 'asc' ? '↑' : '↓'}</span>
+                )}
               </th>
-            )}
-            <th className="px-4 py-3 text-left text-gray-600 font-semibold">注文番号</th>
-            <th className="px-4 py-3 text-left text-gray-600 font-semibold">お客様</th>
-            <th
-              className="px-4 py-3 text-left text-gray-600 font-semibold hidden md:table-cell cursor-pointer select-none hover:text-gray-900 whitespace-nowrap"
-              onClick={() => handleSort('delivery_date')}
-            >
-              納品日<SortIcon col="delivery_date" />
-            </th>
-            <th
-              className="px-4 py-3 text-left text-gray-600 font-semibold hidden md:table-cell cursor-pointer select-none hover:text-gray-900 whitespace-nowrap"
-              onClick={() => handleSort('created_at')}
-            >
-              発注日<SortIcon col="created_at" />
-            </th>
-            <th className="px-4 py-3 text-right text-gray-600 font-semibold">金額</th>
-            <th className="px-4 py-3 text-center text-gray-600 font-semibold">ステータス</th>
-            <th className="px-4 py-3 text-center text-gray-600 font-semibold">詳細</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {sortedOrders.map((order) => {
-            const company = order.company as { company_name?: string; representative_name?: string; has_separate_billing?: boolean } | undefined
-            const itemSummary = buildItemSummary(order)
-            const shippingTotal = (order.order_shipping ?? []).reduce((sum, s) => sum + s.cost, 0)
-            const isStatusClickable =
-              (order.status === 'pending' && order.delivery_note_printed && !!onUndoDeliveryNotePrinted) ||
-              (order.status === 'shipped' && !!onUndoShipped)
-            const isUpdatingThis = updatingId === order.id
+              <th className="px-4 py-3 text-right text-gray-600 font-semibold whitespace-nowrap">金額</th>
+              <th className="px-4 py-3 text-center text-gray-600 font-semibold whitespace-nowrap">ステータス</th>
+              <th className="px-4 py-3 text-left text-gray-600 font-semibold whitespace-nowrap">備考</th>
+              <th className="px-4 py-3 text-center text-gray-600 font-semibold whitespace-nowrap">詳細</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {sortedOrders.map((order) => {
+              const company = order.company as
+                | { company_name?: string; representative_name?: string; has_separate_billing?: boolean }
+                | undefined
+              const shippingTotal = (order.order_shipping ?? []).reduce((sum, s) => sum + s.cost, 0)
+              const items = order.order_items ?? []
 
-            return (
-              <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-                {showCheckbox && (
-                  <td className="px-3 py-3">
+              return (
+                <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+                  {showCheckbox && (
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(order.id)}
+                        onChange={(e) => handleSelectOne(order.id, e.target.checked)}
+                        className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                      />
+                    </td>
+                  )}
+
+                  {/* お客様 */}
+                  <td className="px-4 py-3 max-w-[200px]">
+                    <p className="font-medium text-base text-gray-900 leading-snug truncate">
+                      {company?.company_name || '—'}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">
+                      {order.order_number}・{formatDate(order.created_at)}
+                    </p>
+                    {(order.details_confirmed || order.shipping_label_printed) && (
+                      <div className="flex items-center gap-1 mt-1 flex-wrap">
+                        {order.details_confirmed && (
+                          <span className="inline-flex items-center gap-0.5 text-xs font-medium text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
+                            ✓ 確認済
+                          </span>
+                        )}
+                        <LabelBadge order={order} onUnmarkLabel={onUnmarkLabel} />
+                      </div>
+                    )}
+                  </td>
+
+                  {/* 注文内容 */}
+                  <td className="px-4 py-3 max-w-[220px]">
+                    {items.length === 0 ? (
+                      <span className="text-xs text-gray-300">—</span>
+                    ) : (
+                      <ul className="space-y-0.5">
+                        {items.map((item, i) => (
+                          <li key={i} className="text-xs text-gray-600">
+                            {item.product_name} × {item.quantity}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </td>
+
+                  {/* 納品日 */}
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {order.delivery_date ? (
+                      <span className="font-medium text-gray-900">
+                        {formatDateWithDay(order.delivery_date)}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-300">—</span>
+                    )}
+                  </td>
+
+                  {/* 金額 */}
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <p className="font-bold text-green-700">{formatCurrency(order.total_amount)}</p>
+                    {shippingTotal > 0 && (
+                      <p className="text-xs text-gray-400 mt-0.5">送料 {formatCurrency(shippingTotal)}</p>
+                    )}
+                  </td>
+
+                  {/* ステータス */}
+                  <td className="px-4 py-3 text-center">
+                    <StatusBadge
+                      order={order}
+                      updatingId={updatingId}
+                      onUndoDeliveryNotePrinted={onUndoDeliveryNotePrinted}
+                      onUndoShipped={onUndoShipped}
+                      onClick={handleStatusBadgeClick}
+                    />
+                  </td>
+
+                  {/* 備考 */}
+                  <td className="px-4 py-3 max-w-[160px]">
+                    {order.notes ? (
+                      <p className="text-xs text-orange-500 truncate">{order.notes}</p>
+                    ) : (
+                      <span className="text-xs text-gray-300">—</span>
+                    )}
+                  </td>
+
+                  {/* 詳細 */}
+                  <td className="px-4 py-3 text-center">
+                    <Link
+                      href={`${basePath}/${order.id}${detailLinkSuffix}`}
+                      className="text-green-600 hover:text-green-800 font-medium text-xs"
+                    >
+                      詳細
+                    </Link>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ===== Mobile: Cards (< md) ===== */}
+      <div className="block md:hidden divide-y divide-gray-100">
+        {sortedOrders.map((order) => {
+          const company = order.company as { company_name?: string } | undefined
+          const shippingTotal = (order.order_shipping ?? []).reduce((sum, s) => sum + s.cost, 0)
+          const items = order.order_items ?? []
+
+          return (
+            <div key={order.id} className="p-4 space-y-2">
+              {/* お客様名 + ステータスバッジ */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2 min-w-0">
+                  {showCheckbox && (
                     <input
                       type="checkbox"
                       checked={selectedIds.includes(order.id)}
                       onChange={(e) => handleSelectOne(order.id, e.target.checked)}
-                      className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                      className="mt-1 rounded border-gray-300 text-green-600 focus:ring-green-500 flex-shrink-0"
                     />
-                  </td>
-                )}
-
-                {/* 注文番号 + 伝票印刷済みバッジ + 備考 */}
-                <td className="px-4 py-3 max-w-[160px]">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-medium text-gray-900">{order.order_number}</span>
-                    {order.details_confirmed && (
-                      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
-                        ✓ 確認済
-                      </span>
-                    )}
-                    {order.shipping_label_printed && (
-                      <span
-                        className={`inline-flex items-center gap-0.5 text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded ${onUnmarkLabel ? 'cursor-pointer hover:bg-blue-100 hover:text-blue-800' : ''}`}
-                        onClick={onUnmarkLabel ? (e) => {
-                          e.stopPropagation()
-                          if (window.confirm('伝票印刷済みマークを解除しますか？')) {
-                            onUnmarkLabel(order.id)
-                          }
-                        } : undefined}
-                        title={onUnmarkLabel ? 'クリックして解除' : undefined}
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                        </svg>
-                        伝票済
-                      </span>
-                    )}
-                  </div>
-                  {order.notes && (
-                    <p className="text-xs text-orange-500 truncate mt-0.5">{order.notes}</p>
                   )}
-                </td>
-
-                {/* お客様 + 商品サマリー */}
-                <td className="px-4 py-3 max-w-[240px]">
-                  <p className="font-medium text-gray-900 truncate">
+                  <p className="font-semibold text-gray-900 text-base leading-snug truncate">
                     {company?.company_name || '—'}
                   </p>
-                  {itemSummary && (
-                    <p className="text-xs text-gray-400 truncate mt-0.5">{itemSummary}</p>
+                </div>
+                <div className="flex-shrink-0">
+                  <StatusBadge
+                    order={order}
+                    updatingId={updatingId}
+                    onUndoDeliveryNotePrinted={onUndoDeliveryNotePrinted}
+                    onUndoShipped={onUndoShipped}
+                    onClick={handleStatusBadgeClick}
+                  />
+                </div>
+              </div>
+
+              {/* 注文番号・発注日 */}
+              <p className="text-xs text-gray-400">
+                {order.order_number}・{formatDate(order.created_at)}
+              </p>
+
+              {/* 確認済・伝票済バッジ */}
+              {(order.details_confirmed || order.shipping_label_printed) && (
+                <div className="flex items-center gap-1 flex-wrap">
+                  {order.details_confirmed && (
+                    <span className="inline-flex items-center gap-0.5 text-xs font-medium text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
+                      ✓ 確認済
+                    </span>
                   )}
-                </td>
+                  <LabelBadge order={order} onUnmarkLabel={onUnmarkLabel} />
+                </div>
+              )}
 
-                {/* 納品日 */}
-                <td className="px-4 py-3 text-gray-500 hidden md:table-cell whitespace-nowrap">
-                  {order.delivery_date ? formatDate(order.delivery_date) : '—'}
-                </td>
+              {/* 注文内容 */}
+              {items.length > 0 && (
+                <div className="pt-2 border-t border-gray-100">
+                  <ul className="space-y-0.5">
+                    {items.map((item, i) => (
+                      <li key={i} className="text-xs text-gray-600">
+                        {item.product_name} × {item.quantity}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-                {/* 発注日 */}
-                <td className="px-4 py-3 text-gray-500 hidden md:table-cell whitespace-nowrap">
-                  {formatDate(order.created_at)}
-                </td>
-
-                {/* 金額 + 送料 */}
-                <td className="px-4 py-3 text-right">
+              {/* 納品日・金額 */}
+              <div className="flex items-end justify-between pt-1">
+                <div>
+                  <span className="text-xs text-gray-500">納品日 </span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {order.delivery_date ? formatDateWithDay(order.delivery_date) : '—'}
+                  </span>
+                </div>
+                <div className="text-right">
                   <p className="font-bold text-green-700">{formatCurrency(order.total_amount)}</p>
                   {shippingTotal > 0 && (
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      送料 {formatCurrency(shippingTotal)}
-                    </p>
+                    <p className="text-xs text-gray-400">送料 {formatCurrency(shippingTotal)}</p>
                   )}
-                </td>
+                </div>
+              </div>
 
-                {/* ステータス */}
-                <td className="px-4 py-3 text-center">
-                  <span
-                    className={`inline-flex text-xs font-bold px-2 py-1 rounded-full transition-opacity ${getDisplayStatusColor(order)} ${
-                      isStatusClickable && !isUpdatingThis ? 'cursor-pointer hover:opacity-75' : ''
-                    } ${isUpdatingThis ? 'opacity-50 cursor-wait' : ''}`}
-                    onClick={isStatusClickable && !isUpdatingThis ? () => handleStatusBadgeClick(order) : undefined}
-                  >
-                    {isUpdatingThis ? '更新中...' : getDisplayStatusLabel(order)}
-                  </span>
-                </td>
+              {/* 備考 */}
+              <p className="text-xs">
+                {order.notes ? (
+                  <span className="text-orange-500 block truncate">{order.notes}</span>
+                ) : (
+                  <span className="text-gray-300">—</span>
+                )}
+              </p>
 
-                {/* 詳細リンク */}
-                <td className="px-4 py-3 text-center">
-                  <Link
-                    href={`${basePath}/${order.id}${detailLinkSuffix}`}
-                    className="text-green-600 hover:text-green-800 font-medium text-xs"
-                  >
-                    詳細
-                  </Link>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+              {/* 詳細リンク */}
+              <div className="flex justify-end pt-1">
+                <Link
+                  href={`${basePath}/${order.id}${detailLinkSuffix}`}
+                  className="text-green-600 hover:text-green-800 font-medium text-sm"
+                >
+                  詳細を見る →
+                </Link>
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
