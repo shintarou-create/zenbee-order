@@ -68,6 +68,7 @@ export default function CartPage() {
           items: activeItems.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
+            pricingTierId: item.pricingTierId,
           })),
           notes,
           deliveryDate,
