@@ -8,7 +8,8 @@ const CART_STORAGE_KEY = 'zenbee_cart'
 function loadCartFromStorage(): CartItem[] {
   if (typeof window === 'undefined') return []
   try {
-    const saved = localStorage.getItem(CART_STORAGE_KEY)
+    localStorage.removeItem(CART_STORAGE_KEY)
+    const saved = sessionStorage.getItem(CART_STORAGE_KEY)
     if (!saved) return []
     return JSON.parse(saved) as CartItem[]
   } catch {
@@ -19,9 +20,9 @@ function loadCartFromStorage(): CartItem[] {
 function saveCartToStorage(items: CartItem[]): void {
   if (typeof window === 'undefined') return
   try {
-    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items))
+    sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items))
   } catch {
-    // localStorage が使えない場合は無視
+    // sessionStorage が使えない場合は無視
   }
 }
 
@@ -44,14 +45,14 @@ export function useCart(): UseCartReturn {
   const [items, setItems] = useState<CartItem[]>([])
   const [initialized, setInitialized] = useState(false)
 
-  // クライアントサイドでのみlocalStorageから読み込み
+  // クライアントサイドでのみsessionStorageから読み込み（LIFFを閉じて開き直すと空になる）
   useEffect(() => {
     const stored = loadCartFromStorage()
     setItems(stored)
     setInitialized(true)
   }, [])
 
-  // items が変更されたら localStorage に保存
+  // items が変更されたら sessionStorage に保存
   useEffect(() => {
     if (initialized) {
       saveCartToStorage(items)
