@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Product, CartItem, CoolType, ProductPricingTier } from '@/types'
 import { isProductPreorder, formatShipStartDate } from '@/lib/utils'
+import ProductDetailModal from './ProductDetailModal'
 
 interface ProductCardProps {
   product: Product
@@ -14,6 +15,7 @@ interface ProductCardProps {
 export default function ProductCard({ product, onPendingChange, cartItem, resetKey }: ProductCardProps) {
   const [quantity, setQuantity] = useState<number>(0)
   const [selectedTier, setSelectedTier] = useState<ProductPricingTier | null>(null)
+  const [showDetail, setShowDetail] = useState(false)
 
   const tiers = product.pricing_tiers ?? []
   const hasTiers = tiers.length > 0
@@ -125,7 +127,10 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
     }`}>
       {/* 商品画像 */}
       {product.image_url && (
-        <div className="w-full h-32 overflow-hidden bg-gray-50">
+        <div
+          className="w-full h-32 overflow-hidden bg-gray-50 cursor-pointer"
+          onClick={() => setShowDetail(true)}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
         </div>
@@ -158,7 +163,15 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
 
       <div className="p-4">
         {product.description && (
-          <p className="text-xs text-gray-500 mb-3 line-clamp-2">{product.description}</p>
+          <p className="text-xs text-gray-500 mb-1 line-clamp-2">{product.description}</p>
+        )}
+        {(product.image_url || product.description) && (
+          <button
+            onClick={() => setShowDetail(true)}
+            className="text-xs text-green-700 mb-2 hover:underline"
+          >
+            詳しく見る ›
+          </button>
         )}
 
         {cartItem && (
@@ -260,6 +273,12 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
           </div>
         )}
       </div>
+
+      <ProductDetailModal
+        product={product}
+        open={showDetail}
+        onClose={() => setShowDetail(false)}
+      />
     </div>
   )
 }
