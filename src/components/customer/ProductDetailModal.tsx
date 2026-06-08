@@ -2,6 +2,7 @@
 
 import type { Product } from '@/types'
 import { isProductPreorder, formatShipStartDate } from '@/lib/utils'
+import { linkifyText } from '@/lib/linkify'
 
 interface ProductDetailModalProps {
   product: Product
@@ -58,7 +59,7 @@ export default function ProductDetailModal({ product, open, onClose }: ProductDe
           {/* 説明文全文 */}
           {product.description && (
             <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-              {product.description}
+              {linkifyText(product.description)}
             </p>
           )}
         </div>
