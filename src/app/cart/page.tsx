@@ -8,6 +8,7 @@ import { useLiff } from '@/hooks/useLiff'
 import CartItemComponent from '@/components/customer/CartItem'
 import OrderSummary from '@/components/customer/OrderSummary'
 import { calculateShipping } from '@/lib/shipping'
+import { isBlockedDeliveryDate } from '@/lib/delivery-rules'
 
 function getMinDeliveryDate(): string {
   const d = new Date()
@@ -36,6 +37,9 @@ export default function CartPage() {
   const [deliveryDate, setDeliveryDate] = useState(getDefaultDeliveryDate())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const deliveryDateError = isBlockedDeliveryDate(deliveryDate)
+    ? '月曜・木曜はお届け日に指定できません（出荷日のため）'
+    : null
 
   async function handleOrder() {
     if (activeItems.length === 0) return
@@ -165,6 +169,9 @@ export default function CartPage() {
                 className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
               />
               <p className="mt-1 text-xs text-gray-500">※ご注文日の3日後以降でご指定ください</p>
+              {deliveryDateError && (
+                <p className="mt-1 text-xs text-red-500 font-medium">{deliveryDateError}</p>
+              )}
             </div>
 
             {/* 備考欄 */}
@@ -197,7 +204,7 @@ export default function CartPage() {
           <div className="max-w-2xl mx-auto">
             <button
               onClick={handleOrder}
-              disabled={submitting || activeItems.length === 0 || !!shippingError}
+              disabled={submitting || activeItems.length === 0 || !!shippingError || !!deliveryDateError}
               className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
                 submitting
                   ? 'bg-green-400 text-white'
