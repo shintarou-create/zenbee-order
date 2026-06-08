@@ -19,10 +19,17 @@ export interface CompanyData {
   orderCount: number
 }
 
+export interface CategoryData {
+  category_name: string
+  total: number
+  quantity: number
+}
+
 export interface AnalyticsResponse {
   monthly: MonthlyData[]
   byProduct: ProductData[]
   byCompany: CompanyData[]
+  byCategory: CategoryData[]
 }
 
 export async function GET(req: NextRequest) {
@@ -101,10 +108,11 @@ export async function GET(req: NextRequest) {
     const orderIdsFull = (ordersFull ?? []).map((o) => o.id)
 
     const byProduct: ProductData[] = []
+    const byCategory: CategoryData[] = []
     if (orderIdsFull.length > 0) {
       const { data: items } = await supabase
         .from('order_items')
-        .select('product_name, subtotal, quantity')
+        .select('product_name, subtotal, quantity, product_id')
         .in('order_id', orderIdsFull)
 
       const productMap: Record<string, { total: number; quantity: number }> = {}
@@ -119,6 +127,49 @@ export async function GET(req: NextRequest) {
         .sort((a, b) => b.total - a.total)
         .slice(0, 20)
       byProduct.push(...sorted)
+
+      // カテゴリー別集計
+      const productIds = Array.from(
+        new Set(
+          (items ?? [])
+            .map((i) => (i as unknown as { product_id?: string | null }).product_id)
+            .filter((pid): pid is string => !!pid)
+        )
+      )
+
+      const productIdToCategoryId = new Map<string, string | null>()
+      if (productIds.length > 0) {
+        const { data: prods } = await supabase
+          .from('products')
+          .select('id, category_id')
+          .in('id', productIds)
+        for (const p of prods ?? []) {
+          const prod = p as unknown as { id: string; category_id?: string | null }
+          productIdToCategoryId.set(prod.id, prod.category_id ?? null)
+        }
+      }
+
+      const { data: cats } = await supabase.from('categories').select('id, name')
+      const categoryIdToName = new Map<string, string>()
+      for (const c of cats ?? []) {
+        const cat = c as unknown as { id: string; name: string }
+        categoryIdToName.set(cat.id, cat.name)
+      }
+
+      const catMap: Record<string, { total: number; quantity: number }> = {}
+      for (const item of items ?? []) {
+        const it = item as unknown as { product_id?: string | null; subtotal?: number | null; quantity?: number | null }
+        const catId = it.product_id ? (productIdToCategoryId.get(it.product_id) ?? null) : null
+        const catName = catId ? (categoryIdToName.get(catId) ?? 'その他') : 'その他'
+        if (!catMap[catName]) catMap[catName] = { total: 0, quantity: 0 }
+        catMap[catName].total += it.subtotal ?? 0
+        catMap[catName].quantity += it.quantity ?? 0
+      }
+
+      const sortedByCategory = Object.entries(catMap)
+        .map(([category_name, v]) => ({ category_name, ...v }))
+        .sort((a, b) => b.total - a.total)
+      byCategory.push(...sortedByCategory)
     }
 
     // --- 取引先別集計 ---
@@ -163,7 +214,7 @@ export async function GET(req: NextRequest) {
     // ordersFull2 は別途取得しているので thisYearOrderIds は未使用変数になるため lint を回避
     void thisYearOrderIds
 
-    const response: AnalyticsResponse = { monthly, byProduct, byCompany }
+    const response: AnalyticsResponse = { monthly, byProduct, byCompany, byCategory }
     return NextResponse.json({ data: response })
   } catch (err) {
     console.error('analytics GET error:', err)

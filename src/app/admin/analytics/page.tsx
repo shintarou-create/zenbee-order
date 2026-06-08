@@ -69,6 +69,14 @@ function buildCompanyCsv(byCompany: AnalyticsResponse['byCompany']): string {
   return rows.map(r => r.map(escapeCsv).join(',')).join('\n')
 }
 
+function buildCategoryCsv(byCategory: AnalyticsResponse['byCategory']): string {
+  const rows: string[][] = [['順位', 'カテゴリー名', '数量', '売上金額']]
+  byCategory.forEach((item, i) => {
+    rows.push([String(i + 1), item.category_name, String(item.quantity), String(item.total)])
+  })
+  return rows.map(r => r.map(escapeCsv).join(',')).join('\n')
+}
+
 function downloadCsv(csvString: string, filename: string): void {
   const withBom = '﻿' + csvString
   const blob = new Blob([withBom], { type: 'text/csv;charset=utf-8' })
@@ -90,6 +98,7 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [monthlyView, setMonthlyView] = useState<'all' | 'category'>('all')
 
   useEffect(() => {
     async function fetchData() {
@@ -115,6 +124,11 @@ export default function AnalyticsPage() {
     前年: m.lastYear ?? undefined,
     pct: pctChange(m.thisYear, m.lastYear),
     hasLastYear: m.lastYear !== null,
+  }))
+
+  const categoryChartData = (data?.byCategory ?? []).map((c) => ({
+    name: c.category_name,
+    売上: c.total,
   }))
 
   const totalThisYear = (data?.monthly ?? []).reduce((s, m) => s + m.thisYear, 0)
@@ -160,56 +174,114 @@ export default function AnalyticsPage() {
 
           {/* (A) 月別売上グラフ */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-gray-900">月別売上推移</h2>
-              <button
-                onClick={() => downloadCsv(buildMonthlyCsv(data.monthly), `売上_月別_${year}.csv`)}
-                disabled={data.monthly.length === 0}
-                className="text-sm text-green-600 hover:text-green-800 underline disabled:opacity-50"
-              >
-                CSVダウンロード
-              </button>
+            {/* セクションヘッダー */}
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <div className="flex items-center gap-3">
+                <h2 className="font-bold text-gray-900">月別売上推移</h2>
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+                  <button
+                    onClick={() => setMonthlyView('all')}
+                    className={`px-3 py-1 font-medium transition-colors ${
+                      monthlyView === 'all'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    全体
+                  </button>
+                  <button
+                    onClick={() => setMonthlyView('category')}
+                    className={`px-3 py-1 font-medium transition-colors border-l border-gray-200 ${
+                      monthlyView === 'category'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    カテゴリー別
+                  </button>
+                </div>
+              </div>
+              {monthlyView === 'all' ? (
+                <button
+                  onClick={() => downloadCsv(buildMonthlyCsv(data.monthly), `売上_月別_${year}.csv`)}
+                  disabled={data.monthly.length === 0}
+                  className="text-sm text-green-600 hover:text-green-800 underline disabled:opacity-50"
+                >
+                  CSVダウンロード
+                </button>
+              ) : (
+                <button
+                  onClick={() => downloadCsv(buildCategoryCsv(data.byCategory), `売上_カテゴリー別_${year}.csv`)}
+                  disabled={data.byCategory.length === 0}
+                  className="text-sm text-green-600 hover:text-green-800 underline disabled:opacity-50"
+                >
+                  CSVダウンロード
+                </button>
+              )}
             </div>
-            {chartData.length === 0 ? (
-              <p className="text-gray-400 text-sm py-8 text-center">データがありません</p>
-            ) : (
-              <>
+
+            {/* 全体：月別グラフ */}
+            {monthlyView === 'all' && (
+              chartData.length === 0 ? (
+                <p className="text-gray-400 text-sm py-8 text-center">データがありません</p>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                      <YAxis tickFormatter={formatYen} tick={{ fontSize: 11 }} width={52} />
+                      <Tooltip
+                        formatter={(value) => [formatCurrency(Number(value ?? 0)), '']}
+                      />
+                      <Legend />
+                      <Bar dataKey="今年" fill="#16a34a" radius={[3, 3, 0, 0]} />
+                      {chartData.some((d) => d.hasLastYear) && (
+                        <Bar dataKey="前年" fill="#86efac" radius={[3, 3, 0, 0]} />
+                      )}
+                    </BarChart>
+                  </ResponsiveContainer>
+
+                  {/* 前年比ラベル（前年データのある月のみ） */}
+                  {chartData.some((d) => d.pct !== null) && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {chartData.map((d) =>
+                        d.pct ? (
+                          <span
+                            key={d.name}
+                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              d.pct.startsWith('+')
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-red-100 text-red-700'
+                            }`}
+                          >
+                            {d.name} {d.pct}
+                          </span>
+                        ) : null
+                      )}
+                    </div>
+                  )}
+                </>
+              )
+            )}
+
+            {/* カテゴリー別：売上比較グラフ */}
+            {monthlyView === 'category' && (
+              categoryChartData.length === 0 ? (
+                <p className="text-gray-400 text-sm py-8 text-center">データがありません</p>
+              ) : (
                 <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                  <BarChart data={categoryChartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                     <YAxis tickFormatter={formatYen} tick={{ fontSize: 11 }} width={52} />
                     <Tooltip
                       formatter={(value) => [formatCurrency(Number(value ?? 0)), '']}
                     />
-                    <Legend />
-                    <Bar dataKey="今年" fill="#16a34a" radius={[3, 3, 0, 0]} />
-                    {chartData.some((d) => d.hasLastYear) && (
-                      <Bar dataKey="前年" fill="#86efac" radius={[3, 3, 0, 0]} />
-                    )}
+                    <Bar dataKey="売上" fill="#16a34a" radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
-
-                {/* 前年比ラベル（前年データのある月のみ） */}
-                {chartData.some((d) => d.pct !== null) && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {chartData.map((d) =>
-                      d.pct ? (
-                        <span
-                          key={d.name}
-                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                            d.pct.startsWith('+')
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-red-100 text-red-700'
-                          }`}
-                        >
-                          {d.name} {d.pct}
-                        </span>
-                      ) : null
-                    )}
-                  </div>
-                )}
-              </>
+              )
             )}
           </div>
 
