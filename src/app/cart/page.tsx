@@ -169,6 +169,7 @@ export default function CartPage() {
                 className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
               />
               <p className="mt-1 text-xs text-gray-500">※ご注文日の3日後以降でご指定ください</p>
+              <p className="mt-1 text-xs text-gray-500">※月曜・木曜はお届け日に指定できません（出荷日のため）</p>
               {deliveryDateError && (
                 <p className="mt-1 text-xs text-red-500 font-medium">{deliveryDateError}</p>
               )}
