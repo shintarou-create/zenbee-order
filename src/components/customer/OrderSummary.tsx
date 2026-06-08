@@ -17,7 +17,9 @@ export default function OrderSummary({ items }: OrderSummaryProps) {
           <div key={item.productId} className="flex items-center justify-between text-sm">
             <span className="text-gray-700 flex-1 truncate mr-2">{item.productName}</span>
             <span className="text-gray-500 flex-shrink-0">
-              {item.quantity}{item.unit}
+              {item.tierQuantity != null
+                ? `${item.quantity}ケース（${item.tierQuantity * item.quantity}本）`
+                : `${item.quantity}${item.unit}`}
             </span>
           </div>
         ))}
