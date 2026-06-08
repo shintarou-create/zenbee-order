@@ -8,6 +8,8 @@ import PendingProductsSummary from '@/components/admin/PendingProductsSummary'
 import type { Order } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 
+const PAGE_SIZE = 50
+
 const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: 'pending', label: '未対応' },
   { value: 'shipped', label: '出荷済' },
@@ -83,6 +85,9 @@ function DeleteConfirmModal({ orders, onConfirm, onCancel, isDeleting, errorMsg 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [nextOffset, setNextOffset] = useState(0)
   const [statusFilter, setStatusFilter] = useState('pending')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -93,11 +98,16 @@ export default function AdminOrdersPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchOrders() // eslint-disable-line react-hooks/exhaustive-deps
+    fetchOrders(0) // eslint-disable-line react-hooks/exhaustive-deps
   }, [statusFilter, dateFrom, dateTo]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function fetchOrders() {
-    setIsLoading(true)
+  async function fetchOrders(fromOffset: number) {
+    const isReset = fromOffset === 0
+    if (isReset) {
+      setIsLoading(true)
+    } else {
+      setIsLoadingMore(true)
+    }
     try {
       const supabase = createClient()
       let query = supabase
@@ -114,25 +124,34 @@ export default function AdminOrdersPage() {
       if (statusFilter !== 'all') {
         query = query.eq('status', statusFilter)
       }
-
       if (dateFrom) {
         query = query.gte('delivery_date', dateFrom)
       }
-
       if (dateTo) {
         query = query.lte('delivery_date', dateTo)
       }
 
-      const { data, error } = await query.limit(200)
+      const { data, error } = await query.range(fromOffset, fromOffset + PAGE_SIZE - 1)
 
       if (error) throw error
-      setOrders((data || []) as Order[])
-      // フィルタ変更時は選択をリセット
-      setSelectedIds([])
+
+      const newData = (data || []) as Order[]
+      if (isReset) {
+        setOrders(newData)
+        setSelectedIds([])
+      } else {
+        setOrders(prev => [...prev, ...newData])
+      }
+      setNextOffset(fromOffset + PAGE_SIZE)
+      setHasMore(newData.length === PAGE_SIZE)
     } catch (err) {
       console.error('注文取得エラー:', err)
     } finally {
-      setIsLoading(false)
+      if (isReset) {
+        setIsLoading(false)
+      } else {
+        setIsLoadingMore(false)
+      }
     }
   }
 
@@ -148,7 +167,7 @@ export default function AdminOrdersPage() {
       .update({ delivery_note_printed: false })
       .eq('id', orderId)
     if (error) throw error
-    await fetchOrders()
+    await fetchOrders(0)
   }
 
   async function handleUndoShipped(orderId: string) {
@@ -158,7 +177,7 @@ export default function AdminOrdersPage() {
       .update({ status: 'pending' })
       .eq('id', orderId)
     if (error) throw error
-    await fetchOrders()
+    await fetchOrders(0)
   }
 
   async function handleUnmarkLabel(orderId: string) {
@@ -169,7 +188,7 @@ export default function AdminOrdersPage() {
         .update({ shipping_label_printed: false })
         .eq('id', orderId)
       if (error) throw error
-      await fetchOrders()
+      await fetchOrders(0)
     } catch (err) {
       console.error('伝票済み解除エラー:', err)
       showMsg('error', '伝票済みの解除に失敗しました')
@@ -191,7 +210,7 @@ export default function AdminOrdersPage() {
       setShowDeleteModal(false)
       setSelectedIds([])
       showMsg('success', `${json.deletedCount}件を削除しました`)
-      await fetchOrders()
+      await fetchOrders(0)
     } catch (err) {
       console.error('削除エラー:', err)
       setDeleteError(err instanceof Error ? err.message : '削除に失敗しました')
@@ -206,7 +225,7 @@ export default function AdminOrdersPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">注文管理</h1>
-        <span className="text-sm text-gray-500">{orders.length}件</span>
+        <span className="text-sm text-gray-500">{orders.length}件表示中</span>
       </div>
 
       {message && (
@@ -302,6 +321,22 @@ export default function AdminOrdersPage() {
           />
         )}
       </div>
+
+      {/* もっと見るボタン */}
+      {!isLoading && hasMore && (
+        <div className="flex justify-center">
+          <button
+            onClick={() => fetchOrders(nextOffset)}
+            disabled={isLoadingMore}
+            className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors shadow-sm"
+          >
+            {isLoadingMore && (
+              <span className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+            )}
+            {isLoadingMore ? '読み込み中...' : 'もっと見る'}
+          </button>
+        </div>
+      )}
 
       {/* 未発送商品合計（納品日フィルターと連動） */}
       <PendingProductsSummary dateFrom={dateFrom} dateTo={dateTo} />
