@@ -29,6 +29,61 @@ function pctChange(current: number, prev: number | null): string | null {
   return (diff >= 0 ? '+' : '') + diff.toFixed(1) + '%'
 }
 
+// ---- CSV helpers ----
+
+function escapeCsv(value: string | number): string {
+  const s = String(value)
+  if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+    return `"${s.replace(/"/g, '""')}"`
+  }
+  return s
+}
+
+function buildMonthlyCsv(monthly: AnalyticsResponse['monthly']): string {
+  const rows: string[][] = [['月', '今年の売上', '前年の売上', '昨年比']]
+  for (const m of monthly) {
+    const lastYearStr = m.lastYear === null ? '' : String(m.lastYear)
+    let yoy = ''
+    if (m.lastYear !== null && m.lastYear !== 0) {
+      const pct = Math.round(((m.thisYear - m.lastYear) / m.lastYear) * 100)
+      yoy = pct > 0 ? `+${pct}%` : pct < 0 ? `-${Math.abs(pct)}%` : '0%'
+    }
+    rows.push([`${m.month}月`, String(m.thisYear), lastYearStr, yoy])
+  }
+  return rows.map(r => r.map(escapeCsv).join(',')).join('\n')
+}
+
+function buildProductCsv(byProduct: AnalyticsResponse['byProduct']): string {
+  const rows: string[][] = [['順位', '商品名', '数量', '売上金額']]
+  byProduct.forEach((item, i) => {
+    rows.push([String(i + 1), item.product_name, String(item.quantity), String(item.total)])
+  })
+  return rows.map(r => r.map(escapeCsv).join(',')).join('\n')
+}
+
+function buildCompanyCsv(byCompany: AnalyticsResponse['byCompany']): string {
+  const rows: string[][] = [['順位', '取引先名', '注文件数', '売上金額']]
+  byCompany.forEach((item, i) => {
+    rows.push([String(i + 1), item.company_name, String(item.orderCount), String(item.total)])
+  })
+  return rows.map(r => r.map(escapeCsv).join(',')).join('\n')
+}
+
+function downloadCsv(csvString: string, filename: string): void {
+  const withBom = '﻿' + csvString
+  const blob = new Blob([withBom], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// ---- Page component ----
+
 export default function AnalyticsPage() {
   const currentYear = new Date().getFullYear()
   const [year, setYear] = useState(currentYear)
@@ -105,7 +160,16 @@ export default function AnalyticsPage() {
 
           {/* (A) 月別売上グラフ */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-            <h2 className="font-bold text-gray-900 mb-4">月別売上推移</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-gray-900">月別売上推移</h2>
+              <button
+                onClick={() => downloadCsv(buildMonthlyCsv(data.monthly), `売上_月別_${year}.csv`)}
+                disabled={data.monthly.length === 0}
+                className="text-sm text-green-600 hover:text-green-800 underline disabled:opacity-50"
+              >
+                CSVダウンロード
+              </button>
+            </div>
             {chartData.length === 0 ? (
               <p className="text-gray-400 text-sm py-8 text-center">データがありません</p>
             ) : (
@@ -151,8 +215,15 @@ export default function AnalyticsPage() {
 
           {/* (B) 商品別売上ランキング */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
-            <div className="px-4 py-3 border-b border-gray-100">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
               <h2 className="font-bold text-gray-900">商品別売上ランキング</h2>
+              <button
+                onClick={() => downloadCsv(buildProductCsv(data.byProduct), `売上_商品別_${year}.csv`)}
+                disabled={data.byProduct.length === 0}
+                className="text-sm text-green-600 hover:text-green-800 underline disabled:opacity-50"
+              >
+                CSVダウンロード
+              </button>
             </div>
             {data.byProduct.length === 0 ? (
               <p className="text-gray-400 text-sm px-4 py-6 text-center">データがありません</p>
@@ -176,8 +247,15 @@ export default function AnalyticsPage() {
 
           {/* (C) 取引先別売上ランキング */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
-            <div className="px-4 py-3 border-b border-gray-100">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
               <h2 className="font-bold text-gray-900">取引先別売上ランキング</h2>
+              <button
+                onClick={() => downloadCsv(buildCompanyCsv(data.byCompany), `売上_取引先別_${year}.csv`)}
+                disabled={data.byCompany.length === 0}
+                className="text-sm text-green-600 hover:text-green-800 underline disabled:opacity-50"
+              >
+                CSVダウンロード
+              </button>
             </div>
             {data.byCompany.length === 0 ? (
               <p className="text-gray-400 text-sm px-4 py-6 text-center">データがありません</p>
