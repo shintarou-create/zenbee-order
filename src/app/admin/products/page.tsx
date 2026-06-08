@@ -372,6 +372,7 @@ export default function AdminProductsPage() {
           onAdd={handleCategoryAdd}
           onRename={handleCategoryRename}
           onDelete={handleCategoryDelete}
+          onReorder={fetchData}
         />
       )}
 
