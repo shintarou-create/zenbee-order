@@ -152,7 +152,11 @@ export default function OrderDetailPage() {
             {(order.order_items || []).map((item) => (
               <div key={item.id} className="p-4">
                 <p className="font-medium text-gray-900">{item.product_name}</p>
-                <p className="text-sm text-gray-500">{item.quantity}{item.unit}</p>
+                <p className="text-sm text-gray-500">
+                  {item.tier_quantity
+                    ? `${item.quantity}ケース（${item.quantity * item.tier_quantity}本）`
+                    : `${item.quantity}${item.unit}`}
+                </p>
               </div>
             ))}
           </div>
