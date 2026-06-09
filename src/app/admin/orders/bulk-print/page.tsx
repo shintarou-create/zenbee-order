@@ -110,11 +110,10 @@ export default function BulkPrintPage() {
       <style>{`
         @media print {
           @page {
-            margin: 0;
             size: A4;
+            margin: 12mm;
           }
           body {
-            margin: 1.5cm;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }

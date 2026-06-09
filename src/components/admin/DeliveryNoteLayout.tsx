@@ -33,6 +33,9 @@ export default function DeliveryNoteLayout({ order }: Props) {
           .delivery-note * {
             font-family: var(--font-noto-jp), 'Noto Sans JP', sans-serif !important;
           }
+          .delivery-note {
+            padding-top: 0;
+          }
         }
       `}</style>
       <div
