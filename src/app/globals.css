@@ -43,6 +43,20 @@ input[type='number']::-webkit-outer-spin-button {
   opacity: 1;
 }
 
+/* iOS / LINE WebView: date input の幅はみ出し防止 */
+input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+input[type='date']::-webkit-calendar-picker-indicator {
+  opacity: 1;
+  cursor: pointer;
+}
+
 /* 印刷時：管理サイドバー・ヘッダーを非表示 */
 @media print {
   aside,
