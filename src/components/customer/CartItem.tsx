@@ -93,7 +93,7 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
               onChange={handleChange}
               min={0}
               step={stepQty}
-              className={`w-16 text-center font-bold border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition-colors ${item.quantity === 0 ? 'text-gray-300 border-gray-200 bg-gray-50' : 'border-gray-200'}`}
+              className={`w-16 text-center font-bold border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-fukamidori transition-colors ${item.quantity === 0 ? 'text-gray-300 border-gray-200 bg-gray-50' : 'border-gray-200'}`}
             />
             <span className={`text-sm transition-colors ${item.quantity === 0 ? 'text-gray-300' : 'text-gray-500'}`}>
               {hasTier ? 'ケース' : item.unit}

@@ -7,6 +7,10 @@
   --foreground: #111827;
   --primary: #16a34a;
   --primary-dark: #15803d;
+  --fukamidori: #1f3d2f;
+  --fukamidori-dark: #16301f;
+  --kinari: #efe9dc;
+  --kincha: #c9a24a;
 }
 
 html {
@@ -16,7 +20,7 @@ html {
 
 body {
   color: var(--foreground);
-  background: var(--background);
+  background: var(--kinari);
 }
 
 /* スクロールバー非表示 */

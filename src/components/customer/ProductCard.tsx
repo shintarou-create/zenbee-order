@@ -123,7 +123,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
 
   return (
     <div className={`bg-white rounded-xl shadow-sm overflow-hidden border-2 transition-colors ${
-      isUnavailable ? 'opacity-60 border-transparent' : isPending ? 'border-green-400' : 'border-transparent'
+      isUnavailable ? 'opacity-60 border-transparent' : isPending ? 'border-kincha' : 'border-transparent'
     }`}>
       {/* 商品画像 */}
       {product.image_url && (
@@ -137,7 +137,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
       )}
 
       {/* 商品ヘッダー */}
-      <div className="bg-green-50 px-4 py-3 flex items-start justify-between gap-2">
+      <div className="bg-kinari px-4 py-3 flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             {isProductPreorder(product) && (
@@ -152,7 +152,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
               <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">冷凍</span>
             )}
           </div>
-          <h3 className="font-bold text-gray-900 mt-1 text-base leading-tight">{product.name}</h3>
+          <h3 className="font-bold text-fukamidori mt-1 text-base leading-tight font-serif">{product.name}</h3>
         </div>
         {isUnavailable ? (
           <span className="flex-shrink-0 bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded-full">在庫なし</span>
@@ -168,14 +168,14 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
         {(product.image_url || product.description) && (
           <button
             onClick={() => setShowDetail(true)}
-            className="text-xs text-green-700 mb-2 hover:underline"
+            className="text-xs text-kincha mb-2 hover:underline"
           >
             詳しく見る ›
           </button>
         )}
 
         {cartItem && (
-          <div className="mb-2 text-xs text-green-600 bg-green-50 rounded-lg px-2 py-1">
+          <div className="mb-2 text-xs text-fukamidori bg-kinari rounded-lg px-2 py-1">
             {cartItem.tierLabel
               ? `カート: ${cartItem.tierLabel} × ${cartItem.quantity}ケース（${(cartItem.tierQuantity ?? 1) * cartItem.quantity}本）`
               : `カート: ${cartItem.quantity}${cartItem.unit}`}
@@ -194,7 +194,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
                       key={tier.id}
                       className={`flex items-center gap-2 cursor-pointer rounded-lg px-3 py-2 border transition-colors ${
                         selectedTier?.id === tier.id
-                          ? 'border-green-500 bg-green-50'
+                          ? 'border-kincha bg-kinari'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
@@ -205,7 +205,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
                         checked={selectedTier?.id === tier.id}
                         onClick={() => { if (selectedTier?.id === tier.id) setSelectedTier(null) }}
                         onChange={() => setSelectedTier(tier)}
-                        className="accent-green-600"
+                        className="accent-fukamidori"
                       />
                       <span className="text-sm font-medium text-gray-800">{tier.tier_label}</span>
                     </label>
@@ -237,7 +237,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
                   }}
                   min={0}
                   step={hasTiers ? 1 : product.step_qty}
-                  className={`w-20 text-center text-lg font-bold border rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-green-400 transition-colors ${
+                  className={`w-20 text-center text-lg font-bold border rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-fukamidori transition-colors ${
                     quantity === 0
                       ? 'text-gray-300 border-gray-200 bg-gray-50'
                       : 'border-gray-200'
@@ -258,7 +258,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
 
             {/* 段階ありの本数表示 */}
             {hasTiers && selectedTier && tierTotalBottles !== null && (
-              <div className="mb-2 bg-green-50 rounded-lg px-3 py-2 text-sm">
+              <div className="mb-2 bg-white border-t border-kincha rounded-lg px-3 py-2 text-sm">
                 <div className="text-gray-600">
                   {selectedTier.quantity}本入 × {quantity}ケース = <strong>{tierTotalBottles}本</strong>
                 </div>

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useLiff } from '@/hooks/useLiff'
+import CustomerHeader from '@/components/customer/CustomerHeader'
 
 export default function NotRegisteredPage() {
   const { userId, isLoading } = useLiff()
@@ -19,11 +20,13 @@ export default function NotRegisteredPage() {
   }
 
   return (
-    <div className="min-h-screen bg-green-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-kinari">
+      <CustomerHeader />
+      <div className="flex items-center justify-center p-4 py-8">
       <div className="max-w-sm w-full text-center">
         {/* アイコン */}
-        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-          <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="w-20 h-20 bg-kinari rounded-full flex items-center justify-center mx-auto mb-6 border border-kincha">
+          <svg className="w-10 h-10 text-fukamidori" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
         </div>
@@ -41,9 +44,9 @@ export default function NotRegisteredPage() {
         </p>
 
         {/* 農園情報 */}
-        <div className="bg-white rounded-xl border border-green-100 p-4 text-left">
+        <div className="bg-white rounded-xl border border-kincha p-4 text-left">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center">
+            <div className="w-8 h-8 bg-fukamidori rounded-full flex items-center justify-center">
               <span className="text-white text-xs font-bold">善</span>
             </div>
             <p className="font-bold text-gray-900">善兵衛農園</p>
@@ -71,7 +74,7 @@ export default function NotRegisteredPage() {
               <button
                 type="button"
                 onClick={handleCopy}
-                className="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition"
+                className="text-sm bg-fukamidori hover:bg-fukamidori-dark text-white px-3 py-1.5 rounded-lg transition"
               >
                 {copied ? 'コピーしました ✓' : 'コピーする'}
               </button>
@@ -91,6 +94,7 @@ export default function NotRegisteredPage() {
         <p className="text-xs text-gray-400 mt-6">
           ご不明な点がございましたら、善兵衛農園まで直接お問い合わせください。
         </p>
+      </div>
       </div>
     </div>
   )

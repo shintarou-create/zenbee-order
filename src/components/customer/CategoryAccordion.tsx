@@ -42,12 +42,12 @@ export default function CategoryAccordion({ categories, cartItems, onPendingChan
             >
               <div className="flex items-center gap-3">
                 <div>
-                  <span className="font-bold text-gray-900">{cat.name}</span>
+                  <span className="font-bold text-fukamidori font-serif">{cat.name}</span>
                   <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
                     {cat.products.length}品目
                   </span>
                   {cartCount > 0 && (
-                    <span className="ml-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                    <span className="ml-1 text-xs bg-fukamidori text-white px-2 py-0.5 rounded-full font-medium">
                       カート{cartCount}種
                     </span>
                   )}

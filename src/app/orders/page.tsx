@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import CustomerHeader from '@/components/customer/CustomerHeader'
 import { useLiff } from '@/hooks/useLiff'
 import type { Order } from '@/types'
 import { formatDate, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
@@ -67,38 +68,28 @@ function OrdersContent() {
 
   if (liffLoading || isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-kinari">
+        <div className="w-8 h-8 border-4 border-fukamidori border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
-      <header className="bg-green-700 text-white sticky top-0 z-10 shadow-md">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Link href="/" className="text-green-200 hover:text-white">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Link>
-          <h1 className="text-lg font-bold">注文履歴</h1>
-        </div>
-      </header>
+    <div className="min-h-screen bg-kinari">
+      <CustomerHeader />
 
       <main className="max-w-2xl mx-auto px-4 py-4">
         {/* 発注完了メッセージ */}
         {success && orderNumber && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
+          <div className="bg-fukamidori text-white rounded-xl p-4 mb-4">
             <div className="flex items-start gap-3">
-              <svg className="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-6 h-6 text-white flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
               <div>
-                <p className="text-green-800 font-bold">発注が完了しました</p>
-                <p className="text-green-700 text-sm mt-1">注文番号: {orderNumber}</p>
-                <p className="text-green-600 text-xs mt-1">
+                <p className="text-white font-bold">発注が完了しました</p>
+                <p className="text-kinari text-sm mt-1">注文番号: {orderNumber}</p>
+                <p className="text-kinari text-xs mt-1">
                   ご注文内容を確認次第、LINEにてご連絡いたします。
                 </p>
               </div>
@@ -118,7 +109,7 @@ function OrdersContent() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
             <p className="text-gray-500 text-lg font-medium">注文履歴がありません</p>
-            <Link href="/" className="mt-4 inline-block text-green-600 font-bold">
+            <Link href="/" className="mt-4 inline-block text-kincha font-bold">
               商品を注文する
             </Link>
           </div>
@@ -128,7 +119,7 @@ function OrdersContent() {
               <Link
                 key={order.id}
                 href={`/orders/${order.id}`}
-                className="block bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-green-300 transition-colors"
+                className="block bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-kincha transition-colors"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -164,7 +155,7 @@ export default function OrdersPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-4 border-fukamidori border-t-transparent rounded-full animate-spin" />
       </div>
     }>
       <OrdersContent />

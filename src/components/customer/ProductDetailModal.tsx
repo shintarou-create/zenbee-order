@@ -23,8 +23,8 @@ export default function ProductDetailModal({ product, open, onClose }: ProductDe
         onClick={(e) => e.stopPropagation()}
       >
         {/* 閉じるボタン付きヘッダー帯 */}
-        <div className="sticky top-0 bg-green-50 px-4 py-3 flex items-center justify-between rounded-t-2xl z-10">
-          <span className="font-bold text-gray-900 text-base truncate pr-2">{product.name}</span>
+        <div className="sticky top-0 bg-fukamidori px-4 py-3 flex items-center justify-between rounded-t-2xl z-10">
+          <span className="font-bold text-white text-base truncate pr-2">{product.name}</span>
           <button
             onClick={onClose}
             className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-white text-gray-500 hover:bg-gray-100 transition-colors"

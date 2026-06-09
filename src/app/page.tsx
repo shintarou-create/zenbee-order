@@ -9,6 +9,7 @@ import { useCart } from '@/hooks/useCart'
 import { createClient } from '@/lib/supabase/client'
 import CategoryAccordion from '@/components/customer/CategoryAccordion'
 import ProductCard from '@/components/customer/ProductCard'
+import CustomerHeader from '@/components/customer/CustomerHeader'
 import type { Company, PriceRank, Category, CartItem } from '@/types'
 
 export default function HomePage() {
@@ -122,10 +123,10 @@ export default function HomePage() {
 
   if (liffLoading || customerLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-green-50">
+      <div className="min-h-screen flex items-center justify-center bg-kinari">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-green-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-green-800 font-medium">読み込み中...</p>
+          <div className="w-12 h-12 border-4 border-fukamidori border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-fukamidori font-medium">読み込み中...</p>
         </div>
       </div>
     )
@@ -143,43 +144,14 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
-      <header className="bg-green-700 text-white sticky top-0 z-10 shadow-md">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold">善兵衛農園</h1>
-            {company && (
-              <p className="text-green-200 text-xs">{company.company_name}</p>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <Link href="/orders" className="text-green-100 text-sm hover:text-white">
-              注文履歴
-            </Link>
-            <Link
-              href="/cart"
-              className="relative bg-white text-green-700 rounded-full px-4 py-2 text-sm font-bold flex items-center gap-1"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-4H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-              カート
-              {itemCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                  {cartItems.length > 99 ? '99+' : cartItems.length}
-                </span>
-              )}
-            </Link>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-kinari">
+      <CustomerHeader />
 
       {/* 商品一覧 */}
       <main className="max-w-2xl mx-auto px-4 py-4 pb-24">
         {productsLoading ? (
           <div className="flex justify-center py-12">
-            <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+            <div className="w-8 h-8 border-4 border-fukamidori border-t-transparent rounded-full animate-spin" />
           </div>
         ) : hasCategories ? (
           <>
@@ -221,13 +193,13 @@ export default function HomePage() {
         <div className="fixed bottom-4 left-0 right-0 flex justify-center px-4 z-20">
           <button
             onClick={handleAddAllToCart}
-            className="w-full max-w-sm bg-green-600 hover:bg-green-700 active:scale-95 text-white font-bold py-4 px-6 rounded-full shadow-lg flex items-center justify-between transition-all"
+            className="w-full max-w-sm bg-fukamidori hover:bg-fukamidori-dark active:scale-95 text-white font-bold py-4 px-6 rounded-full shadow-lg flex items-center justify-between transition-all"
           >
-            <span className="bg-green-500 rounded-full px-2 py-0.5 text-sm">
+            <span className="bg-fukamidori-dark rounded-full px-2 py-0.5 text-sm">
               {pendingCount}品
             </span>
             <span>カートに追加</span>
-            <svg className="w-5 h-5 text-green-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-kinari" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-4H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
           </button>
@@ -236,13 +208,13 @@ export default function HomePage() {
         <div className="fixed bottom-4 left-0 right-0 flex justify-center px-4 z-20">
           <Link
             href="/cart"
-            className="w-full max-w-sm bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-full shadow-lg flex items-center justify-between transition-colors"
+            className="w-full max-w-sm bg-fukamidori hover:bg-fukamidori-dark text-white font-bold py-4 px-6 rounded-full shadow-lg flex items-center justify-between transition-colors"
           >
-            <span className="bg-green-500 rounded-full px-2 py-0.5 text-sm">
+            <span className="bg-fukamidori-dark rounded-full px-2 py-0.5 text-sm">
               {cartItems.length}種類
             </span>
             <span>カートを見る</span>
-            <span className="text-green-200">→</span>
+            <span className="text-kinari">→</span>
           </Link>
         </div>
       ) : null}

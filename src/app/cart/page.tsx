@@ -7,6 +7,7 @@ import { useCart } from '@/hooks/useCart'
 import { useLiff } from '@/hooks/useLiff'
 import CartItemComponent from '@/components/customer/CartItem'
 import OrderSummary from '@/components/customer/OrderSummary'
+import CustomerHeader from '@/components/customer/CustomerHeader'
 import { calculateShipping } from '@/lib/shipping'
 import { isBlockedDeliveryDate } from '@/lib/delivery-rules'
 
@@ -96,30 +97,15 @@ export default function CartPage() {
 
   if (liffLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-kinari">
+        <div className="w-8 h-8 border-4 border-fukamidori border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
-      <header className="bg-green-700 text-white sticky top-0 z-10 shadow-md">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Link href="/" className="text-green-200 hover:text-white">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Link>
-          <h1 className="text-lg font-bold">カート</h1>
-          {items.length > 0 && (
-            <span className="ml-auto text-green-200 text-sm">
-              {items.length}種類
-            </span>
-          )}
-        </div>
-      </header>
+    <div className="min-h-screen bg-kinari">
+      <CustomerHeader />
 
       <main className="max-w-2xl mx-auto px-4 py-4 pb-32">
         {items.length === 0 ? (
@@ -128,7 +114,7 @@ export default function CartPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 3h2l.4 2M7 13h10l4-4H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
             <p className="text-gray-500 text-lg font-medium">カートが空です</p>
-            <Link href="/" className="mt-4 inline-block text-green-600 font-bold">
+            <Link href="/" className="mt-4 inline-block text-kincha font-bold">
               商品一覧に戻る
             </Link>
           </div>
@@ -166,7 +152,7 @@ export default function CartPage() {
                 value={deliveryDate}
                 min={getMinDeliveryDate()}
                 onChange={(e) => setDeliveryDate(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-fukamidori"
               />
               <p className="mt-1 text-xs text-gray-500">※ご注文日の3日後以降でご指定ください</p>
               <p className="mt-1 text-xs text-gray-500">※月曜・木曜はお届け日に指定できません（出荷日のため）</p>
@@ -185,7 +171,7 @@ export default function CartPage() {
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="配送に関するご要望など、ご自由にご記入ください"
                 rows={3}
-                className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"
+                className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-fukamidori resize-none"
               />
             </div>
 
@@ -208,8 +194,8 @@ export default function CartPage() {
               disabled={submitting || activeItems.length === 0 || !!shippingError || !!deliveryDateError}
               className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
                 submitting
-                  ? 'bg-green-400 text-white'
-                  : 'bg-green-600 hover:bg-green-700 text-white active:scale-98'
+                  ? 'bg-fukamidori text-white'
+                  : 'bg-fukamidori hover:bg-fukamidori-dark text-white active:scale-98'
               }`}
             >
               {submitting ? (
