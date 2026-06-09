@@ -35,6 +35,7 @@ export default function DeliveryNoteLayout({ order }: Props) {
           }
           .delivery-note {
             padding-top: 0;
+            min-height: 273mm;
           }
         }
       `}</style>
@@ -46,6 +47,8 @@ export default function DeliveryNoteLayout({ order }: Props) {
           fontSize: '13px',
           lineHeight: '1.6',
           fontFamily: "var(--font-noto-jp), 'Noto Sans JP', sans-serif",
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
 
@@ -116,7 +119,7 @@ export default function DeliveryNoteLayout({ order }: Props) {
             const realBottles = hasTier ? item.quantity * item.tier_quantity! : null
             return (
               <tr key={item.id} style={{ borderBottom: '1px solid #ccc' }}>
-                <td style={{ padding: '11px 6px' }}>
+                <td style={{ padding: '14px 6px' }}>
                   {item.product_name}
                   {item.tier_label && (
                     <span style={{ marginLeft: '6px', fontSize: '10px', color: '#888', background: '#f3f4f6', borderRadius: '3px', padding: '1px 4px' }}>
@@ -124,29 +127,32 @@ export default function DeliveryNoteLayout({ order }: Props) {
                     </span>
                   )}
                 </td>
-                <td style={{ padding: '11px 6px', textAlign: 'right' }}>
+                <td style={{ padding: '14px 6px', textAlign: 'right' }}>
                   {hasTier
                     ? `${item.quantity}ケース（${realBottles}本）`
                     : `${item.quantity}${item.unit}`
                   }
                 </td>
-                <td style={{ padding: '11px 6px', textAlign: 'right' }}>{formatCurrency(item.unit_price)}</td>
-                <td style={{ padding: '11px 6px', textAlign: 'right', color: '#444' }}>8%※</td>
-                <td style={{ padding: '11px 6px', textAlign: 'right', fontSize: '15px', fontWeight: 500 }}>{formatCurrency(item.subtotal)}</td>
+                <td style={{ padding: '14px 6px', textAlign: 'right' }}>{formatCurrency(item.unit_price)}</td>
+                <td style={{ padding: '14px 6px', textAlign: 'right', color: '#444' }}>8%※</td>
+                <td style={{ padding: '14px 6px', textAlign: 'right', fontSize: '15px', fontWeight: 500 }}>{formatCurrency(item.subtotal)}</td>
               </tr>
             )
           })}
           {shipping.map((line) => (
             <tr key={line.id} style={{ borderBottom: '1px solid #ccc' }}>
-              <td style={{ padding: '11px 6px', color: '#444' }}>（送料）{line.label}</td>
-              <td style={{ padding: '11px 6px', textAlign: 'right' }}>{line.quantity}個</td>
-              <td style={{ padding: '11px 6px', textAlign: 'right' }}>{formatCurrency(line.unit_cost)}</td>
-              <td style={{ padding: '11px 6px', textAlign: 'right', color: '#444' }}>10%</td>
-              <td style={{ padding: '11px 6px', textAlign: 'right', fontSize: '15px', fontWeight: 500 }}>{formatCurrency(line.cost)}</td>
+              <td style={{ padding: '14px 6px', color: '#444' }}>（送料）{line.label}</td>
+              <td style={{ padding: '14px 6px', textAlign: 'right' }}>{line.quantity}個</td>
+              <td style={{ padding: '14px 6px', textAlign: 'right' }}>{formatCurrency(line.unit_cost)}</td>
+              <td style={{ padding: '14px 6px', textAlign: 'right', color: '#444' }}>10%</td>
+              <td style={{ padding: '14px 6px', textAlign: 'right', fontSize: '15px', fontWeight: 500 }}>{formatCurrency(line.cost)}</td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      {/* スペーサー: 合計欄を紙の下方へ押し下げる（行数に応じて伸縮） */}
+      <div style={{ flex: 1 }} />
 
       {/* (5) 税率別内訳＋合計（右寄せ） */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
