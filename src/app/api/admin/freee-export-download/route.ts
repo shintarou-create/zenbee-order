@@ -30,11 +30,14 @@ type OrderRow = {
 }
 type OrderItemRow = {
   order_id: string
+  product_name: string
+  unit: string
   quantity: number
   unit_price: number
   subtotal: number
   tier_label: string | null
   tier_quantity: number | null
+  is_custom: boolean | null
   product: { name: string; unit: string; category: string } | null
 }
 type OrderShippingRow = {
@@ -92,7 +95,7 @@ export async function POST(req: NextRequest) {
       // Stage 2a: order_items
       const { data: items, error: itemsError } = await supabase
         .from('order_items')
-        .select('order_id, quantity, unit_price, subtotal, tier_label, tier_quantity, product:products(name, unit, category)')
+        .select('order_id, product_name, unit, quantity, unit_price, subtotal, tier_label, tier_quantity, is_custom, product:products(name, unit, category)')
         .in('order_id', orderIds)
 
       if (itemsError) {
@@ -147,13 +150,15 @@ export async function POST(req: NextRequest) {
       const entry = companiesMap.get(cid)!
 
       for (const oi of itemsByOrder.get(order.id) ?? []) {
+        const itemName = oi.product?.name ?? oi.product_name ?? ''
+        const itemUnit = oi.product?.unit ?? oi.unit ?? ''
         const realQty = oi.tier_quantity ? oi.quantity * oi.tier_quantity : oi.quantity
         const unitPrice = oi.unit_price || oi.subtotal
         const quantity = oi.unit_price ? realQty : 1
         const desc = oi.tier_label
-          ? `${md}納品 ${oi.product?.name ?? ''}（${oi.tier_label}）`
-          : `${md}納品 ${oi.product?.name ?? ''}`
-        entry.items.push({ description: desc, unitPrice, quantity, unit: oi.product?.unit ?? '', taxRate: '8' })
+          ? `${md}納品 ${itemName}（${oi.tier_label}）`
+          : `${md}納品 ${itemName}`
+        entry.items.push({ description: desc, unitPrice, quantity, unit: itemUnit, taxRate: '8' })
       }
 
       for (const os of shippingByOrder.get(order.id) ?? []) {

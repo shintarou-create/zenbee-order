@@ -9,6 +9,32 @@ interface CartItemProps {
 }
 
 export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemProps) {
+  // 自由記入行は専用の簡易カード
+  if (item.isCustom) {
+    return (
+      <div className="bg-amber-50 rounded-xl border border-amber-200 shadow-sm p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">自由記入</span>
+              <h3 className="font-bold text-gray-900 text-base">{item.productName}</h3>
+            </div>
+            <p className="text-xs text-amber-700 mt-1">金額未確定（農園が内容確認後に金額を確定してご連絡します）</p>
+          </div>
+          <button
+            onClick={() => onRemove(item.productId)}
+            className="text-gray-400 hover:text-red-500 transition-colors p-1"
+            aria-label="削除"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const stepQty = item.stepQty ?? 1
   const minOrderQty = item.minOrderQty ?? 1
 

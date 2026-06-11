@@ -36,9 +36,11 @@ function calcTotal(items: CartItem[]): number {
 
 interface UseCartReturn extends CartState {
   addToCart: (item: Omit<CartItem, 'subtotal'>) => void
+  addCustomItem: (text: string) => void
   removeFromCart: (productId: string) => void
   updateQuantity: (productId: string, quantity: number) => void
   clearCart: () => void
+  customItemCount: number
 }
 
 export function useCart(): UseCartReturn {
@@ -95,6 +97,23 @@ export function useCart(): UseCartReturn {
     })
   }, [])
 
+  const addCustomItem = useCallback((text: string) => {
+    const id = `__custom__${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const item: CartItem = {
+      productId: id,
+      productName: text,
+      quantity: 1,
+      unit: '',
+      unitPrice: 0,
+      subtotal: 0,
+      coolType: 0,
+      stepQty: 1,
+      minOrderQty: 1,
+      isCustom: true,
+    }
+    setItems((prev) => [...prev, item])
+  }, [])
+
   const removeFromCart = useCallback((productId: string) => {
     setItems((prev) => prev.filter((i) => i.productId !== productId))
   }, [])
@@ -119,13 +138,17 @@ export function useCart(): UseCartReturn {
     setItems([])
   }, [])
 
+  const customItemCount = items.filter((i) => i.isCustom).length
+
   return {
     items,
     total: calcTotal(items),
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
     addToCart,
+    addCustomItem,
     removeFromCart,
     updateQuantity,
     clearCart,
+    customItemCount,
   }
 }

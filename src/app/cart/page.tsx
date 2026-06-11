@@ -73,6 +73,8 @@ export default function CartPage() {
             productId: item.productId,
             quantity: item.quantity,
             pricingTierId: item.pricingTierId,
+            isCustom: item.isCustom ?? false,
+            customText: item.isCustom ? item.productName : undefined,
           })),
           notes,
           deliveryDate,

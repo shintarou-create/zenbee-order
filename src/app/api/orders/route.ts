@@ -18,8 +18,20 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Input validation
+    // 自由記入行のサーバ側バリデーション
+    const customItems = items.filter((i) => i.isCustom)
+    if (customItems.length > 5) {
+      return NextResponse.json({ error: '自由記入は1注文5件までです' }, { status: 400 })
+    }
+    for (const ci of customItems) {
+      const text = (ci.customText ?? '').trim()
+      if (!text) return NextResponse.json({ error: '自由記入の内容は必須です' }, { status: 400 })
+      if (text.length > 200) return NextResponse.json({ error: '自由記入は200文字以内です' }, { status: 400 })
+    }
+
+    // Input validation（通常行のみ）
     for (const item of items) {
+      if (item.isCustom) continue
       if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 9999) {
         return NextResponse.json({ error: '数量は1〜9999の整数で指定してください' }, { status: 400 })
       }
@@ -93,30 +105,70 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 商品情報と価格を取得
-    const productIds = items.map((i) => i.productId)
-    const { data: products, error: productsError } = await supabase
-      .from('products')
-      .select(`
-        *,
-        product_prices (price_rank, price_per_unit)
-      `)
-      .in('id', productIds)
-      .eq('is_active', true)
+    // 通常行の productId リスト（自由記入行を除く）
+    const normalItems = items.filter((i) => !i.isCustom)
+    const productIds = normalItems.map((i) => i.productId)
 
-    if (productsError || !products) {
-      return NextResponse.json(
-        { error: '商品情報の取得に失敗しました' },
-        { status: 500 }
-      )
+    let products: Array<{
+      id: string; name: string; unit: string; cool_type: number
+      step_qty: number; min_order_qty: number; stock_status: string
+      product_prices: Array<{ price_rank: string; price_per_unit: number }>
+    }> = []
+
+    if (productIds.length > 0) {
+      const { data: fetched, error: productsError } = await supabase
+        .from('products')
+        .select(`
+          *,
+          product_prices (price_rank, price_per_unit)
+        `)
+        .in('id', productIds)
+        .eq('is_active', true)
+
+      if (productsError || !fetched) {
+        return NextResponse.json(
+          { error: '商品情報の取得に失敗しました' },
+          { status: 500 }
+        )
+      }
+      products = fetched as typeof products
     }
 
     // 在庫確認と金額計算
     let totalAmount = 0
-    const orderItemsData = []
+    const orderItemsData: Array<{
+      product_id: string | null
+      product_name: string
+      quantity: number
+      unit: string
+      unit_price: number
+      subtotal: number
+      pricing_tier_id: string | null
+      tier_label: string | null
+      tier_quantity: number | null
+      is_custom: boolean
+    }> = []
     const cartItemsForShipping: CartItem[] = []
 
     for (const item of items) {
+      // 自由記入行
+      if (item.isCustom) {
+        const text = (item.customText ?? '').trim()
+        orderItemsData.push({
+          product_id: null,
+          product_name: text,
+          quantity: 1,
+          unit: '',
+          unit_price: 0,
+          subtotal: 0,
+          pricing_tier_id: null,
+          tier_label: null,
+          tier_quantity: null,
+          is_custom: true,
+        })
+        continue
+      }
+
       const product = products.find((p) => p.id === item.productId)
       if (!product) {
         return NextResponse.json(
@@ -182,6 +234,7 @@ export async function POST(req: NextRequest) {
         pricing_tier_id: pricingTierId,
         tier_label: tierLabel,
         tier_quantity: tierQuantity,
+        is_custom: false,
       })
 
       cartItemsForShipping.push({
@@ -281,8 +334,12 @@ export async function POST(req: NextRequest) {
     // LINE通知を送信（非同期、失敗しても注文は完了）
     const adminLineId = process.env.LINE_ADMIN_USER_ID
     if (adminLineId) {
+      const hasCustom = orderItemsData.some((i) => i.is_custom)
       const productSummary = orderItemsData
         .map((item) => {
+          if (item.is_custom) {
+            return `・【自由記入】${item.product_name}（金額未確定）`
+          }
           if (item.tier_label && item.tier_quantity) {
             const totalBottles = item.quantity * item.tier_quantity
             return `・${item.product_name} [${item.tier_label}] × ${item.quantity}ケース（${totalBottles}本）`
@@ -298,7 +355,8 @@ export async function POST(req: NextRequest) {
           totalAmount,
           company.company_name,
           productSummary,
-          adminLineId
+          adminLineId,
+          hasCustom
         )
       } catch (err) {
         console.error('LINE通知エラー:', err)

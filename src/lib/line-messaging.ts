@@ -39,7 +39,8 @@ export async function notifyOrderCreated(
   totalAmount: number,
   customerName: string,
   productSummary: string,
-  adminLineId: string
+  adminLineId: string,
+  hasCustomItems = false
 ): Promise<void> {
   // 仕様書 v2 準拠: 顧客へのPushは通数消費を避けるため送信しない（注文確認は LIFF 画面完結）
   // 引数 customerLineId は将来の応答メッセージ連携のため残存
@@ -48,11 +49,17 @@ export async function notifyOrderCreated(
     currency: 'JPY',
   }).format(totalAmount)
 
-  const adminMessage = `【新規注文通知】
+  const amountLine = hasCustomItems
+    ? `合計金額: ${formattedAmount}（自由記入分は含まず・要確定）`
+    : `合計金額: ${formattedAmount}`
+
+  const customWarning = hasCustomItems ? '\n⚠️ 自由記入あり・要金額確定' : ''
+
+  const adminMessage = `【新規注文通知】${customWarning}
 お客様: ${customerName}
 注文番号: ${orderNumber}
 ${productSummary}
-合計金額: ${formattedAmount}
+${amountLine}
 
 管理画面にてご確認ください。`
 

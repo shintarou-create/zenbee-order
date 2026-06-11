@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
         invoice_items (
           order:orders (
             shipping_date,
-            order_items (quantity, unit_price, subtotal, tier_label, tier_quantity, product:products (name, unit, category)),
+            order_items (product_name, unit, quantity, unit_price, subtotal, tier_label, tier_quantity, is_custom, product:products (name, unit, category)),
             order_shipping (label, cost)
           )
         )
@@ -53,11 +53,14 @@ export async function POST(req: NextRequest) {
         order?: {
           shipping_date?: string | null
           order_items?: Array<{
+            product_name: string
+            unit: string
             quantity: number
             unit_price: number
             subtotal: number
             tier_label?: string | null
             tier_quantity?: number | null
+            is_custom?: boolean | null
             product?: { name: string; unit: string; category: string } | null
           }>
           order_shipping?: Array<{ label: string; cost: number }>
@@ -79,18 +82,20 @@ export async function POST(req: NextRequest) {
 
         // 商品明細（8%軽減税率）
         for (const oi of order.order_items || []) {
+          const itemName = oi.product?.name ?? oi.product_name ?? ''
+          const itemUnit = oi.product?.unit ?? oi.unit ?? ''
           // tier_quantityがある場合は実本数（quantity × tier_quantity）で計算
           const realQty = oi.tier_quantity ? oi.quantity * oi.tier_quantity : oi.quantity
           const unitPrice = oi.unit_price || oi.subtotal
           const quantity = oi.unit_price ? realQty : 1
           const desc = oi.tier_label
-            ? `${md}納品 ${oi.product?.name || ''}（${oi.tier_label}）`
-            : `${md}納品 ${oi.product?.name || ''}`
+            ? `${md}納品 ${itemName}（${oi.tier_label}）`
+            : `${md}納品 ${itemName}`
           lineItems.push({
             description: desc,
             unitPrice,
             quantity,
-            unit: oi.product?.unit || '',
+            unit: itemUnit,
             taxRate: '8',
           })
         }

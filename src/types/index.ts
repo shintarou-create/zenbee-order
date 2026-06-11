@@ -196,7 +196,7 @@ export type OrderUpdate = Partial<Pick<Order, 'status' | 'shipping_date' | 'deli
 export interface OrderItem {
   id: string
   order_id: string
-  product_id: string
+  product_id: string | null
   product_name: string
   quantity: number
   unit: string
@@ -205,6 +205,7 @@ export interface OrderItem {
   pricing_tier_id?: string | null
   tier_label?: string | null
   tier_quantity?: number | null
+  is_custom?: boolean
   // Joined fields
   product?: Product
 }
@@ -286,6 +287,7 @@ export interface CartItem {
   pricingTierId?: string | null
   tierLabel?: string | null
   tierQuantity?: number | null
+  isCustom?: boolean
 }
 
 export interface CartState {
@@ -311,6 +313,8 @@ export interface CreateOrderRequest {
     tierLabel?: string | null
     tierQuantity?: number | null
     unitPrice?: number
+    isCustom?: boolean
+    customText?: string
   }[]
   notes?: string
   deliveryDate?: string

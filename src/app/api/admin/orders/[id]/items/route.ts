@@ -28,16 +28,34 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!item || typeof item !== 'object') {
       return NextResponse.json({ error: '明細行のフォーマットが不正です' }, { status: 400 })
     }
-    const i = item as { product_id?: unknown; quantity?: unknown }
-    if (typeof i.product_id !== 'string' || !i.product_id) {
-      return NextResponse.json({ error: 'product_id が不正です' }, { status: 400 })
-    }
-    if (!Number.isInteger(i.quantity) || (i.quantity as number) < 1 || (i.quantity as number) > 9999) {
-      return NextResponse.json({ error: '数量は1〜9999の整数で指定してください' }, { status: 400 })
+    const i = item as { product_id?: unknown; quantity?: unknown; is_custom?: unknown; product_name?: unknown; unit_price?: unknown }
+    const isCustom = i.is_custom === true
+    if (isCustom) {
+      // 自由記入行バリデーション
+      if (!i.product_name || typeof i.product_name !== 'string' || !(i.product_name as string).trim()) {
+        return NextResponse.json({ error: '自由記入の商品名は必須です' }, { status: 400 })
+      }
+      if (!Number.isInteger(i.quantity) || (i.quantity as number) < 1 || (i.quantity as number) > 9999) {
+        return NextResponse.json({ error: '数量は1〜9999の整数で指定してください' }, { status: 400 })
+      }
+      const up = Number(i.unit_price)
+      if (isNaN(up) || up < 0) {
+        return NextResponse.json({ error: '単価は0以上の数値です' }, { status: 400 })
+      }
+    } else {
+      if (typeof i.product_id !== 'string' || !i.product_id) {
+        return NextResponse.json({ error: 'product_id が不正です' }, { status: 400 })
+      }
+      if (!Number.isInteger(i.quantity) || (i.quantity as number) < 1 || (i.quantity as number) > 9999) {
+        return NextResponse.json({ error: '数量は1〜9999の整数で指定してください' }, { status: 400 })
+      }
     }
   }
 
-  const typedItems = items as { product_id: string; pricing_tier_id?: string | null; quantity: number }[]
+  const typedItems = items as Array<
+    | { is_custom?: false; product_id: string; pricing_tier_id?: string | null; quantity: number }
+    | { is_custom: true; product_name: string; unit: string; unit_price: number; quantity: number }
+  >
 
   const supabase = createServiceClient()
 
@@ -65,7 +83,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // 3. 各明細行の商品情報・価格を DB から取得して組み立て
   const orderItemsData: Array<{
     order_id: string
-    product_id: string
+    product_id: string | null
     product_name: string
     quantity: number
     unit: string
@@ -74,18 +92,41 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     pricing_tier_id: string | null
     tier_label: string | null
     tier_quantity: number | null
+    is_custom: boolean
   }> = []
 
   for (const item of typedItems) {
+    // 自由記入行: product lookup なしで直接組み立て
+    if (item.is_custom === true) {
+      const unitPrice = Number(item.unit_price) || 0
+      const subtotal = unitPrice * item.quantity
+      orderItemsData.push({
+        order_id: orderId,
+        product_id: null,
+        product_name: (item.product_name as string).trim(),
+        quantity: item.quantity,
+        unit: ((item as { unit?: string }).unit ?? '').trim(),
+        unit_price: unitPrice,
+        subtotal,
+        pricing_tier_id: null,
+        tier_label: null,
+        tier_quantity: null,
+        is_custom: true,
+      })
+      continue
+    }
+
+    const normalItem = item as { product_id: string; pricing_tier_id?: string | null; quantity: number }
+
     const { data: product } = await supabase
       .from('products')
       .select('id, name, unit, product_prices(price_rank, price_per_unit)')
-      .eq('id', item.product_id)
+      .eq('id', normalItem.product_id)
       .eq('is_active', true)
       .single()
 
     if (!product) {
-      return NextResponse.json({ error: `商品が見つかりません: ${item.product_id}` }, { status: 400 })
+      return NextResponse.json({ error: `商品が見つかりません: ${normalItem.product_id}` }, { status: 400 })
     }
 
     let unitPrice = 0
@@ -93,12 +134,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     let tierQuantity: number | null = null
     let pricingTierId: string | null = null
 
-    if (item.pricing_tier_id) {
+    if (normalItem.pricing_tier_id) {
       const { data: tier } = await supabase
         .from('product_pricing_tiers')
         .select('id, tier_label, quantity, unit_price')
-        .eq('id', item.pricing_tier_id)
-        .eq('product_id', item.product_id)
+        .eq('id', normalItem.pricing_tier_id)
+        .eq('product_id', normalItem.product_id)
         .eq('is_active', true)
         .single()
 
@@ -118,20 +159,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     const subtotal = tierQuantity
-      ? unitPrice * tierQuantity * item.quantity
-      : unitPrice * item.quantity
+      ? unitPrice * tierQuantity * normalItem.quantity
+      : unitPrice * normalItem.quantity
 
     orderItemsData.push({
       order_id: orderId,
       product_id: product.id,
       product_name: product.name,
-      quantity: item.quantity,
+      quantity: normalItem.quantity,
       unit: product.unit,
       unit_price: unitPrice,
       subtotal,
       pricing_tier_id: pricingTierId,
       tier_label: tierLabel,
       tier_quantity: tierQuantity,
+      is_custom: false,
     })
   }
 

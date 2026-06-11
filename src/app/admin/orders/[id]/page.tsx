@@ -9,7 +9,7 @@ import type { Order, OrderItem, OrderStatus, OrderShippingLine } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
 
 interface EditableOrderItem {
-  product_id: string
+  product_id: string | null
   product_name: string
   quantity: number
   unit: string
@@ -18,6 +18,7 @@ interface EditableOrderItem {
   pricing_tier_id: string | null
   tier_label: string | null
   tier_quantity: number | null
+  is_custom: boolean
 }
 
 interface ProductForSelector {
@@ -107,6 +108,7 @@ export default function AdminOrderDetailPage() {
             pricing_tier_id: item.pricing_tier_id ?? null,
             tier_label: item.tier_label ?? null,
             tier_quantity: item.tier_quantity ?? null,
+            is_custom: item.is_custom ?? false,
           }))
         )
       } catch (err) {
@@ -142,12 +144,43 @@ export default function AdminOrderDetailPage() {
     setEditItems((prev) =>
       prev.map((item, i) => {
         if (i !== index) return item
-        const subtotal = item.tier_quantity
-          ? item.unit_price * item.tier_quantity * quantity
-          : item.unit_price * quantity
+        const subtotal = item.is_custom || !item.tier_quantity
+          ? item.unit_price * quantity
+          : item.unit_price * item.tier_quantity * quantity
         return { ...item, quantity, subtotal }
       })
     )
+  }
+
+  function handleCustomItemFieldChange(index: number, field: 'product_name' | 'unit' | 'unit_price', value: string) {
+    setEditItems((prev) =>
+      prev.map((item, i) => {
+        if (i !== index) return item
+        if (field === 'unit_price') {
+          const unitPrice = Math.max(0, parseFloat(value) || 0)
+          return { ...item, unit_price: unitPrice, subtotal: unitPrice * item.quantity }
+        }
+        return { ...item, [field]: value }
+      })
+    )
+  }
+
+  function handleAddCustomItemRow() {
+    setEditItems((prev) => [
+      ...prev,
+      {
+        product_id: null,
+        product_name: '',
+        quantity: 1,
+        unit: '',
+        unit_price: 0,
+        subtotal: 0,
+        pricing_tier_id: null,
+        tier_label: null,
+        tier_quantity: null,
+        is_custom: true,
+      },
+    ])
   }
 
   function handleItemDelete(index: number) {
@@ -194,6 +227,7 @@ export default function AdminOrderDetailPage() {
         pricing_tier_id: pricingTierId,
         tier_label: tierLabel,
         tier_quantity: tierQuantity,
+        is_custom: false,
       },
     ])
     setAddProductId('')
@@ -209,11 +243,21 @@ export default function AdminOrderDetailPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: editItems.map((item) => ({
-            product_id: item.product_id,
-            pricing_tier_id: item.pricing_tier_id,
-            quantity: item.quantity,
-          })),
+          items: editItems.map((item) =>
+            item.is_custom
+              ? {
+                  is_custom: true,
+                  product_name: item.product_name,
+                  unit: item.unit,
+                  unit_price: item.unit_price,
+                  quantity: item.quantity,
+                }
+              : {
+                  product_id: item.product_id,
+                  pricing_tier_id: item.pricing_tier_id,
+                  quantity: item.quantity,
+                }
+          ),
         }),
       })
       const json = await res.json()
@@ -230,6 +274,7 @@ export default function AdminOrderDetailPage() {
           pricing_tier_id: item.pricing_tier_id ?? null,
           tier_label: item.tier_label ?? null,
           tier_quantity: item.tier_quantity ?? null,
+          is_custom: item.is_custom ?? false,
         }))
         setEditItems(newItems)
         setOrder((prev) =>
@@ -446,6 +491,60 @@ export default function AdminOrderDetailPage() {
           <tbody className="divide-y divide-gray-50">
             {isItemsEditable
               ? editItems.map((item, idx) => {
+                  if (item.is_custom) {
+                    return (
+                      <tr key={idx} className="bg-amber-50/40">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="shrink-0 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">自由記入</span>
+                            <input
+                              type="text"
+                              value={item.product_name}
+                              onChange={(e) => handleCustomItemFieldChange(idx, 'product_name', e.target.value)}
+                              placeholder="商品名・内容"
+                              className="flex-1 min-w-0 border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
+                            />
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <input
+                              type="number"
+                              value={item.quantity}
+                              min={1}
+                              max={9999}
+                              onChange={(e) => handleItemQuantityChange(idx, parseInt(e.target.value, 10) || 1)}
+                              className="w-16 text-right border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                            />
+                            <input
+                              type="text"
+                              value={item.unit}
+                              onChange={(e) => handleCustomItemFieldChange(idx, 'unit', e.target.value)}
+                              placeholder="単位"
+                              className="w-14 border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
+                            />
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <input
+                            type="number"
+                            value={item.unit_price}
+                            min={0}
+                            onChange={(e) => handleCustomItemFieldChange(idx, 'unit_price', e.target.value)}
+                            className="w-24 text-right border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-right font-medium text-gray-500">
+                          {item.unit_price > 0 ? formatCurrency(item.subtotal) : '—'}
+                        </td>
+                        <td className="px-2 py-3 text-right">
+                          <button type="button" onClick={() => handleItemDelete(idx)} className="text-red-400 hover:text-red-600 text-xs font-medium">
+                            削除
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  }
                   const hasTier = !!item.tier_quantity
                   const realBottles = hasTier ? item.quantity * item.tier_quantity! : null
                   return (
@@ -490,6 +589,23 @@ export default function AdminOrderDetailPage() {
                   )
                 })
               : (order.order_items || []).map((item) => {
+                  if (item.is_custom) {
+                    return (
+                      <tr key={item.id} className="bg-amber-50/40">
+                        <td className="px-4 py-3 text-gray-900">
+                          <span className="mr-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">自由記入</span>
+                          {item.product_name}
+                        </td>
+                        <td className="px-4 py-3 text-right">{item.quantity}{item.unit}</td>
+                        <td className="px-4 py-3 text-right text-gray-400 text-sm">
+                          {item.unit_price > 0 ? formatCurrency(item.unit_price) : '未確定'}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-400">
+                          {item.subtotal > 0 ? formatCurrency(item.subtotal) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  }
                   const hasTier = !!item.tier_quantity
                   const realBottles = hasTier ? item.quantity * item.tier_quantity! : null
                   return (
@@ -558,6 +674,15 @@ export default function AdminOrderDetailPage() {
                 className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-3 py-1.5 rounded-lg disabled:opacity-40 transition-colors"
               >
                 ＋ 追加
+              </button>
+            </div>
+            <div>
+              <button
+                type="button"
+                onClick={handleAddCustomItemRow}
+                className="text-sm bg-amber-100 hover:bg-amber-200 text-amber-800 font-medium px-3 py-1.5 rounded-lg transition-colors"
+              >
+                ＋ 自由記入行を追加
               </button>
             </div>
             <div className="flex justify-end pt-1">
