@@ -13,7 +13,7 @@ import CustomerHeader from '@/components/customer/CustomerHeader'
 import type { Company, PriceRank, Category, CartItem } from '@/types'
 
 const CUSTOM_ITEM_MAX = 5
-const CUSTOM_ITEM_MAX_CHARS = 200
+const CUSTOM_ITEM_MAX_CHARS = 100
 
 export default function HomePage() {
   const router = useRouter()
@@ -32,10 +32,6 @@ export default function HomePage() {
   const [pendingItems, setPendingItems] = useState<Map<string, Omit<CartItem, 'subtotal'>>>(new Map())
   // 一括追加後にカードをリセットするためのキー
   const [resetKey, setResetKey] = useState(0)
-
-  // 自由記入
-  const [customText, setCustomText] = useState('')
-  const [customError, setCustomError] = useState<string | null>(null)
 
   const handlePendingChange = useCallback(
     (productId: string, item: Omit<CartItem, 'subtotal'> | null) => {
@@ -60,25 +56,6 @@ export default function HomePage() {
     })
     setResetKey((k) => k + 1)
     setPendingItems(new Map())
-  }
-
-  function handleAddCustomItem() {
-    const text = customText.trim()
-    setCustomError(null)
-    if (!text) {
-      setCustomError('内容を入力してください')
-      return
-    }
-    if (text.length > CUSTOM_ITEM_MAX_CHARS) {
-      setCustomError(`${CUSTOM_ITEM_MAX_CHARS}文字以内で入力してください`)
-      return
-    }
-    if (customItemCount >= CUSTOM_ITEM_MAX) {
-      setCustomError(`自由記入は1注文${CUSTOM_ITEM_MAX}件まです`)
-      return
-    }
-    addCustomItem(text)
-    setCustomText('')
   }
 
   useEffect(() => {
@@ -186,6 +163,10 @@ export default function HomePage() {
               cartItems={cartItems}
               onPendingChange={handlePendingChange}
               resetKey={resetKey}
+              onAddCustomItem={addCustomItem}
+              customItemCount={customItemCount}
+              customItemMax={CUSTOM_ITEM_MAX}
+              customItemMaxChars={CUSTOM_ITEM_MAX_CHARS}
             />
             {uncategorized.length > 0 && (
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -213,36 +194,6 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* その他・自由記入枠 */}
-        {!productsLoading && (
-          <div className="mt-6 bg-amber-50 rounded-xl border border-amber-200 p-4">
-            <h2 className="font-bold text-gray-900 text-base mb-1">その他（自由記入）</h2>
-            <p className="text-xs text-gray-500 mb-3">リストにない商品を文章でご記入ください。金額は農園が確認後にご連絡します。</p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={customText}
-                onChange={(e) => { setCustomText(e.target.value); setCustomError(null) }}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddCustomItem() } }}
-                placeholder={`例：柚子1kg（最大${CUSTOM_ITEM_MAX_CHARS}文字）`}
-                maxLength={CUSTOM_ITEM_MAX_CHARS}
-                className="flex-1 border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
-              />
-              <button
-                type="button"
-                onClick={handleAddCustomItem}
-                disabled={customItemCount >= CUSTOM_ITEM_MAX}
-                className="text-sm font-bold bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors"
-              >
-                追加
-              </button>
-            </div>
-            {customError && <p className="text-xs text-red-600 mt-1">{customError}</p>}
-            {customItemCount >= CUSTOM_ITEM_MAX && (
-              <p className="text-xs text-amber-700 mt-1">自由記入は1注文{CUSTOM_ITEM_MAX}件まです（カートを確認してください）</p>
-            )}
-          </div>
-        )}
       </main>
 
       {/* 固定フッター：保留品あり→一括追加ボタン、なしでカートあり→カートを見るボタン */}

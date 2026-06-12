@@ -3,15 +3,29 @@
 import { useState } from 'react'
 import type { Product, Category, CartItem } from '@/types'
 import ProductCard from './ProductCard'
+import CustomItemCard from './CustomItemCard'
 
 interface CategoryAccordionProps {
   categories: Array<Category & { products: Product[] }>
   cartItems: CartItem[]
   onPendingChange: (productId: string, item: Omit<CartItem, 'subtotal'> | null) => void
   resetKey: number
+  onAddCustomItem?: (text: string) => void
+  customItemCount?: number
+  customItemMax?: number
+  customItemMaxChars?: number
 }
 
-export default function CategoryAccordion({ categories, cartItems, onPendingChange, resetKey }: CategoryAccordionProps) {
+export default function CategoryAccordion({
+  categories,
+  cartItems,
+  onPendingChange,
+  resetKey,
+  onAddCustomItem,
+  customItemCount = 0,
+  customItemMax = 5,
+  customItemMaxChars = 100,
+}: CategoryAccordionProps) {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set())
 
   function toggle(id: string) {
@@ -75,6 +89,14 @@ export default function CategoryAccordion({ categories, cartItems, onPendingChan
                       resetKey={resetKey}
                     />
                   ))}
+                  {cat.name === 'その他' && onAddCustomItem && (
+                    <CustomItemCard
+                      onAdd={onAddCustomItem}
+                      itemCount={customItemCount}
+                      maxItems={customItemMax}
+                      maxChars={customItemMaxChars}
+                    />
+                  )}
                 </div>
               </div>
             )}

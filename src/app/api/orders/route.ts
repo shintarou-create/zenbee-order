@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     for (const ci of customItems) {
       const text = (ci.customText ?? '').trim()
       if (!text) return NextResponse.json({ error: '自由記入の内容は必須です' }, { status: 400 })
-      if (text.length > 200) return NextResponse.json({ error: '自由記入は200文字以内です' }, { status: 400 })
+      if (text.length > 100) return NextResponse.json({ error: '自由記入は100文字以内です' }, { status: 400 })
     }
 
     // Input validation（通常行のみ）
