@@ -85,9 +85,16 @@ export async function middleware(req: NextRequest) {
     }
   }
 
+  // Rate limit: onboarding — 5 req/min/IP（コード総当たり防止）
+  if (pathname.startsWith('/api/onboarding')) {
+    if (isRateLimited(ip, 5, 60_000)) {
+      return NextResponse.json({ error: 'リクエストが多すぎます。しばらくお待ちください。' }, { status: 429 })
+    }
+  }
+
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/api/admin/:path*', '/api/shipping-csv', '/api/freee-csv', '/api/orders'],
+  matcher: ['/api/admin/:path*', '/api/shipping-csv', '/api/freee-csv', '/api/orders', '/api/onboarding/:path*'],
 }

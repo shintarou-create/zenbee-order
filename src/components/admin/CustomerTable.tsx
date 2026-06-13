@@ -8,13 +8,26 @@ interface CustomerTableProps {
   customers: Company[]
   onEdit: (customer: Company) => void
   onLinkLine: (customer: Company) => void
+  onApprove?: (customer: Company) => void
+  onGenerateCode?: (customer: Company) => void
+  generatingCodeId?: string | null
+  approvingId?: string | null
 }
 
-export default function CustomerTable({ customers, onEdit, onLinkLine }: CustomerTableProps) {
+export default function CustomerTable({
+  customers,
+  onEdit,
+  onLinkLine,
+  onApprove,
+  onGenerateCode,
+  generatingCodeId,
+  approvingId,
+}: CustomerTableProps) {
   const [search, setSearch] = useState('')
   const [sortField, setSortField] = useState<keyof Company>('created_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [unlinkedFirst, setUnlinkedFirst] = useState(false)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const filtered = customers
     .filter((c) => {
@@ -47,6 +60,17 @@ export default function CustomerTable({ customers, onEdit, onLinkLine }: Custome
     } else {
       setSortField(field)
       setSortDir('asc')
+    }
+  }
+
+  async function handleCopyCode(company: Company) {
+    if (!company.registration_code) return
+    try {
+      await navigator.clipboard.writeText(company.registration_code)
+      setCopiedId(company.id)
+      setTimeout(() => setCopiedId(null), 2000)
+    } catch {
+      // コピー失敗は無視
     }
   }
 
@@ -122,6 +146,7 @@ export default function CustomerTable({ customers, onEdit, onLinkLine }: Custome
                 価格帯 <SortIcon field="price_rank" />
               </th>
               <th className="px-4 py-3 text-center text-gray-600 font-semibold">状態</th>
+              <th className="px-4 py-3 text-center text-gray-600 font-semibold">登録コード</th>
               <th className="px-4 py-3 text-center text-gray-600 font-semibold">操作</th>
             </tr>
           </thead>
@@ -129,8 +154,10 @@ export default function CustomerTable({ customers, onEdit, onLinkLine }: Custome
             {filtered.map((company) => {
               const hasLine = (company.line_users?.length ?? 0) > 0
               const missingAddress = !company.postal_code && !company.address
+              const isPending = company.approval_status === 'pending'
+              const isRejected = company.approval_status === 'rejected'
               return (
-                <tr key={company.id} className="hover:bg-gray-50 transition-colors">
+                <tr key={company.id} className={`hover:bg-gray-50 transition-colors ${isPending ? 'bg-amber-50/40' : ''}`}>
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{company.company_name}</p>
                     <div className="flex flex-wrap gap-1 mt-0.5">
@@ -175,30 +202,78 @@ export default function CustomerTable({ customers, onEdit, onLinkLine }: Custome
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <span
-                      className={`text-xs font-bold px-2 py-1 rounded-full ${
-                        company.is_active
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 text-gray-400'
-                      }`}
-                    >
-                      {company.is_active ? '有効' : '無効'}
-                    </span>
+                    <div className="flex flex-col items-center gap-1">
+                      <span
+                        className={`text-xs font-bold px-2 py-1 rounded-full ${
+                          company.is_active && !isPending && !isRejected
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-100 text-gray-400'
+                        }`}
+                      >
+                        {company.is_active ? '有効' : '無効'}
+                      </span>
+                      {isPending && (
+                        <span className="text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                          承認待ち
+                        </span>
+                      )}
+                      {isRejected && (
+                        <span className="text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-700">
+                          却下
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <div className="flex items-center justify-center gap-2">
+                    {company.registration_code ? (
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded tracking-wider">
+                          {company.registration_code}
+                        </span>
+                        <button
+                          onClick={() => handleCopyCode(company)}
+                          className="text-xs text-blue-600 hover:text-blue-800"
+                        >
+                          {copiedId === company.id ? 'コピー済 ✓' : 'コピー'}
+                        </button>
+                      </div>
+                    ) : onGenerateCode ? (
                       <button
-                        onClick={() => onEdit(company)}
-                        className="text-green-600 hover:text-green-800 font-medium text-xs"
+                        onClick={() => onGenerateCode(company)}
+                        disabled={generatingCodeId === company.id}
+                        className="text-xs text-green-700 hover:text-green-900 font-medium disabled:opacity-50"
                       >
-                        編集
+                        {generatingCodeId === company.id ? '生成中...' : 'コード生成'}
                       </button>
-                      <button
-                        onClick={() => onLinkLine(company)}
-                        className="text-blue-600 hover:text-blue-800 font-medium text-xs"
-                      >
-                        LINE紐づけ
-                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-300">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <div className="flex flex-col items-center gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => onEdit(company)}
+                          className="text-green-600 hover:text-green-800 font-medium text-xs"
+                        >
+                          編集
+                        </button>
+                        <button
+                          onClick={() => onLinkLine(company)}
+                          className="text-blue-600 hover:text-blue-800 font-medium text-xs"
+                        >
+                          LINE紐づけ
+                        </button>
+                      </div>
+                      {isPending && onApprove && (
+                        <button
+                          onClick={() => onApprove(company)}
+                          disabled={approvingId === company.id}
+                          className="text-xs font-bold bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white px-3 py-1 rounded-full transition-colors"
+                        >
+                          {approvingId === company.id ? '承認中...' : '承認する'}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

@@ -52,6 +52,9 @@ export interface Company {
   price_rank: PriceRank
   notes: string | null
   is_active: boolean
+  // 初回オンボーディング
+  registration_code?: string | null
+  approval_status?: 'approved' | 'pending' | 'rejected'
   // 請求先（デフォルト）
   has_separate_billing: boolean
   billing_name: string | null

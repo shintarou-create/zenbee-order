@@ -10,16 +10,21 @@ import { createClient } from '@/lib/supabase/client'
 import CategoryAccordion from '@/components/customer/CategoryAccordion'
 import ProductCard from '@/components/customer/ProductCard'
 import CustomerHeader from '@/components/customer/CustomerHeader'
+import OnboardingScreen from '@/components/customer/OnboardingScreen'
+import PendingApprovalScreen from '@/components/customer/PendingApprovalScreen'
 import type { Company, PriceRank, Category, CartItem } from '@/types'
 
 const CUSTOM_ITEM_MAX = 5
 const CUSTOM_ITEM_MAX_CHARS = 100
 
+type CustomerStatus = 'loading' | 'onboarding' | 'pending' | 'ready' | 'error'
+
 export default function HomePage() {
   const router = useRouter()
-  const { userId, isLoading: liffLoading, error: liffError } = useLiff()
+  const { userId, accessToken, isLoading: liffLoading, error: liffError } = useLiff()
   const [company, setCompany] = useState<Company | null>(null)
   const [customerLoading, setCustomerLoading] = useState(false)
+  const [customerStatus, setCustomerStatus] = useState<CustomerStatus>('loading')
 
   const priceRank: PriceRank = company?.price_rank || 'standard'
   const { products, isLoading: productsLoading } = useProducts({
@@ -36,7 +41,6 @@ export default function HomePage() {
   const handlePendingChange = useCallback(
     (productId: string, item: Omit<CartItem, 'subtotal'> | null) => {
       setPendingItems((prev) => {
-        // 変更がない場合は同一参照を返してレンダリングを抑制
         if (item === null && !prev.has(productId)) return prev
         const next = new Map(prev)
         if (item === null) {
@@ -58,47 +62,64 @@ export default function HomePage() {
     setPendingItems(new Map())
   }
 
+  const fetchCustomer = useCallback(async () => {
+    if (!userId) return
+    setCustomerLoading(true)
+    try {
+      const supabase = createClient()
+
+      const { data: adminUser } = await supabase
+        .from('admin_users')
+        .select('id')
+        .eq('line_user_id', userId)
+        .single()
+
+      if (adminUser) {
+        router.push('/admin')
+        return
+      }
+
+      // LEFT JOIN で company も取得（maybeSingle で未紐付けを null で受ける）
+      const { data: lineUser } = await supabase
+        .from('line_users')
+        .select('*, company:companies!left(*)')
+        .eq('line_user_id', userId)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      if (!lineUser || !lineUser.company) {
+        // 未紐付け → オンボーディング画面
+        setCustomerStatus('onboarding')
+        return
+      }
+
+      const fetchedCompany = lineUser.company as Company
+
+      if (fetchedCompany.approval_status === 'pending') {
+        // 登録申請中 → 承認待ち画面
+        setCompany(fetchedCompany)
+        setCustomerStatus('pending')
+        return
+      }
+
+      if (!fetchedCompany.is_active || fetchedCompany.approval_status === 'rejected') {
+        setCustomerStatus('error')
+        return
+      }
+
+      setCompany(fetchedCompany)
+      setCustomerStatus('ready')
+    } catch {
+      setCustomerStatus('error')
+    } finally {
+      setCustomerLoading(false)
+    }
+  }, [userId, router])
+
   useEffect(() => {
     if (!userId) return
-
-    async function fetchCustomer() {
-      setCustomerLoading(true)
-      try {
-        const supabase = createClient()
-
-        const { data: adminUser } = await supabase
-          .from('admin_users')
-          .select('id')
-          .eq('line_user_id', userId)
-          .single()
-
-        if (adminUser) {
-          router.push('/admin')
-          return
-        }
-
-        const { data: lineUser, error } = await supabase
-          .from('line_users')
-          .select('*, company:companies (*)')
-          .eq('line_user_id', userId)
-          .eq('is_active', true)
-          .single()
-
-        if (error || !lineUser || !lineUser.company) {
-          router.push('/not-registered')
-          return
-        }
-
-        setCompany(lineUser.company as Company)
-      } catch {
-        router.push('/not-registered')
-      } finally {
-        setCustomerLoading(false)
-      }
-    }
-
     fetchCustomer()
-  }, [userId, router])
+  }, [userId, fetchCustomer])
 
   // カテゴリ×商品のグループを構築
   const categorizedProducts = useMemo(() => {
@@ -141,6 +162,33 @@ export default function HomePage() {
         <div className="text-center max-w-sm">
           <p className="text-red-600 font-medium">エラーが発生しました</p>
           <p className="text-red-500 text-sm mt-2">{liffError}</p>
+        </div>
+      </div>
+    )
+  }
+
+  // 未紐付け → オンボーディング
+  if (customerStatus === 'onboarding') {
+    return (
+      <OnboardingScreen
+        accessToken={accessToken}
+        onSuccess={fetchCustomer}
+      />
+    )
+  }
+
+  // 承認待ち
+  if (customerStatus === 'pending') {
+    return <PendingApprovalScreen companyName={company?.company_name} />
+  }
+
+  // 無効・却下
+  if (customerStatus === 'error') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-red-50 p-4">
+        <div className="text-center max-w-sm">
+          <p className="text-red-600 font-medium">ご利用いただけません</p>
+          <p className="text-red-500 text-sm mt-2">善兵衛農園までお問い合わせください。</p>
         </div>
       </div>
     )
@@ -193,7 +241,6 @@ export default function HomePage() {
             ))}
           </div>
         )}
-
       </main>
 
       {/* 固定フッター：保留品あり→一括追加ボタン、なしでカートあり→カートを見るボタン */}

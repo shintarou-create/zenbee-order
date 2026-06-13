@@ -7,6 +7,7 @@ interface UseLiffReturn {
   userId: string | null
   displayName: string | null
   pictureUrl: string | null
+  accessToken: string | null
   isLoading: boolean
   error: string | null
   isLoggedIn: boolean
@@ -16,6 +17,7 @@ export function useLiff(): UseLiffReturn {
   const [userId, setUserId] = useState<string | null>(null)
   const [displayName, setDisplayName] = useState<string | null>(null)
   const [pictureUrl, setPictureUrl] = useState<string | null>(null)
+  const [accessToken, setAccessToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -29,6 +31,7 @@ export function useLiff(): UseLiffReturn {
           if (mounted) {
             setUserId('dev_user_001')
             setDisplayName('開発テスト顧客')
+            setAccessToken(null)
             setIsLoading(false)
           }
           return
@@ -44,6 +47,7 @@ export function useLiff(): UseLiffReturn {
           setUserId(profile.userId)
           setDisplayName(profile.displayName)
           setPictureUrl(profile.pictureUrl || null)
+          setAccessToken(liff.getAccessToken())
           setIsLoading(false)
         }
       } catch (err) {
@@ -66,6 +70,7 @@ export function useLiff(): UseLiffReturn {
     userId,
     displayName,
     pictureUrl,
+    accessToken,
     isLoading,
     error,
     isLoggedIn: !!userId,

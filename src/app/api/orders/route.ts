@@ -105,6 +105,13 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    if (company.approval_status && company.approval_status !== 'approved') {
+      return NextResponse.json(
+        { error: '承認待ちです。担当者の確認をお待ちください。' },
+        { status: 403 }
+      )
+    }
+
     // 通常行の productId リスト（自由記入行を除く）
     const normalItems = items.filter((i) => !i.isCustom)
     const productIds = normalItems.map((i) => i.productId)

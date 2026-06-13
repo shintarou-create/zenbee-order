@@ -20,6 +20,12 @@ const LINE_FILTER_OPTIONS = [
   { value: 'unlinked', label: '未紐づけ' },
 ] as const
 
+const APPROVAL_FILTER_OPTIONS = [
+  { value: 'all', label: 'すべて' },
+  { value: 'pending', label: '承認待ち' },
+  { value: 'approved', label: '承認済み' },
+] as const
+
 const ADDRESS_FILTER_OPTIONS = [
   { value: 'all', label: 'すべて' },
   { value: 'has', label: '住所あり' },
@@ -57,11 +63,14 @@ export default function AdminCustomersPage() {
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [lineFilter, setLineFilter] = useState<'all' | 'linked' | 'unlinked'>('all')
   const [addressFilter, setAddressFilter] = useState<'all' | 'has' | 'missing'>('all')
+  const [approvalFilter, setApprovalFilter] = useState<'all' | 'pending' | 'approved'>('all')
   const [showModal, setShowModal] = useState(false)
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
   const [formData, setFormData] = useState<Partial<Company>>(initialFormData)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [approvingId, setApprovingId] = useState<string | null>(null)
+  const [generatingCodeId, setGeneratingCodeId] = useState<string | null>(null)
 
   // LINE 紐づけモーダル
   const [linkingCompany, setLinkingCompany] = useState<Company | null>(null)
@@ -100,6 +109,8 @@ export default function AdminCustomersPage() {
     if (lineFilter === 'unlinked' && c.line_users && c.line_users.length > 0) return false
     if (addressFilter === 'has' && !c.postal_code && !c.address) return false
     if (addressFilter === 'missing' && (c.postal_code || c.address)) return false
+    if (approvalFilter === 'pending' && c.approval_status !== 'pending') return false
+    if (approvalFilter === 'approved' && c.approval_status === 'pending') return false
     return true
   })
 
@@ -201,6 +212,52 @@ export default function AdminCustomersPage() {
     } finally {
       setSaving(false)
       setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
+  async function handleApprove(company: Company) {
+    setApprovingId(company.id)
+    try {
+      const res = await adminFetch(`/api/admin/companies/${company.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approval_status: 'approved' }),
+      })
+      const json = (await res.json()) as { error?: string }
+      if (!res.ok) {
+        setMessage({ type: 'error', text: json.error || '承認に失敗しました' })
+      } else {
+        setMessage({ type: 'success', text: `${company.company_name} を承認しました` })
+        await fetchCompanies()
+      }
+    } catch {
+      setMessage({ type: 'error', text: '通信エラーが発生しました' })
+    } finally {
+      setApprovingId(null)
+      setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
+  async function handleGenerateCode(company: Company) {
+    setGeneratingCodeId(company.id)
+    try {
+      const res = await adminFetch('/api/admin/registration-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: company.id }),
+      })
+      const json = (await res.json()) as { code?: string; error?: string }
+      if (!res.ok) {
+        setMessage({ type: 'error', text: json.error || 'コード生成に失敗しました' })
+      } else {
+        setMessage({ type: 'success', text: `${company.company_name} の登録コードを生成しました: ${json.code}` })
+        await fetchCompanies()
+      }
+    } catch {
+      setMessage({ type: 'error', text: '通信エラーが発生しました' })
+    } finally {
+      setGeneratingCodeId(null)
+      setTimeout(() => setMessage(null), 5000)
     }
   }
 
@@ -358,6 +415,24 @@ export default function AdminCustomersPage() {
             </button>
           ))}
         </div>
+
+        {/* 承認状態 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-500 font-medium w-14">承認</span>
+          {APPROVAL_FILTER_OPTIONS.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => setApprovalFilter(f.value)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                approvalFilter === f.value
+                  ? 'bg-amber-500 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 顧客テーブル */}
@@ -371,6 +446,10 @@ export default function AdminCustomersPage() {
             customers={filteredCompanies}
             onEdit={handleEdit}
             onLinkLine={handleLinkLine}
+            onApprove={handleApprove}
+            onGenerateCode={handleGenerateCode}
+            approvingId={approvingId}
+            generatingCodeId={generatingCodeId}
           />
         )}
       </div>
