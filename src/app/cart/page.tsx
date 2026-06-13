@@ -20,7 +20,14 @@ function getMinDeliveryDate(): string {
 function getDefaultDeliveryDate(): string {
   const d = new Date()
   d.setDate(d.getDate() + 5)
-  return d.toISOString().split('T')[0]
+  // 月曜(1)・木曜(4) はブロック日のためスキップ
+  while ([1, 4].includes(d.getDay())) {
+    d.setDate(d.getDate() + 1)
+  }
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 export default function CartPage() {
@@ -194,7 +201,7 @@ export default function CartPage() {
             <button
               onClick={handleOrder}
               disabled={submitting || activeItems.length === 0 || !!shippingError || !!deliveryDateError}
-              className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
+              className={`w-full py-4 rounded-xl font-bold text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 submitting
                   ? 'bg-fukamidori text-white'
                   : 'bg-fukamidori hover:bg-fukamidori-dark text-white active:scale-98'
