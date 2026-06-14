@@ -86,7 +86,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen bg-gray-50 flex">
       {/* サイドバー（デスクトップ） */}
       <aside className="hidden md:flex md:flex-col w-56 bg-fukamidori text-white">
-        <div className="px-4 py-3 border-b border-kincha flex items-center justify-center">
+        <div className="px-4 py-3 border-b border-white flex items-center justify-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.png" alt="善兵衛農園" className="h-10 w-auto object-contain" />
         </div>
@@ -121,7 +121,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
           <aside className="absolute left-0 top-0 bottom-0 w-56 bg-fukamidori text-white flex flex-col">
-            <div className="px-4 py-3 border-b border-kincha flex items-center justify-between">
+            <div className="px-4 py-3 border-b border-white flex items-center justify-between">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/logo.png" alt="善兵衛農園" className="h-10 w-auto object-contain" />
               <button onClick={() => setSidebarOpen(false)} className="text-kinari flex-shrink-0 ml-2">
