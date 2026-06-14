@@ -111,7 +111,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             )
           })}
         </nav>
-        <div className="p-4 border-t border-kincha">
+        <div className="p-4 border-t border-white">
           <p className="text-kinari text-xs">{adminUser.name}</p>
         </div>
       </aside>
