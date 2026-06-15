@@ -9,7 +9,8 @@ import CartItemComponent from '@/components/customer/CartItem'
 import OrderSummary from '@/components/customer/OrderSummary'
 import CustomerHeader from '@/components/customer/CustomerHeader'
 import { calculateShipping } from '@/lib/shipping'
-import { isBlockedDeliveryDate, getMinDeliveryDateStr, isTooSoonDeliveryDate, hasMixedShipStart } from '@/lib/delivery-rules'
+import { isBlockedDeliveryDate, getMinDeliveryDateStr, isTooSoonDeliveryDate, hasMixedShipStart, hasSeasonalAndYearRound, getLatestShipStartDate } from '@/lib/delivery-rules'
+import { formatShipStartDate } from '@/lib/utils'
 
 function getDefaultDeliveryDate(): string {
   const today = new Date()
@@ -52,6 +53,10 @@ export default function CartPage() {
   const [deliveryDate, setDeliveryDate] = useState(getDefaultDeliveryDate())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const latestShip = getLatestShipStartDate(items)
+  const shipNotice = hasSeasonalAndYearRound(items) && latestShip
+    ? `お届け時期の異なる商品が一緒にカートに入っています。このままご注文の場合、発送はいちばん遅い商品（${formatShipStartDate(latestShip)}〜）に合わせてまとめてお届けします。お早めにお受け取りになりたい場合は、お届け時期ごとに分けてご注文ください。`
+    : null
   const mixError = hasMixedShipStart(items)
     ? 'お届け開始時期が異なる商品が含まれています。お届け時期ごとに分けてご注文ください。'
     : null
@@ -195,6 +200,13 @@ export default function CartPage() {
                 className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-fukamidori resize-none"
               />
             </div>
+
+            {/* 季節+通年混在お知らせ（禁止ではない・黄色） */}
+            {shipNotice && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <p className="text-amber-700 text-sm">{shipNotice}</p>
+              </div>
+            )}
 
             {/* 混在エラー表示 */}
             {mixError && (

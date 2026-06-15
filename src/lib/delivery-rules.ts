@@ -14,6 +14,17 @@ export function hasMixedShipStart(items: { shipStartDate?: string | null }[]): b
   return dates.size >= 2
 }
 
+export function hasSeasonalAndYearRound(items: { shipStartDate?: string | null }[]): boolean {
+  const hasSeasonal = items.some((i) => !!i.shipStartDate)
+  const hasYearRound = items.some((i) => !i.shipStartDate)
+  return hasSeasonal && hasYearRound
+}
+
+export function getLatestShipStartDate(items: { shipStartDate?: string | null }[]): string | null {
+  const dates = items.map((i) => i.shipStartDate).filter((d): d is string => !!d)
+  return dates.length > 0 ? dates.reduce((a, b) => (a > b ? a : b)) : null
+}
+
 export function getMinDeliveryDateStr(): string {
   const today = new Date()
   const min = new Date(today.getFullYear(), today.getMonth(), today.getDate() + MIN_DELIVERY_LEAD_DAYS)
