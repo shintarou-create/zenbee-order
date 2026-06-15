@@ -7,7 +7,7 @@ export function isBlockedDeliveryDate(dateStr: string): boolean {
   return BLOCKED_DELIVERY_WEEKDAYS.includes(day)
 }
 
-export const MIN_DELIVERY_LEAD_DAYS = 3
+export const MIN_DELIVERY_LEAD_DAYS = 2
 
 export function getMinDeliveryDateStr(): string {
   const today = new Date()

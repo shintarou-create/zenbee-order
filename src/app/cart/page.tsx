@@ -53,7 +53,7 @@ export default function CartPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const deliveryDateError = isTooSoonDeliveryDate(deliveryDate)
-    ? 'お届け希望日はご注文日の3日後以降でご指定ください'
+    ? 'お届け希望日はご注文日の2日後以降でご指定ください'
     : isBlockedDeliveryDate(deliveryDate)
       ? '月曜・木曜はお届け日に指定できません（出荷日のため）'
       : null
@@ -172,7 +172,7 @@ export default function CartPage() {
                 onChange={(e) => setDeliveryDate(e.target.value)}
                 className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-fukamidori"
               />
-              <p className="mt-1 text-xs text-gray-500">※ご注文日の3日後以降でご指定ください</p>
+              <p className="mt-1 text-xs text-gray-500">※ご注文日の2日後以降でご指定ください</p>
               <p className="mt-1 text-xs text-gray-500">※月曜・木曜はお届け日に指定できません（出荷日のため）</p>
               {deliveryDateError && (
                 <p className="mt-1 text-xs text-red-500 font-medium">{deliveryDateError}</p>

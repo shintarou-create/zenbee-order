@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '納品希望日が無効です（本日〜180日以内）' }, { status: 400 })
       }
       if (isTooSoonDeliveryDate(deliveryDate)) {
-        return NextResponse.json({ error: 'お届け希望日はご注文日の3日後以降でご指定ください' }, { status: 400 })
+        return NextResponse.json({ error: 'お届け希望日はご注文日の2日後以降でご指定ください' }, { status: 400 })
       }
       if (isBlockedDeliveryDate(deliveryDate)) {
         return NextResponse.json({ error: '月曜・木曜はお届け日に指定できません' }, { status: 400 })
