@@ -5,11 +5,19 @@ import type { CartItem, CartState } from '@/types'
 import { hasMixedShipStart } from '@/lib/delivery-rules'
 
 const CART_STORAGE_KEY = 'zenbee_cart'
+const CART_VERSION = 2
+const CART_VERSION_KEY = 'zenbee_cart_version'
 
 function loadCartFromStorage(): CartItem[] {
   if (typeof window === 'undefined') return []
   try {
     localStorage.removeItem(CART_STORAGE_KEY)
+    const ver = sessionStorage.getItem(CART_VERSION_KEY)
+    if (ver !== String(CART_VERSION)) {
+      sessionStorage.removeItem(CART_STORAGE_KEY)
+      sessionStorage.removeItem(CART_VERSION_KEY)
+      return []
+    }
     const saved = sessionStorage.getItem(CART_STORAGE_KEY)
     if (!saved) return []
     return JSON.parse(saved) as CartItem[]
@@ -22,6 +30,7 @@ function saveCartToStorage(items: CartItem[]): void {
   if (typeof window === 'undefined') return
   try {
     sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items))
+    sessionStorage.setItem(CART_VERSION_KEY, String(CART_VERSION))
   } catch {
     // sessionStorage が使えない場合は無視
   }
