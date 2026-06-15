@@ -12,31 +12,6 @@ import { calculateShipping } from '@/lib/shipping'
 import { isBlockedDeliveryDate, getMinDeliveryDateStr, isTooSoonDeliveryDate, hasMixedShipStart, hasSeasonalAndYearRound, getLatestShipStartDate } from '@/lib/delivery-rules'
 import { formatShipStartDate } from '@/lib/utils'
 
-function getDefaultDeliveryDate(): string {
-  const today = new Date()
-  const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 5)
-  // 月曜(1)・木曜(4) はブロック日のためスキップ
-  while ([1, 4].includes(d.getDay())) {
-    d.setDate(d.getDate() + 1)
-  }
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  const result = `${y}-${m}-${day}`
-
-  // 念のため min（今日+3）より前なら min 以降の最初の非ブロック日に繰り上げ
-  const minStr = getMinDeliveryDateStr()
-  if (result < minStr) {
-    const [my, mm, md] = minStr.split('-').map(Number)
-    const minDate = new Date(my, mm - 1, md)
-    while ([1, 4].includes(minDate.getDay())) {
-      minDate.setDate(minDate.getDate() + 1)
-    }
-    return `${minDate.getFullYear()}-${String(minDate.getMonth() + 1).padStart(2, '0')}-${String(minDate.getDate()).padStart(2, '0')}`
-  }
-
-  return result
-}
 
 export default function CartPage() {
   const router = useRouter()
@@ -50,7 +25,7 @@ export default function CartPage() {
   }
   const { userId, isLoading: liffLoading } = useLiff()
   const [notes, setNotes] = useState('')
-  const [deliveryDate, setDeliveryDate] = useState(getDefaultDeliveryDate())
+  const [deliveryDate, setDeliveryDate] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const latestShip = getLatestShipStartDate(items)
@@ -60,11 +35,13 @@ export default function CartPage() {
   const mixError = hasMixedShipStart(items)
     ? 'お届け開始時期が異なる商品が含まれています。お届け時期ごとに分けてご注文ください。'
     : null
-  const deliveryDateError = isTooSoonDeliveryDate(deliveryDate)
-    ? 'お届け希望日はご注文日の2日後以降でご指定ください'
-    : isBlockedDeliveryDate(deliveryDate)
-      ? '月曜・木曜はお届け日に指定できません（出荷日のため）'
-      : null
+  const deliveryDateError = !deliveryDate
+    ? '納品希望日を選択してください'
+    : isTooSoonDeliveryDate(deliveryDate)
+      ? 'お届け希望日はご注文日の2日後以降でご指定ください'
+      : isBlockedDeliveryDate(deliveryDate)
+        ? '月曜・木曜はお届け日に指定できません（出荷日のため）'
+        : null
 
   async function handleOrder() {
     if (activeItems.length === 0) return
