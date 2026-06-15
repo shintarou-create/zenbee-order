@@ -38,3 +38,14 @@ export function isTooSoonDeliveryDate(dateStr: string): boolean {
   if (!dateStr) return false
   return dateStr < getMinDeliveryDateStr()
 }
+
+export function getEffectiveMinDeliveryDateStr(items: { shipStartDate?: string | null }[]): string {
+  const lead = getMinDeliveryDateStr()
+  const latestShip = getLatestShipStartDate(items)
+  return latestShip && latestShip > lead ? latestShip : lead
+}
+
+export function isBeforeEffectiveMinDate(dateStr: string, items: { shipStartDate?: string | null }[]): boolean {
+  if (!dateStr) return false
+  return dateStr < getEffectiveMinDeliveryDateStr(items)
+}

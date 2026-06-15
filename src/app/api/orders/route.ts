@@ -150,6 +150,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'お届け開始時期が異なる商品は同時に注文できません' }, { status: 400 })
     }
 
+    // 納品希望日が発送開始日より前の場合はブロック
+    if (deliveryDate) {
+      const shipStartDates = products.map((p) => p.ship_start_date).filter((d): d is string => !!d)
+      if (shipStartDates.length > 0) {
+        const latestShipStart = shipStartDates.reduce((a, b) => (a > b ? a : b))
+        if (deliveryDate < latestShipStart) {
+          return NextResponse.json(
+            { error: `お届け希望日は ${latestShipStart} 以降でご指定ください（発送開始日前は指定できません）` },
+            { status: 400 }
+          )
+        }
+      }
+    }
+
     // 在庫確認と金額計算
     let totalAmount = 0
     const orderItemsData: Array<{

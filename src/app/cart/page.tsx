@@ -9,7 +9,7 @@ import CartItemComponent from '@/components/customer/CartItem'
 import OrderSummary from '@/components/customer/OrderSummary'
 import CustomerHeader from '@/components/customer/CustomerHeader'
 import { calculateShipping } from '@/lib/shipping'
-import { isBlockedDeliveryDate, getMinDeliveryDateStr, isTooSoonDeliveryDate, hasMixedShipStart, hasSeasonalAndYearRound, getLatestShipStartDate } from '@/lib/delivery-rules'
+import { isBlockedDeliveryDate, hasMixedShipStart, hasSeasonalAndYearRound, getLatestShipStartDate, getEffectiveMinDeliveryDateStr, isBeforeEffectiveMinDate } from '@/lib/delivery-rules'
 import { formatShipStartDate } from '@/lib/utils'
 
 
@@ -37,8 +37,8 @@ export default function CartPage() {
     : null
   const deliveryDateError = !deliveryDate
     ? '納品希望日を選択してください'
-    : isTooSoonDeliveryDate(deliveryDate)
-      ? 'お届け希望日はご注文日の2日後以降でご指定ください'
+    : isBeforeEffectiveMinDate(deliveryDate, items)
+      ? `お届け希望日は ${formatShipStartDate(getEffectiveMinDeliveryDateStr(items))} 以降でご指定ください`
       : isBlockedDeliveryDate(deliveryDate)
         ? '月曜・木曜はお届け日に指定できません（出荷日のため）'
         : null
@@ -160,7 +160,7 @@ export default function CartPage() {
               <input
                 type="date"
                 value={deliveryDate}
-                min={getMinDeliveryDateStr()}
+                min={getEffectiveMinDeliveryDateStr(items)}
                 onChange={(e) => setDeliveryDate(e.target.value)}
                 className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-fukamidori"
               />
