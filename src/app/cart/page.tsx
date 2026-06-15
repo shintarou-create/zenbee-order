@@ -146,6 +146,13 @@ export default function CartPage() {
           </div>
         ) : (
           <div className="space-y-4">
+            {/* 季節+通年混在お知らせ（禁止ではない・黄色） */}
+            {shipNotice && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <p className="text-amber-700 text-sm">{shipNotice}</p>
+              </div>
+            )}
+
             {/* カートアイテム */}
             <div className="space-y-3">
               {items.map((item) => (
@@ -200,13 +207,6 @@ export default function CartPage() {
                 className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-fukamidori resize-none"
               />
             </div>
-
-            {/* 季節+通年混在お知らせ（禁止ではない・黄色） */}
-            {shipNotice && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <p className="text-amber-700 text-sm">{shipNotice}</p>
-              </div>
-            )}
 
             {/* 混在エラー表示 */}
             {mixError && (

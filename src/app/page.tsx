@@ -13,8 +13,6 @@ import CustomerHeader from '@/components/customer/CustomerHeader'
 import OnboardingScreen from '@/components/customer/OnboardingScreen'
 import PendingApprovalScreen from '@/components/customer/PendingApprovalScreen'
 import type { Company, PriceRank, Category, CartItem } from '@/types'
-import { hasSeasonalAndYearRound, getLatestShipStartDate } from '@/lib/delivery-rules'
-import { formatShipStartDate } from '@/lib/utils'
 
 const CUSTOM_ITEM_MAX = 5
 const CUSTOM_ITEM_MAX_CHARS = 100
@@ -255,21 +253,6 @@ export default function HomePage() {
           </div>
         )}
       </main>
-
-      {/* 季節+通年混在お知らせ（禁止ではない・黄色）*/}
-      {(() => {
-        const latest = getLatestShipStartDate(cartItems)
-        if (!hasSeasonalAndYearRound(cartItems) || !latest) return null
-        return (
-          <div className="fixed bottom-20 left-0 right-0 flex justify-center px-4 z-25 pointer-events-none">
-            <div className="w-full max-w-sm bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 shadow-lg">
-              <p className="text-amber-700 text-xs">
-                {`お届け時期の異なる商品が一緒にカートに入っています。このままご注文の場合、発送はいちばん遅い商品（${formatShipStartDate(latest)}〜）に合わせてまとめてお届けします。`}
-              </p>
-            </div>
-          </div>
-        )
-      })()}
 
       {/* 混在エラー: pendingCount に依存せず常に表示（フッターとは独立） */}
       {mixError && (
