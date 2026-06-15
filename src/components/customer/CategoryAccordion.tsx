@@ -14,6 +14,7 @@ interface CategoryAccordionProps {
   customItemCount?: number
   customItemMax?: number
   customItemMaxChars?: number
+  lockedShipDate?: string | null
 }
 
 export default function CategoryAccordion({
@@ -25,6 +26,7 @@ export default function CategoryAccordion({
   customItemCount = 0,
   customItemMax = 5,
   customItemMaxChars = 100,
+  lockedShipDate,
 }: CategoryAccordionProps) {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set())
 
@@ -87,6 +89,7 @@ export default function CategoryAccordion({
                       onPendingChange={onPendingChange}
                       cartItem={cartItems.find((ci) => ci.productId === product.id)}
                       resetKey={resetKey}
+                      lockedShipDate={lockedShipDate}
                     />
                   ))}
                   {cat.name === 'その他' && onAddCustomItem && (

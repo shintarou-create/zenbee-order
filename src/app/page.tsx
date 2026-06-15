@@ -156,6 +156,17 @@ export default function HomePage() {
 
   const pendingCount = pendingItems.size
 
+  // カート+保留中の季節商品の基準発送日（最初の非NULL shipStartDate）
+  const lockedShipDate = useMemo(() => {
+    for (const item of cartItems) {
+      if (item.shipStartDate) return item.shipStartDate
+    }
+    for (const item of Array.from(pendingItems.values())) {
+      if (item.shipStartDate) return item.shipStartDate
+    }
+    return null
+  }, [cartItems, pendingItems])
+
   if (liffLoading || customerLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-kinari">
@@ -226,6 +237,7 @@ export default function HomePage() {
               customItemCount={customItemCount}
               customItemMax={CUSTOM_ITEM_MAX}
               customItemMaxChars={CUSTOM_ITEM_MAX_CHARS}
+              lockedShipDate={lockedShipDate}
             />
             {uncategorized.length > 0 && (
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -248,6 +260,7 @@ export default function HomePage() {
                 onPendingChange={handlePendingChange}
                 cartItem={cartItems.find((i) => i.productId === product.id)}
                 resetKey={resetKey}
+                lockedShipDate={lockedShipDate}
               />
             ))}
           </div>

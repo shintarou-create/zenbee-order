@@ -10,9 +10,10 @@ interface ProductCardProps {
   onPendingChange: (productId: string, item: Omit<CartItem, 'subtotal'> | null) => void
   cartItem?: CartItem
   resetKey?: number
+  lockedShipDate?: string | null
 }
 
-export default function ProductCard({ product, onPendingChange, cartItem, resetKey }: ProductCardProps) {
+export default function ProductCard({ product, onPendingChange, cartItem, resetKey, lockedShipDate }: ProductCardProps) {
   const [quantity, setQuantity] = useState<number>(0)
   const [selectedTier, setSelectedTier] = useState<ProductPricingTier | null>(null)
   const [showDetail, setShowDetail] = useState(false)
@@ -23,6 +24,10 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
   const isUnavailable = product.stock_status === 'cross'
   const isLowStock = product.stock_status === 'triangle'
   const currentPrice = product.current_price || 0
+  const isShipLocked =
+    !!lockedShipDate &&
+    !!product.ship_start_date &&
+    product.ship_start_date !== lockedShipDate
 
   // resetKey が変わったらカード状態をリセット（初回は無視）
   const prevResetKey = useRef(resetKey ?? 0)
@@ -32,6 +37,17 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
     setQuantity(0)
     setSelectedTier(null)
   }, [resetKey])
+
+  // isShipLocked が true になったとき、選択中の数量をリセット
+  useEffect(() => {
+    if (isShipLocked && quantity > 0) {
+      setQuantity(0)
+      setSelectedTier(null)
+      onPendingChangeRef.current(product.id, null)
+    }
+  // isShipLocked の変化時のみ実行
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isShipLocked])
 
   // onPendingChange を ref 経由で保持し、effect deps から除外
   const onPendingChangeRef = useRef(onPendingChange)
@@ -194,10 +210,12 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
                   {tiers.map((tier) => (
                     <label
                       key={tier.id}
-                      className={`flex items-center gap-2 cursor-pointer rounded-lg px-3 py-2 border transition-colors ${
-                        selectedTier?.id === tier.id
-                          ? 'border-kincha bg-kinari'
-                          : 'border-gray-200 hover:border-gray-300'
+                      className={`flex items-center gap-2 rounded-lg px-3 py-2 border transition-colors ${
+                        isShipLocked
+                          ? 'cursor-not-allowed opacity-40 border-gray-200'
+                          : selectedTier?.id === tier.id
+                            ? 'cursor-pointer border-kincha bg-kinari'
+                            : 'cursor-pointer border-gray-200 hover:border-gray-300'
                       }`}
                     >
                       <input
@@ -207,6 +225,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
                         checked={selectedTier?.id === tier.id}
                         onClick={() => { if (selectedTier?.id === tier.id) setSelectedTier(null) }}
                         onChange={() => setSelectedTier(tier)}
+                        disabled={isShipLocked}
                         className="accent-fukamidori"
                       />
                       <span className="text-sm font-medium text-gray-800">{tier.tier_label}</span>
@@ -223,7 +242,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
             <div className="flex items-center gap-2 mb-3">
               <button
                 onClick={handleDecrement}
-                disabled={quantity <= 0}
+                disabled={quantity <= 0 || isShipLocked}
                 className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 flex items-center justify-center text-lg font-bold transition-colors"
               >
                 −
@@ -233,30 +252,39 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
                   type="number"
                   value={quantity}
                   onChange={(e) => {
+                    if (isShipLocked) return
                     const v = parseFloat(e.target.value)
                     if (isNaN(v) || v <= 0) { setQuantity(0); return }
                     handleQuantityChange(v)
                   }}
                   min={0}
                   step={hasTiers ? 1 : product.step_qty}
+                  disabled={isShipLocked}
                   className={`w-20 text-center text-lg font-bold border rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-fukamidori transition-colors ${
-                    quantity === 0
-                      ? 'text-gray-300 border-gray-200 bg-gray-50'
-                      : 'border-gray-200'
+                    isShipLocked
+                      ? 'text-gray-300 border-gray-200 bg-gray-50 cursor-not-allowed'
+                      : quantity === 0
+                        ? 'text-gray-300 border-gray-200 bg-gray-50'
+                        : 'border-gray-200'
                   }`}
                 />
-                <span className={`text-sm transition-colors ${quantity === 0 ? 'text-gray-300' : 'text-gray-500'}`}>
+                <span className={`text-sm transition-colors ${quantity === 0 || isShipLocked ? 'text-gray-300' : 'text-gray-500'}`}>
                   {hasTiers ? 'ケース' : product.unit}
                 </span>
               </div>
               <button
                 onClick={handleIncrement}
-                disabled={!hasTiers && quantity > 0 && quantity >= product.max_order_qty}
+                disabled={isShipLocked || (!hasTiers && quantity > 0 && quantity >= product.max_order_qty)}
                 className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 flex items-center justify-center text-lg font-bold transition-colors"
               >
                 ＋
               </button>
             </div>
+
+            {/* 発送日ロック時の赤文字メッセージ */}
+            {isShipLocked && (
+              <p className="mt-1 text-xs text-red-500 font-medium">お届け時期が異なるため、選択中の商品と一緒に選べません。お届け時期ごとに分けてご注文ください。</p>
+            )}
 
             {/* 段階ありの本数表示 */}
             {hasTiers && selectedTier && tierTotalBottles !== null && (
