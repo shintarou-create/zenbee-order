@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import CustomerHeader from './CustomerHeader'
 
 type View = 'select' | 'code' | 'register'
@@ -38,6 +38,13 @@ const initialRegisterForm: RegisterForm = {
 
 export default function OnboardingScreen({ accessToken, onSuccess }: OnboardingScreenProps) {
   const [view, setView] = useState<View>('select')
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('view') === 'register') {
+      setView('register')
+    }
+  }, [])
 
   // コード入力
   const [code, setCode] = useState('')
