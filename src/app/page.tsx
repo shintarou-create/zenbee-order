@@ -57,16 +57,20 @@ export default function HomePage() {
 
   function handleAddAllToCart() {
     setMixError(null)
+    const failed = new Map<string, Omit<CartItem, 'subtotal'>>()
     let hasMixConflict = false
-    pendingItems.forEach((item) => {
+    pendingItems.forEach((item, key) => {
       const ok = addToCart(item)
-      if (!ok) hasMixConflict = true
+      if (!ok) {
+        hasMixConflict = true
+        failed.set(key, item)
+      }
     })
     if (hasMixConflict) {
-      setMixError('お届け開始時期が異なる商品は一緒にご注文いただけません。お届け時期ごとに分けてご注文をお願いします。')
+      setMixError('お届け開始時期が異なる商品は一緒にご注文いただけません。お届け時期ごとに分けてご注文をお願いします。カート内の商品をご注文後、改めてお選びください。')
     }
+    setPendingItems(failed)
     setResetKey((k) => k + 1)
-    setPendingItems(new Map())
   }
 
   const fetchCustomer = useCallback(async () => {
@@ -250,14 +254,19 @@ export default function HomePage() {
         )}
       </main>
 
+      {/* 混在エラー: pendingCount に依存せず常に表示（フッターとは独立） */}
+      {mixError && (
+        <div className="fixed bottom-20 left-0 right-0 flex justify-center px-4 z-30">
+          <div className="w-full max-w-sm bg-red-50 border border-red-300 rounded-xl px-4 py-3 shadow-lg flex items-start gap-2">
+            <p className="text-red-600 text-xs font-medium flex-1">{mixError}</p>
+            <button onClick={() => setMixError(null)} className="text-red-400 text-sm leading-none flex-shrink-0">×</button>
+          </div>
+        </div>
+      )}
+
       {/* 固定フッター：保留品あり→一括追加ボタン、なしでカートあり→カートを見るボタン */}
       {pendingCount > 0 ? (
-        <div className="fixed bottom-4 left-0 right-0 flex flex-col items-center gap-2 px-4 z-20">
-          {mixError && (
-            <div className="w-full max-w-sm bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-              <p className="text-red-600 text-xs font-medium">{mixError}</p>
-            </div>
-          )}
+        <div className="fixed bottom-4 left-0 right-0 flex justify-center px-4 z-20">
           <button
             onClick={handleAddAllToCart}
             className="w-full max-w-sm bg-fukamidori hover:bg-fukamidori-dark active:scale-95 text-white font-bold py-4 px-6 rounded-full shadow-lg flex items-center justify-between transition-all"
