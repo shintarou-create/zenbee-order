@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     const { data: company } = await supabase
       .from('companies')
       .select('id, company_name, approval_status, is_active')
-      .eq('registration_code', registration_code.trim().toLowerCase())
+      .eq('registration_code', registration_code.trim().toUpperCase())
       .maybeSingle()
 
     if (!company) {
