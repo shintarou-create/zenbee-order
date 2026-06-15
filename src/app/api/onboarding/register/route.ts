@@ -72,14 +72,14 @@ export async function POST(req: NextRequest) {
 
     const supabase = createServiceClient()
 
-    // 既に紐付け済みかチェック
+    // 既に紐付け済みかチェック（company_id が NULL = 未紐付けは通す）
     const { data: existingLink } = await supabase
       .from('line_users')
-      .select('id')
+      .select('id, company_id')
       .eq('line_user_id', lineUserId)
       .maybeSingle()
 
-    if (existingLink) {
+    if (existingLink?.company_id) {
       return NextResponse.json(
         { error: 'このLINEアカウントは既に登録されています' },
         { status: 409 }
@@ -113,15 +113,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '登録に失敗しました' }, { status: 500 })
     }
 
-    // line_users に即時 INSERT（発注可否は approval_status で制御）
+    // line_users に紐付け（NULL レコードがあれば UPDATE、なければ INSERT）
     const { error: lineUserError } = await supabase
       .from('line_users')
-      .insert({
-        company_id: company.id,
-        line_user_id: lineUserId,
-        display_name: displayName,
-        is_active: true,
-      })
+      .upsert(
+        {
+          company_id: company.id,
+          line_user_id: lineUserId,
+          display_name: displayName,
+          is_active: true,
+        },
+        { onConflict: 'line_user_id' }
+      )
 
     if (lineUserError) {
       // ロールバック: company を削除

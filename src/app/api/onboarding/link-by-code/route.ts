@@ -40,14 +40,14 @@ export async function POST(req: NextRequest) {
 
     const supabase = createServiceClient()
 
-    // 既に紐付け済みかチェック
+    // 既に紐付け済みかチェック（company_id が NULL = 未紐付けは通す）
     const { data: existingLink } = await supabase
       .from('line_users')
-      .select('id')
+      .select('id, company_id')
       .eq('line_user_id', lineUserId)
       .maybeSingle()
 
-    if (existingLink) {
+    if (existingLink?.company_id) {
       return NextResponse.json(
         { error: 'このLINEアカウントは既に登録されています' },
         { status: 409 }
@@ -75,17 +75,20 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // line_users に紐付けを INSERT
-    const { error: insertError } = await supabase
+    // line_users に紐付け（NULL レコードがあれば UPDATE、なければ INSERT）
+    const { error: upsertError } = await supabase
       .from('line_users')
-      .insert({
-        company_id: company.id,
-        line_user_id: lineUserId,
-        display_name: displayName,
-        is_active: true,
-      })
+      .upsert(
+        {
+          company_id: company.id,
+          line_user_id: lineUserId,
+          display_name: displayName,
+          is_active: true,
+        },
+        { onConflict: 'line_user_id' }
+      )
 
-    if (insertError) throw insertError
+    if (upsertError) throw upsertError
 
     return NextResponse.json({
       success: true,
