@@ -9,7 +9,7 @@ import CartItemComponent from '@/components/customer/CartItem'
 import OrderSummary from '@/components/customer/OrderSummary'
 import CustomerHeader from '@/components/customer/CustomerHeader'
 import { calculateShipping } from '@/lib/shipping'
-import { isBlockedDeliveryDate, getMinDeliveryDateStr, isTooSoonDeliveryDate } from '@/lib/delivery-rules'
+import { isBlockedDeliveryDate, getMinDeliveryDateStr, isTooSoonDeliveryDate, hasMixedShipStart } from '@/lib/delivery-rules'
 
 function getDefaultDeliveryDate(): string {
   const today = new Date()
@@ -52,6 +52,9 @@ export default function CartPage() {
   const [deliveryDate, setDeliveryDate] = useState(getDefaultDeliveryDate())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const mixError = hasMixedShipStart(items)
+    ? 'お届け開始時期が異なる商品が含まれています。お届け時期ごとに分けてご注文ください。'
+    : null
   const deliveryDateError = isTooSoonDeliveryDate(deliveryDate)
     ? 'お届け希望日はご注文日の2日後以降でご指定ください'
     : isBlockedDeliveryDate(deliveryDate)
@@ -193,6 +196,13 @@ export default function CartPage() {
               />
             </div>
 
+            {/* 混在エラー表示 */}
+            {mixError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <p className="text-red-700 text-sm font-medium">{mixError}</p>
+              </div>
+            )}
+
             {/* エラー表示 */}
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4">
@@ -209,7 +219,7 @@ export default function CartPage() {
           <div className="max-w-2xl mx-auto">
             <button
               onClick={handleOrder}
-              disabled={submitting || activeItems.length === 0 || !!shippingError || !!deliveryDateError}
+              disabled={submitting || activeItems.length === 0 || !!shippingError || !!deliveryDateError || !!mixError}
               className={`w-full py-4 rounded-xl font-bold text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 submitting
                   ? 'bg-fukamidori text-white'

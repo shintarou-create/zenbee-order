@@ -291,6 +291,7 @@ export interface CartItem {
   tierLabel?: string | null
   tierQuantity?: number | null
   isCustom?: boolean
+  shipStartDate?: string | null
 }
 
 export interface CartState {

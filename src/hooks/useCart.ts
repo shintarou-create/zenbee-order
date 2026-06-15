@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { CartItem, CartState } from '@/types'
+import { hasMixedShipStart } from '@/lib/delivery-rules'
 
 const CART_STORAGE_KEY = 'zenbee_cart'
 
@@ -35,7 +36,7 @@ function calcTotal(items: CartItem[]): number {
 }
 
 interface UseCartReturn extends CartState {
-  addToCart: (item: Omit<CartItem, 'subtotal'>) => void
+  addToCart: (item: Omit<CartItem, 'subtotal'>) => boolean
   addCustomItem: (text: string) => void
   removeFromCart: (productId: string) => void
   updateQuantity: (productId: string, quantity: number) => void
@@ -46,55 +47,70 @@ interface UseCartReturn extends CartState {
 export function useCart(): UseCartReturn {
   const [items, setItems] = useState<CartItem[]>([])
   const [initialized, setInitialized] = useState(false)
+  // 最新のカート状態を同期的に参照するための ref（addToCart の連続呼び出し対応）
+  const itemsRef = useRef<CartItem[]>([])
 
   // クライアントサイドでのみsessionStorageから読み込み（LIFFを閉じて開き直すと空になる）
   useEffect(() => {
     const stored = loadCartFromStorage()
     setItems(stored)
+    itemsRef.current = stored
     setInitialized(true)
   }, [])
 
-  // items が変更されたら sessionStorage に保存
+  // items が変更されたら sessionStorage に保存・ref を同期
   useEffect(() => {
     if (initialized) {
       saveCartToStorage(items)
+      itemsRef.current = items
     }
   }, [items, initialized])
 
-  const addToCart = useCallback((item: Omit<CartItem, 'subtotal'>) => {
-    setItems((prev) => {
-      const existing = prev.find((i) => i.productId === item.productId)
-      if (existing) {
-        if (item.pricingTierId != null) {
-          // 段階あり: 段階が同じなら数量加算、違うなら差し替え
-          if (existing.pricingTierId === item.pricingTierId) {
-            return prev.map((i) => {
-              if (i.productId === item.productId) {
-                const newQty = i.quantity + item.quantity
-                return { ...i, quantity: newQty, subtotal: i.unitPrice * (i.tierQuantity ?? 1) * newQty }
-              }
-              return i
-            })
-          } else {
-            return prev.map((i) =>
-              i.productId === item.productId
-                ? { ...item, subtotal: calcSubtotal(item) }
-                : i
-            )
-          }
-        } else {
-          // 段階なし: 数量加算
-          return prev.map((i) => {
+  const addToCart = useCallback((item: Omit<CartItem, 'subtotal'>): boolean => {
+    const prev = itemsRef.current
+    const existing = prev.find((i) => i.productId === item.productId)
+
+    if (existing) {
+      // 既存商品の数量加算・tier差し替えは ship_start_date が増えないので混在チェック不要
+      let next: CartItem[]
+      if (item.pricingTierId != null) {
+        if (existing.pricingTierId === item.pricingTierId) {
+          next = prev.map((i) => {
             if (i.productId === item.productId) {
               const newQty = i.quantity + item.quantity
-              return { ...i, quantity: newQty, subtotal: newQty * i.unitPrice }
+              return { ...i, quantity: newQty, subtotal: i.unitPrice * (i.tierQuantity ?? 1) * newQty }
             }
             return i
           })
+        } else {
+          next = prev.map((i) =>
+            i.productId === item.productId
+              ? { ...item, subtotal: calcSubtotal(item) }
+              : i
+          )
         }
+      } else {
+        next = prev.map((i) => {
+          if (i.productId === item.productId) {
+            const newQty = i.quantity + item.quantity
+            return { ...i, quantity: newQty, subtotal: newQty * i.unitPrice }
+          }
+          return i
+        })
       }
-      return [...prev, { ...item, subtotal: calcSubtotal(item) }]
-    })
+      itemsRef.current = next
+      setItems(next)
+      return true
+    }
+
+    // 新規商品: 追加後に混在する場合は拒否
+    if (hasMixedShipStart([...prev, item])) {
+      return false
+    }
+    const next = [...prev, { ...item, subtotal: calcSubtotal(item) }]
+    itemsRef.current = next
+    setItems(next)
+    return true
   }, [])
 
   const addCustomItem = useCallback((text: string) => {

@@ -59,6 +59,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
           pricingTierId: selectedTier.id,
           tierLabel: selectedTier.tier_label,
           tierQuantity: selectedTier.quantity,
+          shipStartDate: product.ship_start_date,
         })
       } else {
         cb(product.id, null)
@@ -75,6 +76,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
           stepQty: product.step_qty,
           minOrderQty: product.min_order_qty,
           imageUrl: product.image_url,
+          shipStartDate: product.ship_start_date,
         })
       } else {
         cb(product.id, null)

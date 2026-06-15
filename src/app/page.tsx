@@ -37,6 +37,7 @@ export default function HomePage() {
   const [pendingItems, setPendingItems] = useState<Map<string, Omit<CartItem, 'subtotal'>>>(new Map())
   // 一括追加後にカードをリセットするためのキー
   const [resetKey, setResetKey] = useState(0)
+  const [mixError, setMixError] = useState<string | null>(null)
 
   const handlePendingChange = useCallback(
     (productId: string, item: Omit<CartItem, 'subtotal'> | null) => {
@@ -55,9 +56,15 @@ export default function HomePage() {
   )
 
   function handleAddAllToCart() {
+    setMixError(null)
+    let hasMixConflict = false
     pendingItems.forEach((item) => {
-      addToCart(item)
+      const ok = addToCart(item)
+      if (!ok) hasMixConflict = true
     })
+    if (hasMixConflict) {
+      setMixError('お届け開始時期が異なる商品は一緒にご注文いただけません。お届け時期ごとに分けてご注文をお願いします。')
+    }
     setResetKey((k) => k + 1)
     setPendingItems(new Map())
   }
@@ -245,7 +252,12 @@ export default function HomePage() {
 
       {/* 固定フッター：保留品あり→一括追加ボタン、なしでカートあり→カートを見るボタン */}
       {pendingCount > 0 ? (
-        <div className="fixed bottom-4 left-0 right-0 flex justify-center px-4 z-20">
+        <div className="fixed bottom-4 left-0 right-0 flex flex-col items-center gap-2 px-4 z-20">
+          {mixError && (
+            <div className="w-full max-w-sm bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+              <p className="text-red-600 text-xs font-medium">{mixError}</p>
+            </div>
+          )}
           <button
             onClick={handleAddAllToCart}
             className="w-full max-w-sm bg-fukamidori hover:bg-fukamidori-dark active:scale-95 text-white font-bold py-4 px-6 rounded-full shadow-lg flex items-center justify-between transition-all"

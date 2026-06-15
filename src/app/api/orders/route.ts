@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { generateOrderNumber } from '@/lib/utils'
 import { notifyOrderCreated } from '@/lib/line-messaging'
 import { calculateShipping } from '@/lib/shipping'
-import { isBlockedDeliveryDate, isTooSoonDeliveryDate } from '@/lib/delivery-rules'
+import { isBlockedDeliveryDate, isTooSoonDeliveryDate, hasMixedShipStart } from '@/lib/delivery-rules'
 import type { CreateOrderRequest, CartItem, CoolType } from '@/types'
 
 export async function POST(req: NextRequest) {
@@ -122,6 +122,7 @@ export async function POST(req: NextRequest) {
     let products: Array<{
       id: string; name: string; unit: string; cool_type: number
       step_qty: number; min_order_qty: number; stock_status: string
+      ship_start_date: string | null
       product_prices: Array<{ price_rank: string; price_per_unit: number }>
     }> = []
 
@@ -142,6 +143,11 @@ export async function POST(req: NextRequest) {
         )
       }
       products = fetched as typeof products
+    }
+
+    // 発送開始日の混在チェック（is_custom 行は ship_start_date なし = NULL 扱い）
+    if (hasMixedShipStart(products.map((p) => ({ shipStartDate: p.ship_start_date })))) {
+      return NextResponse.json({ error: 'お届け開始時期が異なる商品は同時に注文できません' }, { status: 400 })
     }
 
     // 在庫確認と金額計算

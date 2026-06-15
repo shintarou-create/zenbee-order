@@ -9,6 +9,11 @@ export function isBlockedDeliveryDate(dateStr: string): boolean {
 
 export const MIN_DELIVERY_LEAD_DAYS = 2
 
+export function hasMixedShipStart(items: { shipStartDate?: string | null }[]): boolean {
+  const dates = new Set(items.map((i) => i.shipStartDate).filter((d): d is string => !!d))
+  return dates.size >= 2
+}
+
 export function getMinDeliveryDateStr(): string {
   const today = new Date()
   const min = new Date(today.getFullYear(), today.getMonth(), today.getDate() + MIN_DELIVERY_LEAD_DAYS)
