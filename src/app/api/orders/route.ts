@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { generateOrderNumber } from '@/lib/utils'
 import { notifyOrderCreated } from '@/lib/line-messaging'
 import { calculateShipping } from '@/lib/shipping'
-import { isBlockedDeliveryDate } from '@/lib/delivery-rules'
+import { isBlockedDeliveryDate, isTooSoonDeliveryDate } from '@/lib/delivery-rules'
 import type { CreateOrderRequest, CartItem, CoolType } from '@/types'
 
 export async function POST(req: NextRequest) {
@@ -45,6 +45,9 @@ export async function POST(req: NextRequest) {
       const maxDate = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000)
       if (isNaN(d.getTime()) || d < now || d > maxDate) {
         return NextResponse.json({ error: '納品希望日が無効です（本日〜180日以内）' }, { status: 400 })
+      }
+      if (isTooSoonDeliveryDate(deliveryDate)) {
+        return NextResponse.json({ error: 'お届け希望日はご注文日の3日後以降でご指定ください' }, { status: 400 })
       }
       if (isBlockedDeliveryDate(deliveryDate)) {
         return NextResponse.json({ error: '月曜・木曜はお届け日に指定できません' }, { status: 400 })

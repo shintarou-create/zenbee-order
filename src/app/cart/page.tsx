@@ -9,17 +9,11 @@ import CartItemComponent from '@/components/customer/CartItem'
 import OrderSummary from '@/components/customer/OrderSummary'
 import CustomerHeader from '@/components/customer/CustomerHeader'
 import { calculateShipping } from '@/lib/shipping'
-import { isBlockedDeliveryDate } from '@/lib/delivery-rules'
-
-function getMinDeliveryDate(): string {
-  const d = new Date()
-  d.setDate(d.getDate() + 3)
-  return d.toISOString().split('T')[0]
-}
+import { isBlockedDeliveryDate, getMinDeliveryDateStr, isTooSoonDeliveryDate } from '@/lib/delivery-rules'
 
 function getDefaultDeliveryDate(): string {
-  const d = new Date()
-  d.setDate(d.getDate() + 5)
+  const today = new Date()
+  const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 5)
   // 月曜(1)・木曜(4) はブロック日のためスキップ
   while ([1, 4].includes(d.getDay())) {
     d.setDate(d.getDate() + 1)
@@ -27,7 +21,20 @@ function getDefaultDeliveryDate(): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  const result = `${y}-${m}-${day}`
+
+  // 念のため min（今日+3）より前なら min 以降の最初の非ブロック日に繰り上げ
+  const minStr = getMinDeliveryDateStr()
+  if (result < minStr) {
+    const [my, mm, md] = minStr.split('-').map(Number)
+    const minDate = new Date(my, mm - 1, md)
+    while ([1, 4].includes(minDate.getDay())) {
+      minDate.setDate(minDate.getDate() + 1)
+    }
+    return `${minDate.getFullYear()}-${String(minDate.getMonth() + 1).padStart(2, '0')}-${String(minDate.getDate()).padStart(2, '0')}`
+  }
+
+  return result
 }
 
 export default function CartPage() {
@@ -45,9 +52,11 @@ export default function CartPage() {
   const [deliveryDate, setDeliveryDate] = useState(getDefaultDeliveryDate())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const deliveryDateError = isBlockedDeliveryDate(deliveryDate)
-    ? '月曜・木曜はお届け日に指定できません（出荷日のため）'
-    : null
+  const deliveryDateError = isTooSoonDeliveryDate(deliveryDate)
+    ? 'お届け希望日はご注文日の3日後以降でご指定ください'
+    : isBlockedDeliveryDate(deliveryDate)
+      ? '月曜・木曜はお届け日に指定できません（出荷日のため）'
+      : null
 
   async function handleOrder() {
     if (activeItems.length === 0) return
@@ -159,7 +168,7 @@ export default function CartPage() {
               <input
                 type="date"
                 value={deliveryDate}
-                min={getMinDeliveryDate()}
+                min={getMinDeliveryDateStr()}
                 onChange={(e) => setDeliveryDate(e.target.value)}
                 className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-fukamidori"
               />
