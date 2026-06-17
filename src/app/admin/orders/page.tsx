@@ -6,7 +6,7 @@ import { adminFetch } from '@/lib/admin-fetch'
 import OrderTable from '@/components/admin/OrderTable'
 import PendingProductsSummary from '@/components/admin/PendingProductsSummary'
 import type { Order } from '@/types'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDateForInput, getNextBusinessDay } from '@/lib/utils'
 
 const PAGE_SIZE = 50
 
@@ -96,10 +96,26 @@ export default function AdminOrdersPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [shipDate, setShipDate] = useState(formatDateForInput(getNextBusinessDay(new Date())))
+  const [csvExporting, setCsvExporting] = useState(false)
+  const [markingShipped, setMarkingShipped] = useState(false)
 
   useEffect(() => {
     fetchOrders(0) // eslint-disable-line react-hooks/exhaustive-deps
   }, [statusFilter, dateFrom, dateTo]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 選択中の注文の最も早い delivery_date を shipDate に自動セット
+  useEffect(() => {
+    if (selectedIds.length === 0) return
+    const selectedOrders = orders.filter((o) => selectedIds.includes(o.id))
+    const dates = selectedOrders
+      .map((o) => o.delivery_date)
+      .filter(Boolean)
+      .sort() as string[]
+    if (dates.length > 0) {
+      setShipDate(dates[0])
+    }
+  }, [selectedIds, orders]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function fetchOrders(fromOffset: number) {
     const isReset = fromOffset === 0
@@ -195,6 +211,64 @@ export default function AdminOrdersPage() {
     }
   }
 
+  async function handleYamatoCSV() {
+    if (selectedIds.length === 0) return
+    setCsvExporting(true)
+    try {
+      const response = await adminFetch('/api/shipping-csv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderIds: selectedIds, shipDate }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'CSV生成に失敗しました')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `yamato_b2_${shipDate.replace(/-/g, '')}.csv`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      showMsg('success', `${selectedIds.length}件のヤマトCSVを出力しました（伝票印刷済みにマーク）`)
+      setSelectedIds([])
+      await fetchOrders(0)
+    } catch (err) {
+      console.error('CSV出力エラー:', err)
+      showMsg('error', err instanceof Error ? err.message : 'CSV出力に失敗しました')
+    } finally {
+      setCsvExporting(false)
+    }
+  }
+
+  async function handleMarkShipped() {
+    if (selectedIds.length === 0) return
+    if (!window.confirm(`選択した${selectedIds.length}件を出荷済みにします。よろしいですか？`)) return
+    setMarkingShipped(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'shipped' })
+        .in('id', selectedIds)
+      if (error) throw error
+      showMsg('success', `${selectedIds.length}件を出荷済みにしました`)
+      setSelectedIds([])
+      await fetchOrders(0)
+    } catch (err) {
+      console.error('出荷済み更新エラー:', err)
+      showMsg('error', '出荷済みの更新に失敗しました')
+    } finally {
+      setMarkingShipped(false)
+    }
+  }
+
   async function handleDeleteConfirm() {
     if (selectedIds.length === 0) return
     setIsDeleting(true)
@@ -283,7 +357,69 @@ export default function AdminOrdersPage() {
       </div>
 
       {/* 選択バナー */}
-      {selectedIds.length > 0 && (
+      {selectedIds.length > 0 && statusFilter === 'pending' && (
+        <div className="bg-green-50 rounded-xl border border-green-200 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+          <span className="text-green-800 font-medium text-sm">{selectedIds.length}件選択中</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setSelectedIds([])}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              選択解除
+            </button>
+            <button
+              onClick={() => window.open(`/admin/orders/bulk-print?ids=${selectedIds.join(',')}`, '_blank')}
+              disabled={csvExporting || markingShipped}
+              className="bg-green-700 hover:bg-green-800 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              納品書印刷
+            </button>
+            <span className="text-sm text-gray-700 whitespace-nowrap">お届け予定日:</span>
+            <input
+              type="date"
+              value={shipDate}
+              onChange={(e) => setShipDate(e.target.value)}
+              className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white"
+            />
+            <button
+              onClick={handleYamatoCSV}
+              disabled={csvExporting || markingShipped}
+              className="bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              {csvExporting ? 'CSV生成中...' : 'ヤマトCSV出力'}
+            </button>
+            <button
+              onClick={handleMarkShipped}
+              disabled={csvExporting || markingShipped}
+              className="bg-green-700 hover:bg-green-800 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            >
+              {markingShipped ? (
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+              )}
+              {markingShipped ? '更新中...' : '出荷済みにする'}
+            </button>
+            <button
+              onClick={() => { setDeleteError(null); setShowDeleteModal(true) }}
+              disabled={csvExporting || markingShipped}
+              className="bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              選択した注文を削除
+            </button>
+          </div>
+        </div>
+      )}
+
+      {selectedIds.length > 0 && statusFilter !== 'pending' && (
         <div className="bg-red-50 rounded-xl border border-red-200 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
           <span className="text-red-800 font-medium text-sm">{selectedIds.length}件選択中</span>
           <div className="flex items-center gap-2">
@@ -338,8 +474,10 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
-      {/* 未発送商品合計（納品日フィルターと連動） */}
-      <PendingProductsSummary dateFrom={dateFrom} dateTo={dateTo} />
+      {/* 未発送商品合計（未対応タブのみ表示） */}
+      {statusFilter === 'pending' && (
+        <PendingProductsSummary dateFrom={dateFrom} dateTo={dateTo} />
+      )}
 
       {/* 削除確認モーダル */}
       {showDeleteModal && (
