@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import type { Order, Product, Inventory } from '@/types'
-import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
+import { formatDate, formatDateWithDay, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
 import PendingProductsSummary from '@/components/admin/PendingProductsSummary'
 import FreeeExportBanner from '@/components/admin/FreeeExportBanner'
 
@@ -13,12 +13,34 @@ interface LowStockItem {
   inventory: Inventory
 }
 
+interface PendingCompany {
+  id: string
+  company_name: string
+  representative_name: string | null
+  created_at: string
+  line_users?: Array<{ display_name: string | null }>
+}
+
+interface ActionOrder {
+  id: string
+  order_number: string
+  delivery_date: string | null
+  company: { company_name: string } | null
+}
+
 export default function AdminDashboard() {
   const [todayOrderCount, setTodayOrderCount] = useState(0)
   const [pendingOrderCount, setPendingOrderCount] = useState(0)
   const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([])
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
+
+  const [pendingCompanies, setPendingCompanies] = useState<PendingCompany[]>([])
+  const [pendingCompaniesCount, setPendingCompaniesCount] = useState(0)
+  const [unconfirmedOrders, setUnconfirmedOrders] = useState<ActionOrder[]>([])
+  const [unconfirmedCount, setUnconfirmedCount] = useState(0)
+  const [unshippedSoonOrders, setUnshippedSoonOrders] = useState<ActionOrder[]>([])
+  const [unshippedSoonCount, setUnshippedSoonCount] = useState(0)
 
   useEffect(() => {
     async function fetchDashboard() {
@@ -87,6 +109,47 @@ export default function AdminDashboard() {
           .limit(10)
 
         setRecentOrders((orders || []) as Order[])
+
+        // 承認待ちの取引先
+        const { data: pendingComps, count: pendingCompsCount } = await supabase
+          .from('companies')
+          .select('id, company_name, representative_name, created_at, line_users(display_name)', { count: 'exact' })
+          .eq('approval_status', 'pending')
+          .order('created_at', { ascending: true })
+          .limit(5)
+
+        setPendingCompaniesCount(pendingCompsCount || 0)
+        setPendingCompanies((pendingComps || []) as PendingCompany[])
+
+        // 未確認の注文（status=pending かつ details_confirmed が true でない）
+        const { data: unconfirmed, count: unconfirmedCnt } = await supabase
+          .from('orders')
+          .select('id, order_number, delivery_date, company:companies(company_name)', { count: 'exact' })
+          .eq('status', 'pending')
+          .or('details_confirmed.is.null,details_confirmed.eq.false')
+          .order('delivery_date', { ascending: true, nullsFirst: false })
+          .limit(5)
+
+        setUnconfirmedCount(unconfirmedCnt || 0)
+        setUnconfirmedOrders((unconfirmed || []) as unknown as ActionOrder[])
+
+        // 未出荷の注文（納品日が今日〜7日後）
+        const todayJSTStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
+        const [tyear, tmonth, tday] = todayJSTStr.split('-').map(Number)
+        const plus7date = new Date(tyear, tmonth - 1, tday + 7)
+        const plus7JSTStr = `${plus7date.getFullYear()}-${String(plus7date.getMonth() + 1).padStart(2, '0')}-${String(plus7date.getDate()).padStart(2, '0')}`
+
+        const { data: unshippedSoon, count: unshippedSoonCnt } = await supabase
+          .from('orders')
+          .select('id, order_number, delivery_date, company:companies(company_name)', { count: 'exact' })
+          .eq('status', 'pending')
+          .gte('delivery_date', todayJSTStr)
+          .lte('delivery_date', plus7JSTStr)
+          .order('delivery_date', { ascending: true })
+          .limit(5)
+
+        setUnshippedSoonCount(unshippedSoonCnt || 0)
+        setUnshippedSoonOrders((unshippedSoon || []) as unknown as ActionOrder[])
       } catch (err) {
         console.error('ダッシュボード取得エラー:', err)
       } finally {
@@ -104,6 +167,13 @@ export default function AdminDashboard() {
       </div>
     )
   }
+
+  const todayJST = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
+  const [ryear, rmonth, rday] = todayJST.split('-').map(Number)
+  const tomorrowDate = new Date(ryear, rmonth - 1, rday + 1)
+  const tomorrowJST = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth() + 1).padStart(2, '0')}-${String(tomorrowDate.getDate()).padStart(2, '0')}`
+
+  const hasActionItems = pendingCompaniesCount > 0 || unconfirmedCount > 0 || unshippedSoonCount > 0
 
   return (
     <div className="space-y-6">
@@ -137,6 +207,142 @@ export default function AdminDashboard() {
           <p className="text-sm text-green-700">受注一覧へ</p>
           <p className="text-2xl font-bold text-green-700 mt-1">→</p>
         </Link>
+      </div>
+
+      {/* 対応が必要なこと */}
+      <div className="space-y-3">
+        <h2 className="font-bold text-gray-900">対応が必要なこと</h2>
+
+        {!hasActionItems ? (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-2 text-sm text-green-700 font-medium">
+            <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            対応が必要なことはありません
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* 承認待ちの取引先 */}
+            {pendingCompaniesCount > 0 && (
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800">承認待ち</span>
+                    <span className="text-sm text-gray-500">新規取引先の登録申請</span>
+                  </div>
+                  <span className="text-sm font-bold text-gray-700">{pendingCompaniesCount}件</span>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {pendingCompanies.map((company) => (
+                    <Link
+                      key={company.id}
+                      href="/admin/customers"
+                      className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                    >
+                      <div>
+                        <p className="font-medium text-gray-900 text-sm">{company.company_name}</p>
+                        <p className="text-xs text-gray-500">
+                          {company.line_users?.[0]?.display_name ?? company.representative_name ?? ''}
+                          {company.created_at ? `　申請 ${formatDateWithDay(company.created_at)}` : ''}
+                        </p>
+                      </div>
+                      <span className="text-xs text-purple-600 font-medium whitespace-nowrap ml-2">承認へ →</span>
+                    </Link>
+                  ))}
+                </div>
+                {pendingCompaniesCount > pendingCompanies.length && (
+                  <div className="px-4 py-2 border-t border-gray-100">
+                    <Link href="/admin/customers" className="text-sm text-purple-600 font-medium hover:underline">
+                      他 {pendingCompaniesCount - pendingCompanies.length}件（顧客管理へ）
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 未確認の注文 */}
+            {unconfirmedCount > 0 && (
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">未確認</span>
+                    <span className="text-sm text-gray-500">まだ確認していない注文</span>
+                  </div>
+                  <span className="text-sm font-bold text-gray-700">{unconfirmedCount}件</span>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {unconfirmedOrders.map((order) => (
+                    <Link
+                      key={order.id}
+                      href={`/admin/orders/${order.id}`}
+                      className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                    >
+                      <div>
+                        <p className="font-medium text-gray-900 text-sm">
+                          {order.company?.company_name ?? '—'}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {order.order_number}
+                          {order.delivery_date ? `　納品 ${formatDateWithDay(order.delivery_date)}` : ''}
+                        </p>
+                      </div>
+                      <span className="text-xs text-gray-600 font-medium whitespace-nowrap ml-2">確認する →</span>
+                    </Link>
+                  ))}
+                </div>
+                {unconfirmedCount > unconfirmedOrders.length && (
+                  <div className="px-4 py-2 border-t border-gray-100">
+                    <Link href="/admin/orders" className="text-sm text-gray-600 font-medium hover:underline">
+                      他 {unconfirmedCount - unconfirmedOrders.length}件（受注一覧へ）
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 未出荷の注文（7日以内） */}
+            {unshippedSoonCount > 0 && (
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">未出荷</span>
+                    <span className="text-sm text-gray-500">納品日が近い未発送の注文</span>
+                  </div>
+                  <span className="text-sm font-bold text-gray-700">{unshippedSoonCount}件</span>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {unshippedSoonOrders.map((order) => {
+                    const isUrgent = !!order.delivery_date && order.delivery_date <= tomorrowJST
+                    return (
+                      <Link
+                        key={order.id}
+                        href={`/admin/orders/${order.id}`}
+                        className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      >
+                        <div>
+                          <p className="font-medium text-gray-900 text-sm">
+                            {order.company?.company_name ?? '—'}
+                          </p>
+                          <p className={`text-xs ${isUrgent ? 'text-amber-700 font-bold' : 'text-gray-500'}`}>
+                            納品 {formatDateWithDay(order.delivery_date)}
+                          </p>
+                        </div>
+                        <span className="text-xs text-amber-700 font-medium whitespace-nowrap ml-2">出荷へ →</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+                {unshippedSoonCount > unshippedSoonOrders.length && (
+                  <div className="px-4 py-2 border-t border-gray-100">
+                    <Link href="/admin/orders" className="text-sm text-amber-700 font-medium hover:underline">
+                      他 {unshippedSoonCount - unshippedSoonOrders.length}件（受注一覧へ）
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 未発送商品合計 */}
