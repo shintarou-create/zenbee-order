@@ -22,6 +22,7 @@ function isAfterToday(dateStr: string): boolean {
 // ────────────────────────────────────────────────────────────
 
 export interface ProductForCsv {
+  name: string
   category: string   // 'びわ' | '柑橘' | 'ジュース' | 'その他'
   unit: string       // 'kg' | '本' | 'パック'
   step_qty: number
@@ -158,16 +159,21 @@ function splitAddress(
 // 品名ロジック
 // ────────────────────────────────────────────────────────────
 
-function getAmbientItemName(cats: Set<string>): string {
-  const c = cats.has('柑橘')
-  const j = cats.has('ジュース')
-  const o = cats.has('その他')
-  if (c && j) return '柑橘類・ジュース'  // その他の有無に関わらず
-  if (c && o) return '柑橘類'
-  if (j && o) return 'ジュース・農産物'
-  if (c) return '柑橘類'
-  if (j) return 'ジュース'
-  return '農産物'
+function buildItemNameFromProducts(items: OrderItemForCsv[]): string {
+  const names: string[] = []
+  for (const it of items) {
+    const n = (it.product.name || '').trim()
+    if (n && !names.includes(n)) names.push(n)
+  }
+  const MAX = 25
+  let result = ''
+  for (const n of names) {
+    const candidate = result ? `${result}、${n}` : n
+    if (candidate.length > MAX) break
+    result = candidate
+  }
+  if (!result && names.length > 0) result = names[0].slice(0, MAX)
+  return result
 }
 
 // ────────────────────────────────────────────────────────────
@@ -177,8 +183,8 @@ function getAmbientItemName(cats: Set<string>): string {
 function getAmbientHandling(cats: Set<string>): [string, string] {
   const c = cats.has('柑橘')
   const j = cats.has('ジュース')
-  const handling1 = c ? '生物' : j ? '割れ物' : ''
-  const handling2 = c && j ? '割れ物' : '下積み厳禁'
+  const handling1 = j ? '割れ物' : c ? '生物' : ''
+  const handling2 = '下積み厳禁'
   return [handling1, handling2]
 }
 
@@ -307,7 +313,7 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
     rows.push(buildRow(
       typeCount > 1 ? `${order.orderNumber}-${suffix}` : order.orderNumber,
       0,
-      getAmbientItemName(cats),
+      buildItemNameFromProducts(ambientItems),
       h1,
       h2,
       calcAmbientBoxes(ambientItems),
@@ -345,8 +351,9 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
 // 公開 API
 // ────────────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function generateYamatoCsv(orders: OrderForCsv[], shipDate: string): Uint8Array {
-  const shipDateStr = shipDate.replace(/-/g, '/')
+  const shipDateStr = getTodayJSTString()
   const lines: string[] = [CSV_HEADERS.map(escapeCSVField).join(',')]
 
   for (const order of orders) {
