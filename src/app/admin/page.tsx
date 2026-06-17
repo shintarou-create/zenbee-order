@@ -42,6 +42,8 @@ export default function AdminDashboard() {
   const [unshippedSoonOrders, setUnshippedSoonOrders] = useState<ActionOrder[]>([])
   const [unshippedSoonCount, setUnshippedSoonCount] = useState(0)
 
+  const [bannerType, setBannerType] = useState<'remind' | 'done' | 'no_orders' | null>(null)
+
   useEffect(() => {
     async function fetchDashboard() {
       try {
@@ -176,41 +178,11 @@ export default function AdminDashboard() {
   const hasActionItems = pendingCompaniesCount > 0 || unconfirmedCount > 0 || unshippedSoonCount > 0
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
 
-      {/* freee CSV リマインドバナー */}
-      <FreeeExportBanner />
-
-      {/* サマリーカード */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-          <p className="text-sm text-gray-500">本日の受注</p>
-          <p className="text-3xl font-bold text-green-700 mt-1">{todayOrderCount}</p>
-          <p className="text-xs text-gray-400 mt-1">件</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-          <p className="text-sm text-gray-500">確認待ち</p>
-          <p className={`text-3xl font-bold mt-1 ${pendingOrderCount > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
-            {pendingOrderCount}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">件</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-          <p className="text-sm text-gray-500">在庫注意</p>
-          <p className={`text-3xl font-bold mt-1 ${lowStockItems.length > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-            {lowStockItems.length}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">商品</p>
-        </div>
-        <Link href="/admin/orders" className="bg-green-50 rounded-xl border border-green-200 shadow-sm p-4 hover:bg-green-100 transition-colors">
-          <p className="text-sm text-green-700">受注一覧へ</p>
-          <p className="text-2xl font-bold text-green-700 mt-1">→</p>
-        </Link>
-      </div>
-
       {/* 対応が必要なこと */}
-      <div className="space-y-3">
+      <div className="order-2 space-y-3">
         <h2 className="font-bold text-gray-900">対応が必要なこと</h2>
 
         {!hasActionItems ? (
@@ -320,14 +292,19 @@ export default function AdminDashboard() {
                         className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
                       >
                         <div>
-                          <p className="font-medium text-gray-900 text-sm">
-                            {order.company?.company_name ?? '—'}
-                          </p>
-                          <p className={`text-xs ${isUrgent ? 'text-amber-700 font-bold' : 'text-gray-500'}`}>
+                          <div className="flex items-center gap-1.5">
+                            {isUrgent && (
+                              <span className="text-xs bg-red-100 text-red-700 rounded px-1.5 py-0.5 font-bold">至急</span>
+                            )}
+                            <p className="font-medium text-gray-900 text-sm">
+                              {order.company?.company_name ?? '—'}
+                            </p>
+                          </div>
+                          <p className={`text-xs ${isUrgent ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
                             納品 {formatDateWithDay(order.delivery_date)}
                           </p>
                         </div>
-                        <span className="text-xs text-amber-700 font-medium whitespace-nowrap ml-2">出荷へ →</span>
+                        <span className={`text-xs font-medium whitespace-nowrap ml-2 ${isUrgent ? 'text-red-600' : 'text-amber-700'}`}>出荷へ →</span>
                       </Link>
                     )
                   })}
@@ -345,11 +322,56 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* 未発送商品合計 */}
-      <PendingProductsSummary />
+      {/* freee CSV バナー（remind時は order-3 でサマリーカードの前、それ以外は order-10 で最下部） */}
+      <div className={bannerType === 'remind' ? 'order-3' : 'order-10'}>
+        <FreeeExportBanner onBannerTypeChange={setBannerType} />
+      </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* 在庫アラート */}
+      {/* サマリーカード */}
+      <div className="order-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Link
+          href="/admin/orders"
+          className={`bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:bg-gray-50 transition-colors ${todayOrderCount === 0 ? 'opacity-60' : ''}`}
+        >
+          <p className="text-sm text-gray-500">本日の受注</p>
+          <p className={`text-3xl font-bold mt-1 ${todayOrderCount > 0 ? 'text-green-700' : 'text-gray-300'}`}>
+            {todayOrderCount}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">件</p>
+        </Link>
+        <Link
+          href="/admin/orders?status=pending"
+          className={`bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:bg-gray-50 transition-colors ${pendingOrderCount === 0 ? 'opacity-60' : ''}`}
+        >
+          <p className="text-sm text-gray-500">確認待ち</p>
+          <p className={`text-3xl font-bold mt-1 ${pendingOrderCount > 0 ? 'text-yellow-600' : 'text-gray-300'}`}>
+            {pendingOrderCount}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">件</p>
+        </Link>
+        <Link
+          href="/admin/products"
+          className={`bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:bg-gray-50 transition-colors ${lowStockItems.length === 0 ? 'opacity-60' : ''}`}
+        >
+          <p className="text-sm text-gray-500">在庫注意</p>
+          <p className={`text-3xl font-bold mt-1 ${lowStockItems.length > 0 ? 'text-red-600' : 'text-gray-300'}`}>
+            {lowStockItems.length}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">商品</p>
+        </Link>
+        <Link href="/admin/orders" className="bg-green-50 rounded-xl border border-green-200 shadow-sm p-4 hover:bg-green-100 transition-colors">
+          <p className="text-sm text-green-700">受注一覧へ</p>
+          <p className="text-2xl font-bold text-green-700 mt-1">→</p>
+        </Link>
+      </div>
+
+      {/* 未発送商品合計 */}
+      <div className="order-5">
+        <PendingProductsSummary />
+      </div>
+
+      {/* 在庫アラート + 最近の注文 */}
+      <div className="order-6 grid md:grid-cols-2 gap-6">
         {lowStockItems.length > 0 && (
           <div className="bg-white rounded-xl border border-red-100 shadow-sm">
             <div className="px-4 py-3 border-b border-red-100 flex items-center gap-2">
@@ -384,7 +406,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 最近の注文 */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <h2 className="font-bold text-gray-900">最近の注文</h2>

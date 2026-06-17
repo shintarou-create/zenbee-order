@@ -32,7 +32,11 @@ function formatJST(iso: string): string {
   return `${mm}/${dd} ${hh}:${min}`
 }
 
-export default function FreeeExportBanner() {
+interface FreeeExportBannerProps {
+  onBannerTypeChange?: (type: 'remind' | 'done' | 'no_orders' | null) => void
+}
+
+export default function FreeeExportBanner({ onBannerTypeChange }: FreeeExportBannerProps) {
   const [status, setStatus] = useState<ExportStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState(false)
@@ -58,6 +62,10 @@ export default function FreeeExportBanner() {
   }, [])
 
   useEffect(() => { fetchStatus() }, [fetchStatus])
+
+  useEffect(() => {
+    onBannerTypeChange?.(status?.bannerType ?? null)
+  }, [status, onBannerTypeChange])
 
   async function handleDownload(from: string, to: string) {
     setDownloading(true)
