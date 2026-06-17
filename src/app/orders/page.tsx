@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import CustomerHeader from '@/components/customer/CustomerHeader'
 import { useLiff } from '@/hooks/useLiff'
 import type { Order } from '@/types'
-import { formatDate, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
+import { formatDate, getCustomerOrderStatusLabel, getCustomerOrderStatusColor } from '@/lib/utils'
 
 function OrdersContent() {
   const searchParams = useSearchParams()
@@ -126,8 +126,8 @@ function OrdersContent() {
                     <p className="font-bold text-gray-900 text-sm">{order.order_number}</p>
                     <p className="text-gray-500 text-xs mt-0.5">{formatDate(order.created_at)}</p>
                   </div>
-                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${getOrderStatusColor(order.status)}`}>
-                    {getOrderStatusLabel(order.status)}
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${getCustomerOrderStatusColor(order.status, order.details_confirmed)}`}>
+                    {getCustomerOrderStatusLabel(order.status, order.details_confirmed)}
                   </span>
                 </div>
 

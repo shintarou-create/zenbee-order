@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useLiff } from '@/hooks/useLiff'
 import type { Order } from '@/types'
-import { formatDate, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
+import { formatDate, getCustomerOrderStatusLabel, getCustomerOrderStatusColor } from '@/lib/utils'
 
 export default function OrderDetailPage() {
   const params = useParams()
@@ -114,8 +114,8 @@ export default function OrderDetailPage() {
               <p className="font-bold text-gray-900 text-lg">{order.order_number}</p>
               <p className="text-gray-500 text-sm">{formatDate(order.created_at)}</p>
             </div>
-            <span className={`text-sm font-bold px-3 py-1 rounded-full ${getOrderStatusColor(order.status)}`}>
-              {getOrderStatusLabel(order.status)}
+            <span className={`text-sm font-bold px-3 py-1 rounded-full ${getCustomerOrderStatusColor(order.status, order.details_confirmed)}`}>
+              {getCustomerOrderStatusLabel(order.status, order.details_confirmed)}
             </span>
           </div>
 

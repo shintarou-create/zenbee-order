@@ -102,6 +102,22 @@ export function formatDateForInput(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
+export function getCustomerOrderStatusLabel(status: string, detailsConfirmed?: boolean): string {
+  if (status === 'pending') {
+    return detailsConfirmed ? 'ご注文受付' : '確認中'
+  }
+  return getOrderStatusLabel(status)
+}
+
+export function getCustomerOrderStatusColor(status: string, detailsConfirmed?: boolean): string {
+  if (status === 'pending') {
+    return detailsConfirmed
+      ? 'bg-emerald-100 text-emerald-800'
+      : 'bg-gray-100 text-gray-700'
+  }
+  return getOrderStatusColor(status)
+}
+
 export function getOrderStatusLabel(status: string): string {
   const labels: Record<string, string> = {
     pending: '未対応',

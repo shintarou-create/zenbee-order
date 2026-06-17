@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
 import OrderTable from '@/components/admin/OrderTable'
@@ -82,15 +83,16 @@ function DeleteConfirmModal({ orders, onConfirm, onCancel, isDeleting, errorMsg 
   )
 }
 
-export default function AdminOrdersPage() {
+function AdminOrdersContent() {
+  const searchParams = useSearchParams()
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [nextOffset, setNextOffset] = useState(0)
-  const [statusFilter, setStatusFilter] = useState('pending')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'pending')
+  const [dateFrom, setDateFrom] = useState(searchParams.get('from') || '')
+  const [dateTo, setDateTo] = useState(searchParams.get('to') || '')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -295,6 +297,12 @@ export default function AdminOrdersPage() {
 
   const selectedOrders = orders.filter((o) => selectedIds.includes(o.id))
 
+  const detailQuery = new URLSearchParams()
+  if (statusFilter) detailQuery.set('status', statusFilter)
+  if (dateFrom) detailQuery.set('from', dateFrom)
+  if (dateTo) detailQuery.set('to', dateTo)
+  const detailLinkSuffix = detailQuery.toString() ? `?${detailQuery.toString()}` : ''
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -454,6 +462,7 @@ export default function AdminOrdersPage() {
             onUnmarkLabel={handleUnmarkLabel}
             onUndoDeliveryNotePrinted={handleUndoDeliveryNotePrinted}
             onUndoShipped={handleUndoShipped}
+            detailLinkSuffix={detailLinkSuffix}
           />
         )}
       </div>
@@ -490,5 +499,17 @@ export default function AdminOrdersPage() {
         />
       )}
     </div>
+  )
+}
+
+export default function AdminOrdersPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <AdminOrdersContent />
+    </Suspense>
   )
 }

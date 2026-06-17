@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
@@ -39,6 +39,7 @@ const STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
 export default function AdminOrderDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const orderId = params.id as string
 
   const [order, setOrder] = useState<Order | null>(null)
@@ -302,6 +303,11 @@ export default function AdminOrderDetailPage() {
       if (updateError) throw updateError
       setDetailsConfirmed(newValue)
       setOrder((prev) => prev ? { ...prev, details_confirmed: newValue } : null)
+
+      if (newValue) {
+        const qs = searchParams.toString()
+        router.push(`/admin/orders${qs ? `?${qs}` : ''}`)
+      }
     } catch (err) {
       console.error('確認済み更新エラー:', err)
       setMessage({ type: 'error', text: '更新に失敗しました' })
