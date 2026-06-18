@@ -43,6 +43,7 @@ export default function AdminDashboard() {
   const [unshippedSoonCount, setUnshippedSoonCount] = useState(0)
 
   const [bannerType, setBannerType] = useState<'remind' | 'done' | 'no_orders' | null>(null)
+  const [mobileSectionsOpen, setMobileSectionsOpen] = useState(false)
 
   useEffect(() => {
     async function fetchDashboard() {
@@ -209,11 +210,11 @@ export default function AdminDashboard() {
                     <Link
                       key={company.id}
                       href="/admin/customers"
-                      className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 active:bg-gray-50 transition-colors"
                     >
-                      <div>
-                        <p className="font-medium text-gray-900 text-sm">{company.company_name}</p>
-                        <p className="text-xs text-gray-500">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 text-sm truncate">{company.company_name}</p>
+                        <p className="text-xs text-gray-500 whitespace-nowrap overflow-hidden text-ellipsis">
                           {company.line_users?.[0]?.display_name ?? company.representative_name ?? ''}
                           {company.created_at ? `　申請 ${formatDateWithDay(company.created_at)}` : ''}
                         </p>
@@ -247,10 +248,10 @@ export default function AdminDashboard() {
                     <Link
                       key={order.id}
                       href={`/admin/orders/${order.id}`}
-                      className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 active:bg-gray-50 transition-colors"
                     >
-                      <div>
-                        <p className="font-medium text-gray-900 text-sm">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 text-sm truncate">
                           {order.company?.company_name ?? '—'}
                         </p>
                         <p className="text-xs text-gray-500">
@@ -289,14 +290,14 @@ export default function AdminDashboard() {
                       <Link
                         key={order.id}
                         href={`/admin/orders/${order.id}`}
-                        className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                        className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 active:bg-gray-50 transition-colors"
                       >
-                        <div>
-                          <div className="flex items-center gap-1.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
                             {isUrgent && (
-                              <span className="text-xs bg-red-100 text-red-700 rounded px-1.5 py-0.5 font-bold">至急</span>
+                              <span className="text-xs bg-red-100 text-red-700 rounded px-1.5 py-0.5 font-bold flex-shrink-0">至急</span>
                             )}
-                            <p className="font-medium text-gray-900 text-sm">
+                            <p className="font-medium text-gray-900 text-sm truncate min-w-0">
                               {order.company?.company_name ?? '—'}
                             </p>
                           </div>
@@ -365,13 +366,29 @@ export default function AdminDashboard() {
         </Link>
       </div>
 
+      {/* 詳細データ開閉ボタン（スマホのみ） */}
+      <button
+        className="order-5 md:hidden w-full bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between text-sm font-medium text-gray-700"
+        onClick={() => setMobileSectionsOpen((v) => !v)}
+      >
+        <span>詳細データ（在庫・集計・最近の注文）</span>
+        <svg
+          className={`w-5 h-5 flex-shrink-0 transition-transform ${mobileSectionsOpen ? 'rotate-180' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
       {/* 未発送商品合計 */}
-      <div className="order-5">
+      <div className={`order-6 ${mobileSectionsOpen ? '' : 'hidden'} md:block`}>
         <PendingProductsSummary />
       </div>
 
       {/* 在庫アラート + 最近の注文 */}
-      <div className="order-6 grid md:grid-cols-2 gap-6">
+      <div className={`order-7 ${mobileSectionsOpen ? '' : 'hidden'} md:grid md:grid-cols-2 gap-6`}>
         {lowStockItems.length > 0 && (
           <div className="bg-white rounded-xl border border-red-100 shadow-sm">
             <div className="px-4 py-3 border-b border-red-100 flex items-center gap-2">
