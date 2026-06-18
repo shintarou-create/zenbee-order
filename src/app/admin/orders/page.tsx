@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
 import OrderTable from '@/components/admin/OrderTable'
@@ -305,9 +306,20 @@ function AdminOrdersContent() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-bold text-gray-900">注文管理</h1>
-        <span className="text-sm text-gray-500">{orders.length}件表示中</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-gray-500">{orders.length}件表示中</span>
+          <Link
+            href="/admin/orders/new"
+            className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-lg transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            手動で注文を入力
+          </Link>
+        </div>
       </div>
 
       {message && (
