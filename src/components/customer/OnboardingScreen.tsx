@@ -164,9 +164,6 @@ export default function OnboardingScreen({ accessToken, onSuccess }: OnboardingS
         {/* 選択画面 */}
         {view === 'select' && (
           <div className="text-center">
-            <div className="w-16 h-16 bg-kinari rounded-full flex items-center justify-center mx-auto mb-4 border border-kincha">
-              <span className="text-fukamidori text-2xl font-bold font-serif">善</span>
-            </div>
             <h1 className="text-xl font-bold text-gray-900 mb-2">善兵衛農園 発注システム</h1>
             <p className="text-sm text-gray-500 mb-8">ご利用を開始するには以下をお選びください</p>
 
