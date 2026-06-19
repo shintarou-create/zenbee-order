@@ -158,17 +158,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* メインコンテンツ */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* トップバー（モバイル） */}
-        <header className="md:hidden bg-fukamidori text-white px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setSidebarOpen(true)}>
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-          <p className="font-bold">
-            {NAV_ITEMS.find((item) =>
-              pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
-            )?.label || '管理システム'}
-          </p>
+        <header className="md:hidden bg-fukamidori text-white px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSidebarOpen(true)}>
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <p className="font-bold">
+              {NAV_ITEMS.find((item) =>
+                pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
+              )?.label || '管理システム'}
+            </p>
+          </div>
+          <Link href="/admin">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="ダッシュボードへ" className="h-7 w-auto object-contain" />
+          </Link>
         </header>
 
         <main className="flex-1 p-4 md:p-6 overflow-auto">
