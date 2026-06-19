@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { AdminUser } from '@/types'
 
 const NAV_ITEMS = [
-  { href: '/admin', label: 'ダッシュボード', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+  { href: '/admin', label: 'ホーム', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
   { href: '/admin/orders', label: '注文管理', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
   { href: '/admin/products', label: '商品管理', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' },
   { href: '/admin/customers', label: '顧客管理', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z' },
@@ -24,7 +24,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { userId, isLoading: liffLoading } = useLiff()
   const [adminUser, setAdminUser] = useState<AdminUser | null>(DEV_BYPASS ? DEV_ADMIN : null)
   const [checking, setChecking] = useState(!DEV_BYPASS)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
     if (DEV_BYPASS) return
@@ -115,65 +114,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </aside>
 
-      {/* モバイルサイドバーオーバーレイ */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-56 bg-fukamidori text-white flex flex-col">
-            <div className="px-4 py-3 border-b border-white flex items-center justify-between">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.png" alt="善兵衛農園" className="h-10 w-auto object-contain" />
-              <button onClick={() => setSidebarOpen(false)} className="text-kinari flex-shrink-0 ml-2">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <nav className="flex-1 py-4">
-              {NAV_ITEMS.map((item) => {
-                const isActive = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
-                      isActive
-                        ? 'bg-fukamidori-dark text-white font-bold'
-                        : 'text-kinari hover:bg-fukamidori-dark hover:text-white'
-                    }`}
-                  >
-                    <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
-                    </svg>
-                    {item.label}
-                  </Link>
-                )
-              })}
-            </nav>
-          </aside>
-        </div>
-      )}
-
       {/* メインコンテンツ */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* トップバー（モバイル） */}
         <header className="md:hidden bg-fukamidori text-white px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)}>
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <p className="font-bold">
-              {NAV_ITEMS.find((item) =>
-                pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
-              )?.label || '管理システム'}
-            </p>
-          </div>
+          <p className="font-bold">
+            {NAV_ITEMS.find((item) =>
+              pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
+            )?.label || '管理システム'}
+          </p>
           <Link href="/admin">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="ダッシュボードへ" className="h-7 w-auto object-contain" />
+            <img src="/logo.png" alt="ホームへ" className="h-9 w-auto object-contain" />
           </Link>
         </header>
 

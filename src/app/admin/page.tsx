@@ -206,7 +206,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="order-0 text-2xl font-bold text-gray-900">ダッシュボード</h1>
+      <h1 className="order-0 text-2xl font-bold text-gray-900">ホーム</h1>
 
       {/* スマホ用 機能ハブ（PCはサイドバーがあるので非表示） */}
       <div className="order-1 md:hidden grid grid-cols-3 gap-3">
