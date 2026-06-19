@@ -21,11 +21,29 @@ interface PendingCompany {
   line_users?: Array<{ display_name: string | null }>
 }
 
+interface ActionOrderItem {
+  product_name: string
+  quantity: number
+  unit: string
+}
+
 interface ActionOrder {
   id: string
   order_number: string
   delivery_date: string | null
   company: { company_name: string } | null
+  order_items: ActionOrderItem[]
+}
+
+function formatItemSummary(items: ActionOrderItem[], maxItems = 3): string {
+  if (!items || items.length === 0) return ''
+  const visible = items.slice(0, maxItems)
+  const rest = items.length - maxItems
+  const parts = visible.map((item) =>
+    item.unit ? `${item.product_name} ${item.quantity}${item.unit}` : item.product_name
+  )
+  if (rest > 0) parts.push(`ほか${rest}点`)
+  return parts.join('、')
 }
 
 export default function AdminDashboard() {
@@ -127,7 +145,7 @@ export default function AdminDashboard() {
         // 未確認の注文（status=pending かつ details_confirmed が true でない）
         const { data: unconfirmed, count: unconfirmedCnt } = await supabase
           .from('orders')
-          .select('id, order_number, delivery_date, company:companies(company_name)', { count: 'exact' })
+          .select('id, order_number, delivery_date, company:companies(company_name), order_items(product_name, quantity, unit)', { count: 'exact' })
           .eq('status', 'pending')
           .or('details_confirmed.is.null,details_confirmed.eq.false')
           .order('delivery_date', { ascending: true, nullsFirst: false })
@@ -144,7 +162,7 @@ export default function AdminDashboard() {
 
         const { data: unshippedSoon, count: unshippedSoonCnt } = await supabase
           .from('orders')
-          .select('id, order_number, delivery_date, company:companies(company_name)', { count: 'exact' })
+          .select('id, order_number, delivery_date, company:companies(company_name), order_items(product_name, quantity, unit)', { count: 'exact' })
           .eq('status', 'pending')
           .gte('delivery_date', todayJSTStr)
           .lte('delivery_date', plus7JSTStr)
@@ -258,6 +276,11 @@ export default function AdminDashboard() {
                           {order.order_number}
                           {order.delivery_date ? `　納品 ${formatDateWithDay(order.delivery_date)}` : ''}
                         </p>
+                        {order.order_items && order.order_items.length > 0 && (
+                          <p className="text-xs text-gray-400 truncate mt-0.5">
+                            {formatItemSummary(order.order_items)}
+                          </p>
+                        )}
                       </div>
                       <span className="text-xs text-gray-600 font-medium whitespace-nowrap ml-2">確認する →</span>
                     </Link>
@@ -304,6 +327,11 @@ export default function AdminDashboard() {
                           <p className={`text-xs ${isUrgent ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
                             納品 {formatDateWithDay(order.delivery_date)}
                           </p>
+                          {order.order_items && order.order_items.length > 0 && (
+                            <p className="text-xs text-gray-400 truncate mt-0.5">
+                              {formatItemSummary(order.order_items)}
+                            </p>
+                          )}
                         </div>
                         <span className={`text-xs font-medium whitespace-nowrap ml-2 ${isUrgent ? 'text-red-600' : 'text-amber-700'}`}>出荷へ →</span>
                       </Link>

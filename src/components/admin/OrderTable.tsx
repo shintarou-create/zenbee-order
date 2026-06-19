@@ -264,13 +264,16 @@ export default function OrderTable({
                     {items.length === 0 ? (
                       <span className="text-xs text-gray-300">—</span>
                     ) : (
-                      <ul className="space-y-0.5">
-                        {items.map((item, i) => (
-                          <li key={i} className="text-xs text-gray-600">
-                            {item.product_name} × {item.quantity}
-                          </li>
+                      <div className="space-y-0.5">
+                        {items.slice(0, 3).map((item, i) => (
+                          <p key={i} className="text-xs text-gray-600 leading-snug">
+                            {item.unit ? `${item.product_name} ${item.quantity}${item.unit}` : item.product_name}
+                          </p>
                         ))}
-                      </ul>
+                        {items.length > 3 && (
+                          <p className="text-xs text-gray-400">ほか{items.length - 3}点</p>
+                        )}
+                      </div>
                     )}
                   </td>
 
@@ -383,14 +386,15 @@ export default function OrderTable({
 
               {/* 注文内容 */}
               {items.length > 0 && (
-                <div className="pt-2 border-t border-gray-100">
-                  <ul className="space-y-0.5">
-                    {items.map((item, i) => (
-                      <li key={i} className="text-xs text-gray-600">
-                        {item.product_name} × {item.quantity}
-                      </li>
-                    ))}
-                  </ul>
+                <div className="pt-2 border-t border-gray-100 space-y-0.5">
+                  {items.slice(0, 3).map((item, i) => (
+                    <p key={i} className="text-xs text-gray-600 leading-snug">
+                      {item.unit ? `${item.product_name} ${item.quantity}${item.unit}` : item.product_name}
+                    </p>
+                  ))}
+                  {items.length > 3 && (
+                    <p className="text-xs text-gray-400">ほか{items.length - 3}点</p>
+                  )}
                 </div>
               )}
 
