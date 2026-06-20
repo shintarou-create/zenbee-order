@@ -4,6 +4,12 @@ import { useState } from 'react'
 import type { Company } from '@/types'
 import { getPriceRankLabel } from '@/lib/utils'
 
+const PRICE_RANK_OPTIONS = [
+  { value: 'standard', label: 'スタンダード' },
+  { value: 'premium', label: 'プレミアム' },
+  { value: 'vip', label: 'VIP' },
+] as const
+
 interface CustomerTableProps {
   customers: Company[]
   onEdit: (customer: Company) => void
@@ -12,6 +18,7 @@ interface CustomerTableProps {
   onGenerateCode?: (customer: Company) => void
   generatingCodeId?: string | null
   approvingId?: string | null
+  onChangePriceRank?: (customer: Company, newRank: string) => Promise<void> | void
 }
 
 export default function CustomerTable({
@@ -22,6 +29,7 @@ export default function CustomerTable({
   onGenerateCode,
   generatingCodeId,
   approvingId,
+  onChangePriceRank,
 }: CustomerTableProps) {
   const [search, setSearch] = useState('')
   const [sortField, setSortField] = useState<keyof Company>('created_at')
@@ -118,8 +126,8 @@ export default function CustomerTable({
 
       <div className="text-sm text-gray-500">{filtered.length}件</div>
 
-      {/* テーブル */}
-      <div className="overflow-x-auto">
+      {/* テーブル（PC のみ） */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -285,6 +293,163 @@ export default function CustomerTable({
         {filtered.length === 0 && (
           <div className="text-center py-8 text-gray-400 text-sm">顧客が見つかりません</div>
         )}
+      </div>
+
+      {/* スマホ用カード一覧 */}
+      <div className="md:hidden space-y-3">
+        {filtered.length === 0 && (
+          <div className="text-center py-8 text-gray-400 text-sm">顧客が見つかりません</div>
+        )}
+        {filtered.map((company) => {
+          const hasLine = (company.line_users?.length ?? 0) > 0
+          const missingAddress = !company.postal_code && !company.address
+          const isPending = company.approval_status === 'pending'
+          const isRejected = company.approval_status === 'rejected'
+          return (
+            <div
+              key={company.id}
+              className={`rounded-xl border px-4 py-3 space-y-2.5 ${
+                isPending ? 'bg-amber-50/40 border-amber-200' : 'bg-white border-gray-200'
+              }`}
+            >
+              {/* 店名 + バッジ */}
+              <div>
+                <p className="font-bold text-gray-900 text-base">{company.company_name}</p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {company.has_separate_billing && (
+                    <span className="text-xs text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">
+                      請求先別
+                    </span>
+                  )}
+                  {missingAddress && (
+                    <span className="text-xs text-yellow-700 bg-yellow-50 px-1.5 py-0.5 rounded">
+                      住所未取得
+                    </span>
+                  )}
+                  {!company.email && (
+                    <span className="text-xs text-yellow-700 bg-yellow-50 px-1.5 py-0.5 rounded">
+                      メール未登録
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* 状態行 */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={`text-xs font-bold px-2 py-1 rounded-full ${
+                    hasLine ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+                  }`}
+                >
+                  LINE {hasLine ? '連携済' : '未紐づけ'}
+                </span>
+                <span
+                  className={`text-xs font-bold px-2 py-1 rounded-full ${
+                    company.is_active && !isPending && !isRejected
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-gray-100 text-gray-400'
+                  }`}
+                >
+                  {company.is_active ? '有効' : '無効'}
+                </span>
+                {isPending && (
+                  <span className="text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                    承認待ち
+                  </span>
+                )}
+                {isRejected && (
+                  <span className="text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-700">
+                    却下
+                  </span>
+                )}
+              </div>
+
+              {/* 価格帯ボタン */}
+              <div className="flex gap-1.5">
+                {PRICE_RANK_OPTIONS.map((rank) => {
+                  const isCurrent = company.price_rank === rank.value
+                  return (
+                    <button
+                      key={rank.value}
+                      disabled={!onChangePriceRank}
+                      onClick={() => {
+                        if (isCurrent) return
+                        if (window.confirm(`価格帯を「${rank.label}」に変更しますか？`)) {
+                          onChangePriceRank?.(company, rank.value)
+                        }
+                      }}
+                      className={`flex-1 text-xs font-medium py-1.5 rounded-lg transition-colors disabled:opacity-50 ${
+                        isCurrent
+                          ? rank.value === 'vip'
+                            ? 'bg-purple-600 text-white'
+                            : rank.value === 'premium'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-600 text-white'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      }`}
+                    >
+                      {rank.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* 登録コード */}
+              <div>
+                {company.registration_code ? (
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded tracking-wider">
+                      {company.registration_code}
+                    </span>
+                    <button
+                      onClick={() => handleCopyCode(company)}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      {copiedId === company.id ? 'コピー済 ✓' : 'コピー'}
+                    </button>
+                  </div>
+                ) : onGenerateCode ? (
+                  <button
+                    onClick={() => onGenerateCode(company)}
+                    disabled={generatingCodeId === company.id}
+                    className="text-xs text-green-700 hover:text-green-900 font-medium disabled:opacity-50"
+                  >
+                    {generatingCodeId === company.id ? '生成中...' : 'コード生成'}
+                  </button>
+                ) : (
+                  <span className="text-xs text-gray-300">—</span>
+                )}
+              </div>
+
+              {/* 操作ボタン */}
+              <div className="space-y-1.5">
+                {isPending && onApprove && (
+                  <button
+                    onClick={() => onApprove(company)}
+                    disabled={approvingId === company.id}
+                    className="w-full text-sm font-bold bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white px-3 py-2 rounded-lg transition-colors"
+                  >
+                    {approvingId === company.id ? '承認中...' : '承認する'}
+                  </button>
+                )}
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => onEdit(company)}
+                    className="text-green-600 hover:text-green-800 font-medium text-sm"
+                  >
+                    編集
+                  </button>
+                  <button
+                    onClick={() => onLinkLine(company)}
+                    className="text-blue-600 hover:text-blue-800 font-medium text-sm"
+                  >
+                    LINE紐づけ
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

@@ -261,6 +261,26 @@ export default function AdminCustomersPage() {
     }
   }
 
+  async function handleChangePriceRank(company: Company, newRank: string) {
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('companies')
+        .update({ price_rank: newRank })
+        .eq('id', company.id)
+      if (error) throw error
+      setCompanies((prev) =>
+        prev.map((c) => (c.id === company.id ? { ...c, price_rank: newRank as Company['price_rank'] } : c))
+      )
+      setMessage({ type: 'success', text: '価格帯を変更しました' })
+      setTimeout(() => setMessage(null), 3000)
+    } catch (err) {
+      console.error('価格帯変更エラー:', err)
+      setMessage({ type: 'error', text: '価格帯の変更に失敗しました' })
+      setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
   async function handleLinkSubmit() {
     if (!linkingCompany) return
     setLinkError(null)
@@ -450,6 +470,7 @@ export default function AdminCustomersPage() {
             onGenerateCode={handleGenerateCode}
             approvingId={approvingId}
             generatingCodeId={generatingCodeId}
+            onChangePriceRank={handleChangePriceRank}
           />
         )}
       </div>
