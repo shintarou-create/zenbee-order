@@ -32,6 +32,15 @@ const ADDRESS_FILTER_OPTIONS = [
   { value: 'missing', label: '住所未取得' },
 ] as const
 
+type Stage = '稼働中' | '連携済み' | '未着手'
+
+const STAGE_FILTER_OPTIONS: { value: 'all' | Stage; label: string }[] = [
+  { value: 'all', label: 'すべて' },
+  { value: '稼働中', label: '稼働中' },
+  { value: '連携済み', label: '連携済み' },
+  { value: '未着手', label: '未着手' },
+]
+
 const LINE_USER_ID_RE = /^U[0-9a-f]{32}$/
 
 const initialFormData: Partial<Company> = {
@@ -64,6 +73,7 @@ export default function AdminCustomersPage() {
   const [lineFilter, setLineFilter] = useState<'all' | 'linked' | 'unlinked'>('all')
   const [addressFilter, setAddressFilter] = useState<'all' | 'has' | 'missing'>('all')
   const [approvalFilter, setApprovalFilter] = useState<'all' | 'pending' | 'approved'>('all')
+  const [stageFilter, setStageFilter] = useState<'all' | Stage>('all')
   const [showModal, setShowModal] = useState(false)
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
   const [formData, setFormData] = useState<Partial<Company>>(initialFormData)
@@ -87,18 +97,44 @@ export default function AdminCustomersPage() {
     setIsLoading(true)
     try {
       const supabase = createClient()
-      const { data, error } = await supabase
-        .from('companies')
-        .select('*, line_users (id, line_user_id, display_name, is_active)')
-        .order('created_at', { ascending: false })
+      const [companiesRes, ordersRes] = await Promise.all([
+        supabase
+          .from('companies')
+          .select('*, line_users (id, line_user_id, display_name, is_active)')
+          .order('created_at', { ascending: false }),
+        supabase.from('orders').select('company_id'),
+      ])
 
-      if (error) throw error
-      setCompanies((data || []) as Company[])
+      if (companiesRes.error) throw companiesRes.error
+
+      const companiesWithOrders = new Set(
+        (ordersRes.data || []).map((o) => o.company_id)
+      )
+
+      const withStage = (companiesRes.data || []).map((c) => {
+        let stage: Stage
+        if (companiesWithOrders.has(c.id)) {
+          stage = '稼働中'
+        } else if (c.line_users && c.line_users.length > 0) {
+          stage = '連携済み'
+        } else {
+          stage = '未着手'
+        }
+        return { ...c, stage }
+      })
+
+      setCompanies(withStage as Company[])
     } catch (err) {
       console.error('顧客取得エラー:', err)
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const stageCounts: Record<Stage, number> = {
+    '稼働中': companies.filter((c) => c.stage === '稼働中').length,
+    '連携済み': companies.filter((c) => c.stage === '連携済み').length,
+    '未着手': companies.filter((c) => c.stage === '未着手').length,
   }
 
   const filteredCompanies = companies.filter((c) => {
@@ -111,6 +147,7 @@ export default function AdminCustomersPage() {
     if (addressFilter === 'missing' && (c.postal_code || c.address)) return false
     if (approvalFilter === 'pending' && c.approval_status !== 'pending') return false
     if (approvalFilter === 'approved' && c.approval_status === 'pending') return false
+    if (stageFilter !== 'all' && c.stage !== stageFilter) return false
     return true
   })
 
@@ -364,6 +401,15 @@ export default function AdminCustomersPage() {
         </div>
       )}
 
+      {/* ステージサマリー */}
+      <div className="flex items-center gap-2 flex-wrap text-sm px-1">
+        <span className="font-semibold text-emerald-700">稼働中 {stageCounts['稼働中']}</span>
+        <span className="text-gray-300">／</span>
+        <span className="font-semibold text-blue-700">連携済み {stageCounts['連携済み']}</span>
+        <span className="text-gray-300">／</span>
+        <span className="font-semibold text-gray-500">未着手 {stageCounts['未着手']}</span>
+      </div>
+
       {/* フィルター */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3">
         {/* 価格帯 */}
@@ -446,6 +492,30 @@ export default function AdminCustomersPage() {
               className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                 approvalFilter === f.value
                   ? 'bg-amber-500 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {/* 取引ステージ */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-500 font-medium w-14">ステージ</span>
+          {STAGE_FILTER_OPTIONS.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => setStageFilter(f.value)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                stageFilter === f.value
+                  ? f.value === '稼働中'
+                    ? 'bg-emerald-600 text-white'
+                    : f.value === '連携済み'
+                    ? 'bg-blue-600 text-white'
+                    : f.value === '未着手'
+                    ? 'bg-gray-500 text-white'
+                    : 'bg-gray-700 text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >

@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // companies に INSERT（price_rank='premium'、approval_status='pending'）
+    // companies に INSERT（price_rank='standard'、approval_status='pending'）
     const { data: company, error: companyError } = await supabase
       .from('companies')
       .insert({
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
         email,
         representative_name: representativeName,
         notes,
-        price_rank: 'premium',
+        price_rank: 'standard',
         approval_status: 'pending',
         is_active: true,
         has_separate_billing: false,

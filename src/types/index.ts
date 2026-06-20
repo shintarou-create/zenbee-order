@@ -67,6 +67,8 @@ export interface Company {
   updated_at: string
   // Joined fields
   line_users?: LineUser[]
+  // Derived field (not in DB)
+  stage?: '稼働中' | '連携済み' | '未着手'
 }
 
 export type CompanyInput = Omit<Company, 'id' | 'created_at' | 'updated_at' | 'line_users'>

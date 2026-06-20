@@ -169,6 +169,19 @@ export default function CustomerTable({
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{company.company_name}</p>
                     <div className="flex flex-wrap gap-1 mt-0.5">
+                      {company.stage && (
+                        <span
+                          className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                            company.stage === '稼働中'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : company.stage === '連携済み'
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-gray-100 text-gray-400'
+                          }`}
+                        >
+                          {company.stage}
+                        </span>
+                      )}
                       {company.has_separate_billing && (
                         <span className="text-xs text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">
                           請求先別
@@ -336,6 +349,19 @@ export default function CustomerTable({
 
               {/* 状態行 */}
               <div className="flex items-center gap-2 flex-wrap">
+                {company.stage && (
+                  <span
+                    className={`text-xs font-bold px-2 py-1 rounded-full ${
+                      company.stage === '稼働中'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : company.stage === '連携済み'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-gray-100 text-gray-400'
+                    }`}
+                  >
+                    {company.stage}
+                  </span>
+                )}
                 <span
                   className={`text-xs font-bold px-2 py-1 rounded-full ${
                     hasLine ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
