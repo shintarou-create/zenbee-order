@@ -122,6 +122,10 @@ function getYamatoCustomerCode() {
   return process.env.YAMATO_CUSTOMER_CODE || '09069864632'
 }
 
+function getYamatoFreightManagementNo() {
+  return process.env.YAMATO_FREIGHT_MANAGEMENT_NO || '01'
+}
+
 // ────────────────────────────────────────────────────────────
 // CSV フィールドエスケープ
 // ────────────────────────────────────────────────────────────
@@ -298,7 +302,7 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
       '',                                          // 39: 個数口枠の印字
       getYamatoCustomerCode(),                       // 40: ご請求先顧客コード
       '',                                          // 41: ご請求先分類コード
-      '',                                          // 42: 運賃管理番号
+      getYamatoFreightManagementNo(),              // 42: 運賃管理番号
       '',                                          // 43: 備考
     ]
   }
