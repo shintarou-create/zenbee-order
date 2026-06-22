@@ -164,19 +164,36 @@ function splitAddress(
 // ────────────────────────────────────────────────────────────
 
 function buildItemNameFromProducts(items: OrderItemForCsv[]): string {
-  const names: string[] = []
+  // 同一商品が複数行に分かれている場合は数量を合算してから表示する
+  const ordered: string[] = []
+  const qtyByName = new Map<string, number>()
+  const unitByName = new Map<string, string>()
   for (const it of items) {
     const n = (it.product.name || '').trim()
-    if (n && !names.includes(n)) names.push(n)
+    if (!n) continue
+    if (!qtyByName.has(n)) {
+      ordered.push(n)
+      qtyByName.set(n, 0)
+      unitByName.set(n, it.product.unit || '')
+    }
+    qtyByName.set(n, (qtyByName.get(n) || 0) + (it.quantity || 0))
   }
+
+  // 「商品名 数量単位」の形に整形（例: 温州みかん 10kg）
+  const labels = ordered.map(n => {
+    const qty = qtyByName.get(n) || 0
+    const unit = unitByName.get(n) || ''
+    return qty > 0 ? `${n} ${qty}${unit}` : n
+  })
+
   const MAX = 25
   let result = ''
-  for (const n of names) {
-    const candidate = result ? `${result}、${n}` : n
+  for (const label of labels) {
+    const candidate = result ? `${result}、${label}` : label
     if (candidate.length > MAX) break
     result = candidate
   }
-  if (!result && names.length > 0) result = names[0].slice(0, MAX)
+  if (!result && labels.length > 0) result = labels[0].slice(0, MAX)
   return result
 }
 
@@ -293,7 +310,7 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
       '',                                          // 30: 品名２
       handling1,                                   // 31: 荷扱い１
       handling2,                                   // 32: 荷扱い２
-      order.notes || '',                           // 33: 記事
+      '',                                          // 33: 記事（備考はヤマト伝票に出さない）
       '',                                          // 34: コレクト代金引換額
       '',                                          // 35: コレクト内消費税
       '',                                          // 36: 営業所止置き
