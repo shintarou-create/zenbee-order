@@ -9,7 +9,7 @@ import type { CreateOrderRequest, CartItem, CoolType } from '@/types'
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as CreateOrderRequest
-    const { items, notes, deliveryDate, liffAccessToken } = body
+    const { items, notes, deliveryDate, deliveryTimeSlot, liffAccessToken } = body
 
     if (!items || items.length === 0) {
       return NextResponse.json(
@@ -52,6 +52,10 @@ export async function POST(req: NextRequest) {
       if (isBlockedDeliveryDate(deliveryDate)) {
         return NextResponse.json({ error: '月曜・木曜はお届け日に指定できません' }, { status: 400 })
       }
+    }
+    const VALID_TIME_SLOTS = ['morning', 'afternoon', 'evening1', 'evening2', 'evening3']
+    if (deliveryTimeSlot && !VALID_TIME_SLOTS.includes(deliveryTimeSlot)) {
+      return NextResponse.json({ error: '配達時間帯の指定が無効です' }, { status: 400 })
     }
 
     // LIFF アクセストークンを検証してユーザーIDを取得
@@ -309,6 +313,7 @@ export async function POST(req: NextRequest) {
         total_amount: totalAmount,
         notes: notes || null,
         delivery_date: deliveryDate || null,
+        delivery_time_slot: deliveryTimeSlot || null,
       })
       .select()
       .single()

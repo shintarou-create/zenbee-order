@@ -49,6 +49,7 @@ export interface CompanyForCsv {
 export interface OrderForCsv {
   orderNumber: string
   deliveryDate?: string  // YYYY-MM-DD or YYYY/MM/DD
+  deliveryTimeSlot?: string
   notes?: string
   company: CompanyForCsv
   items: OrderItemForCsv[]
@@ -284,7 +285,7 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
       '',                                          //  4: 伝票番号（自動採番）
       shipDateStr,                                 //  5: 出荷予定日
       deliveryDate,                                //  6: お届け予定日
-      '',                                          //  7: 配達時間帯
+      formatDeliveryTimeSlot(order.deliveryTimeSlot),   //  7: 配達時間帯
       '',                                          //  8: お届け先コード
       company.phone.replace(/-/g, ''),             //  9: お届け先電話番号
       '',                                          // 10: お届け先電話番号枝

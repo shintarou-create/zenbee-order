@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
       return {
         orderNumber: order.order_number,
         deliveryDate: order.delivery_date || undefined,
+        deliveryTimeSlot: order.delivery_time_slot || undefined,
         notes: order.notes || undefined,
         company: {
           postalCode: company?.postal_code || '',

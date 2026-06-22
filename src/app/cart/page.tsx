@@ -26,6 +26,7 @@ export default function CartPage() {
   const { userId, isLoading: liffLoading } = useLiff()
   const [notes, setNotes] = useState('')
   const [deliveryDate, setDeliveryDate] = useState('')
+  const [deliveryTimeSlot, setDeliveryTimeSlot] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const latestShip = getLatestShipStartDate(items)
@@ -79,6 +80,7 @@ export default function CartPage() {
           })),
           notes,
           deliveryDate,
+          deliveryTimeSlot,
           liffAccessToken: accessToken || '',
         }),
       })
@@ -169,6 +171,25 @@ export default function CartPage() {
               {deliveryDateError && (
                 <p className="mt-1 text-xs text-red-500 font-medium">{deliveryDateError}</p>
               )}
+            </div>
+
+            {/* 配達時間帯 */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+              <label className="block font-bold text-gray-900 mb-2 text-base">
+                配達時間帯（任意）
+              </label>
+              <select
+                value={deliveryTimeSlot}
+                onChange={(e) => setDeliveryTimeSlot(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-fukamidori"
+              >
+                <option value="">指定なし</option>
+                <option value="morning">午前中</option>
+                <option value="afternoon">14時〜16時</option>
+                <option value="evening1">16時〜18時</option>
+                <option value="evening2">18時〜20時</option>
+                <option value="evening3">19時〜21時</option>
+              </select>
             </div>
 
             {/* 備考欄 */}
