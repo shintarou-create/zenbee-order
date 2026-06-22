@@ -21,6 +21,12 @@ interface OrderTableProps {
   detailLinkSuffix?: string
 }
 
+function formatItemLabel(item: { product_name: string; quantity: number; unit?: string | null; tier_quantity?: number | null }): string {
+  if (item.tier_quantity) return `${item.product_name} ${item.tier_quantity}本入×${item.quantity}`
+  if (item.unit) return `${item.product_name} ${item.quantity}${item.unit}`
+  return item.product_name
+}
+
 function getDisplayStatusLabel(order: Order): string {
   if (order.status === 'pending' && order.delivery_note_printed) return '納品書済'
   return getOrderStatusLabel(order.status)
@@ -267,7 +273,7 @@ export default function OrderTable({
                       <div className="space-y-0.5">
                         {items.slice(0, 3).map((item, i) => (
                           <p key={i} className="text-xs text-gray-600 leading-snug">
-                            {item.unit ? `${item.product_name} ${item.quantity}${item.unit}` : item.product_name}
+                            {formatItemLabel(item)}
                           </p>
                         ))}
                         {items.length > 3 && (
@@ -389,7 +395,7 @@ export default function OrderTable({
                 <div className="pt-2 border-t border-gray-100 space-y-0.5">
                   {items.slice(0, 3).map((item, i) => (
                     <p key={i} className="text-xs text-gray-600 leading-snug">
-                      {item.unit ? `${item.product_name} ${item.quantity}${item.unit}` : item.product_name}
+                      {formatItemLabel(item)}
                     </p>
                   ))}
                   {items.length > 3 && (
