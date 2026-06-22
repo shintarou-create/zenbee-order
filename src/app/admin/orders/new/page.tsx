@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -70,6 +70,8 @@ export default function AdminOrderNewPage() {
   const [companyMode, setCompanyMode] = useState<'existing' | 'new'>('existing')
   const [companyId, setCompanyId] = useState('')
   const [companySearch, setCompanySearch] = useState('')
+  const [companyListOpen, setCompanyListOpen] = useState(false)
+  const companySearchRef = useRef<HTMLDivElement>(null)
   const [newCompanyName, setNewCompanyName] = useState('')
 
   // 商品追加フォーム
@@ -122,6 +124,16 @@ export default function AdminOrderNewPage() {
     setAddTierId('')
     setAddQuantity(1)
   }, [addProductId])
+
+  useEffect(() => {
+    function handleMouseDown(e: MouseEvent) {
+      if (companySearchRef.current && !companySearchRef.current.contains(e.target as Node)) {
+        setCompanyListOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [])
 
   const filteredCompanies = useMemo(() => {
     const q = companySearch.trim().toLowerCase()
@@ -300,26 +312,41 @@ export default function AdminOrderNewPage() {
           </div>
 
           {companyMode === 'existing' ? (
-            <div className="space-y-2">
+            <div ref={companySearchRef} className="relative">
               <input
                 type="text"
                 value={companySearch}
-                onChange={(e) => setCompanySearch(e.target.value)}
-                placeholder="店名で検索..."
+                onChange={(e) => {
+                  setCompanySearch(e.target.value)
+                  setCompanyId('')
+                  setCompanyListOpen(true)
+                }}
+                onFocus={() => setCompanyListOpen(true)}
+                placeholder="店名で検索して選択..."
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
               />
-              <select
-                value={companyId}
-                onChange={(e) => setCompanyId(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-              >
-                <option value="">取引先を選択...</option>
-                {filteredCompanies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.company_name}
-                  </option>
-                ))}
-              </select>
+              {companyListOpen && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                  {filteredCompanies.length > 0 ? (
+                    filteredCompanies.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setCompanyId(c.id)
+                          setCompanySearch(c.company_name)
+                          setCompanyListOpen(false)
+                        }}
+                        className="w-full text-left px-3 py-2.5 text-sm hover:bg-green-50 hover:text-green-700"
+                      >
+                        {c.company_name}
+                      </button>
+                    ))
+                  ) : (
+                    <p className="px-3 py-2.5 text-sm text-gray-400">該当する取引先がありません</p>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-1">
