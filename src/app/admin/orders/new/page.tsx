@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
-import { getMinDeliveryDateStr, isBlockedDeliveryDate } from '@/lib/delivery-rules'
 
 type PricingTier = {
   id: string
@@ -88,7 +87,7 @@ export default function AdminOrderNewPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const minDate = getMinDeliveryDateStr()
+  const todayStr = new Date().toLocaleDateString('sv-SE')
 
   useEffect(() => {
     async function load() {
@@ -201,11 +200,6 @@ export default function AdminOrderNewPage() {
       setError('商品を1件以上追加してください')
       return
     }
-    if (deliveryDate && isBlockedDeliveryDate(deliveryDate)) {
-      setError('月曜・木曜はお届け日に指定できません')
-      return
-    }
-
     const payload = {
       ...(companyMode === 'existing' ? { companyId } : { newCompanyName: newCompanyName.trim() }),
       items: items.map((item) =>
@@ -465,11 +459,11 @@ export default function AdminOrderNewPage() {
             type="date"
             value={deliveryDate}
             onChange={(e) => setDeliveryDate(e.target.value)}
-            min={minDate}
+            min={todayStr}
             className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
           />
           <p className="text-xs text-gray-500">
-            {minDate} 以降・月曜日と木曜日は指定不可（任意）
+            本日以降で指定できます（任意）
           </p>
         </section>
 

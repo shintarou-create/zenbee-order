@@ -4,7 +4,7 @@ import { verifyAdmin } from '@/lib/admin-auth'
 import { generateOrderNumber } from '@/lib/utils'
 import { notifyOrderCreated } from '@/lib/line-messaging'
 import { calculateShipping } from '@/lib/shipping'
-import { isBlockedDeliveryDate, isTooSoonDeliveryDate, hasMixedShipStart } from '@/lib/delivery-rules'
+import { hasMixedShipStart } from '@/lib/delivery-rules'
 import type { CartItem, CoolType } from '@/types'
 
 export async function POST(req: NextRequest) {
@@ -51,12 +51,6 @@ export async function POST(req: NextRequest) {
       const maxDate = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000)
       if (isNaN(d.getTime()) || d < now || d > maxDate) {
         return NextResponse.json({ error: '納品希望日が無効です（本日〜180日以内）' }, { status: 400 })
-      }
-      if (isTooSoonDeliveryDate(deliveryDate)) {
-        return NextResponse.json({ error: 'お届け希望日はご注文日の2日後以降でご指定ください' }, { status: 400 })
-      }
-      if (isBlockedDeliveryDate(deliveryDate)) {
-        return NextResponse.json({ error: '月曜・木曜はお届け日に指定できません' }, { status: 400 })
       }
     }
 
@@ -133,18 +127,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'お届け開始時期が異なる商品は同時に注文できません' }, { status: 400 })
     }
 
-    if (deliveryDate) {
-      const shipStartDates = products.map((p) => p.ship_start_date).filter((d): d is string => !!d)
-      if (shipStartDates.length > 0) {
-        const latestShipStart = shipStartDates.reduce((a, b) => (a > b ? a : b))
-        if (deliveryDate < latestShipStart) {
-          return NextResponse.json(
-            { error: `お届け希望日は ${latestShipStart} 以降でご指定ください（発送開始日前は指定できません）` },
-            { status: 400 }
-          )
-        }
-      }
-    }
 
     // 価格・送料計算
     let totalAmount = 0
