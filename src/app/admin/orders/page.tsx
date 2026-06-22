@@ -28,6 +28,22 @@ interface DeleteModalProps {
 }
 
 function DeleteConfirmModal({ orders, onConfirm, onCancel, isDeleting, errorMsg }: DeleteModalProps) {
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Enter') {
+        if (isDeleting) return
+        e.preventDefault()
+        onConfirm()
+      } else if (e.key === 'Escape') {
+        if (isDeleting) return
+        e.preventDefault()
+        onCancel()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onConfirm, onCancel, isDeleting])
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
