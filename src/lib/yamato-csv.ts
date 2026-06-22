@@ -165,26 +165,30 @@ function splitAddress(
 // ────────────────────────────────────────────────────────────
 
 function buildItemNameFromProducts(items: OrderItemForCsv[]): string {
-  // 同一商品が複数行に分かれている場合は数量を合算してから表示する
-  const ordered: string[] = []
-  const qtyByName = new Map<string, number>()
-  const unitByName = new Map<string, string>()
+  // ジュースは「name + tier_quantity」をキーに合算、それ以外は name のみキー
+  type Entry = { key: string; name: string; isJuice: boolean; tierQty: number | null; unit: string }
+  const ordered: Entry[] = []
+  const qtyByKey = new Map<string, number>()
+
   for (const it of items) {
     const n = (it.product.name || '').trim()
     if (!n) continue
-    if (!qtyByName.has(n)) {
-      ordered.push(n)
-      qtyByName.set(n, 0)
-      unitByName.set(n, it.product.unit || '')
+    const isJuice = (it.product.category || '').startsWith('ジュース')
+    const tierQty = isJuice && it.tier_quantity ? it.tier_quantity : null
+    const key = isJuice ? `${n}_${tierQty ?? ''}` : n
+    if (!qtyByKey.has(key)) {
+      ordered.push({ key, name: n, isJuice, tierQty, unit: it.product.unit || '' })
+      qtyByKey.set(key, 0)
     }
-    qtyByName.set(n, (qtyByName.get(n) || 0) + (it.quantity || 0))
+    qtyByKey.set(key, (qtyByKey.get(key) || 0) + (it.quantity || 0))
   }
 
-  // 「商品名 数量単位」の形に整形（例: 温州みかん 10kg）
-  const labels = ordered.map(n => {
-    const qty = qtyByName.get(n) || 0
-    const unit = unitByName.get(n) || ''
-    return qty > 0 ? `${n} ${qty}${unit}` : n
+  const labels = ordered.map(({ key, name, isJuice, tierQty, unit }) => {
+    const qty = qtyByKey.get(key) || 0
+    // ジュース：「商品名 24本入×1」形式（tier_quantity がある場合）
+    if (isJuice && tierQty) return `${name} ${tierQty}本入×${qty}`
+    // 柑橘・その他：「商品名 10kg」形式
+    return qty > 0 ? `${name} ${qty}${unit}` : name
   })
 
   const MAX = 25
@@ -204,7 +208,7 @@ function buildItemNameFromProducts(items: OrderItemForCsv[]): string {
 
 function getAmbientHandling(cats: Set<string>): [string, string] {
   const c = cats.has('柑橘')
-  const j = cats.has('ジュース')
+  const j = Array.from(cats).some(cat => cat.startsWith('ジュース'))
   const handling1 = j ? '割れ物' : c ? '生物' : ''
   const handling2 = '下積み厳禁'
   return [handling1, handling2]
@@ -221,7 +225,7 @@ function calcAmbientBoxes(items: OrderItemForCsv[]): number {
     const cat = item.product.category
     if ((cat === '柑橘' || cat === 'その他') && item.product.unit === 'kg') {
       kgTotal += item.quantity
-    } else if (cat === 'ジュース') {
+    } else if (cat.startsWith('ジュース')) {
       if (item.tier_quantity != null) {
         // 新仕様: quantity = ケース数（tier_quantityは箱数計算不要、ケース単位で既にカウント済み）
         juiceCases += item.quantity
