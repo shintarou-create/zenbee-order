@@ -69,6 +69,7 @@ export default function AdminOrderNewPage() {
   // 取引先
   const [companyMode, setCompanyMode] = useState<'existing' | 'new'>('existing')
   const [companyId, setCompanyId] = useState('')
+  const [companySearch, setCompanySearch] = useState('')
   const [newCompanyName, setNewCompanyName] = useState('')
 
   // 商品追加フォーム
@@ -121,6 +122,12 @@ export default function AdminOrderNewPage() {
     setAddTierId('')
     setAddQuantity(1)
   }, [addProductId])
+
+  const filteredCompanies = useMemo(() => {
+    const q = companySearch.trim().toLowerCase()
+    if (!q) return companies
+    return companies.filter((c) => c.company_name.toLowerCase().includes(q))
+  }, [companies, companySearch])
 
   const selectedProduct = useMemo(
     () => products.find((p) => p.id === addProductId),
@@ -293,18 +300,27 @@ export default function AdminOrderNewPage() {
           </div>
 
           {companyMode === 'existing' ? (
-            <select
-              value={companyId}
-              onChange={(e) => setCompanyId(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-            >
-              <option value="">取引先を選択...</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.company_name}
-                </option>
-              ))}
-            </select>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={companySearch}
+                onChange={(e) => setCompanySearch(e.target.value)}
+                placeholder="店名で検索..."
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+              />
+              <select
+                value={companyId}
+                onChange={(e) => setCompanyId(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+              >
+                <option value="">取引先を選択...</option>
+                {filteredCompanies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.company_name}
+                  </option>
+                ))}
+              </select>
+            </div>
           ) : (
             <div className="space-y-1">
               <input
