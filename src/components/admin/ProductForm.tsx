@@ -15,7 +15,7 @@ interface ProductFormProps {
   onCancel: () => void
 }
 
-const UNITS = ['kg', '本', '個', '箱', '袋', 'パック', 'L', 'ml']
+const UNITS = ['kg', 'g', '本', '個', '箱', '袋', 'パック', 'L', 'ml']
 const PRICE_RANKS: { value: PriceRank; label: string }[] = [
   { value: 'standard', label: 'スタンダード' },
   { value: 'premium', label: 'プレミアム' },
