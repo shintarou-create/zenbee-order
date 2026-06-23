@@ -23,7 +23,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'リクエストボディが不正です' }, { status: 400 })
   }
 
-  const { prices, ...rest } = body as { prices?: unknown; [key: string]: unknown }
+  const { prices, stockQty, ...rest } = body as { prices?: unknown; stockQty?: unknown; [key: string]: unknown }
 
   // 許可フィールドのみ抽出（未指定フィールドは更新しない部分更新）
   const updateData: Record<string, unknown> = {}
@@ -87,6 +87,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         console.error(`[products PATCH] price upsert error (${rank}):`, priceError)
         return NextResponse.json({ error: '価格の保存に失敗しました' }, { status: 500 })
       }
+    }
+  }
+
+  if (typeof stockQty === 'number' && stockQty >= 0) {
+    const { error: invError } = await supabase
+      .from('inventory')
+      .update({ available_qty: stockQty })
+      .eq('product_id', productId)
+    if (invError) {
+      console.error('[products PATCH] inventory update error:', invError)
+      return NextResponse.json({ error: '在庫数の保存に失敗しました' }, { status: 500 })
     }
   }
 

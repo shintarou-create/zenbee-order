@@ -76,6 +76,7 @@ export default function AdminProductsPage() {
         adminFetch('/api/admin/categories').then((r) => r.json()),
         supabase.from('products').select(`
           *,
+          inventory (id, product_id, available_qty, reserved_qty, updated_at),
           product_prices (id, product_id, price_rank, price_per_unit),
           pricing_tiers:product_pricing_tiers (id, product_id, tier_label, quantity, unit_price, display_order, is_active)
         `).order('display_order', { ascending: true }),
@@ -141,13 +142,13 @@ export default function AdminProductsPage() {
     }
   }
 
-  async function handleSubmit(productData: Partial<Product>, prices: Record<PriceRank, number>) {
+  async function handleSubmit(productData: Partial<Product>, prices: Record<PriceRank, number>, stockQty: number) {
     try {
       if (editingProduct) {
         const res = await adminFetch(`/api/admin/products/${editingProduct.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...productData, prices }),
+          body: JSON.stringify({ ...productData, prices, stockQty }),
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || '更新に失敗しました')
@@ -156,7 +157,7 @@ export default function AdminProductsPage() {
         const res = await adminFetch('/api/admin/products', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...productData, prices }),
+          body: JSON.stringify({ ...productData, prices, stockQty }),
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || '作成に失敗しました')

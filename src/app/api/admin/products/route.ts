@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'リクエストボディが不正です' }, { status: 400 })
   }
 
-  const { prices, ...productFields } = body as { prices?: unknown; [key: string]: unknown }
+  const { prices, stockQty, ...productFields } = body as { prices?: unknown; stockQty?: unknown; [key: string]: unknown }
 
   if (!productFields.name || typeof productFields.name !== 'string' || !productFields.name.trim()) {
     return NextResponse.json({ error: '商品名は必須です' }, { status: 400 })
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
   // 在庫を初期化
   const { error: inventoryError } = await supabase.from('inventory').insert({
     product_id: newProduct.id,
-    available_qty: 0,
+    available_qty: typeof stockQty === 'number' && stockQty >= 0 ? stockQty : 0,
     reserved_qty: 0,
   })
   if (inventoryError) {

@@ -10,7 +10,8 @@ interface ProductFormProps {
   categories?: Category[]
   onSubmit: (
     product: Partial<Product>,
-    prices: Record<PriceRank, number>
+    prices: Record<PriceRank, number>,
+    stockQty: number
   ) => Promise<void>
   onCancel: () => void
 }
@@ -35,6 +36,7 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
   const [shipStartDate, setShipStartDate] = useState(product?.ship_start_date || '')
   const [orderEndDate, setOrderEndDate] = useState(product?.order_end_date || '')
   const [stockStatus, setStockStatus] = useState<StockStatus>(product?.stock_status ?? 'circle')
+  const [stockQty, setStockQty] = useState<number>(product?.inventory?.available_qty ?? 0)
   const [sortOrder, setSortOrder] = useState(product?.display_order ?? 0)
   const [description, setDescription] = useState(product?.description || '')
   const [imageUrl, setImageUrl] = useState<string | null>(product?.image_url || null)
@@ -140,7 +142,8 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
           stock_status: stockStatus,
           image_url: imageUrl,
         },
-        prices
+        prices,
+        stockQty
       )
     } finally {
       setSubmitting(false)
@@ -347,6 +350,23 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
           <option value="triangle">△ 残りわずか</option>
           <option value="cross">× 在庫なし</option>
         </select>
+      </div>
+
+      {/* 在庫数 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">在庫数</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            value={stockQty}
+            onChange={(e) => setStockQty(parseFloat(e.target.value) || 0)}
+            min={0}
+            step={unit === 'kg' || unit === 'L' ? 0.1 : 1}
+            className="w-32 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+          />
+          <span className="text-gray-500 text-sm">{unit}</span>
+        </div>
+        <p className="mt-0.5 text-xs text-gray-400">この数を下回ると「在庫注意」、0以下で「在庫切れ」表示になります</p>
       </div>
 
       {/* 価格設定 */}
