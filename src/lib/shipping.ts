@@ -51,7 +51,7 @@ export function calculateShipping(items: CartItem[]): ShippingBreakdown {
 
   // びわ（パック単位、冷蔵）: 12パックまで¥1,550
   const totalPacks = items
-    .filter((i) => i.unit === 'パック')
+    .filter((i) => i.unit === 'パック' && !i.productName.includes('2L'))
     .reduce((sum, i) => sum + i.quantity, 0)
 
   if (totalPacks > 0) {
@@ -61,6 +61,20 @@ export function calculateShipping(items: CartItem[]): ShippingBreakdown {
       quantity: boxes,
       unitCost: 1550,
       cost: boxes * 1550,
+    })
+  }
+
+  // 2Lジュース（パック単位）: 4パックまで¥1,300 / 5パック以上は送料無料
+  const total2L = items
+    .filter((i) => i.unit === 'パック' && i.productName.includes('2L'))
+    .reduce((sum, i) => sum + i.quantity, 0)
+
+  if (total2L > 0 && total2L <= 4) {
+    lines.push({
+      label: 'ジュース2L（4パックまで）',
+      quantity: 1,
+      unitCost: 1300,
+      cost: 1300,
     })
   }
 
