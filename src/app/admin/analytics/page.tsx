@@ -99,7 +99,7 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [monthlyView, setMonthlyView] = useState<'all' | 'category' | 'product'>('category')
+  const [monthlyView, setMonthlyView] = useState<'all' | 'category' | 'product'>('product')
 
   useEffect(() => {
     async function fetchData() {
