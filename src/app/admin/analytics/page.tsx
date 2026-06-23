@@ -10,6 +10,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  LabelList,
 } from 'recharts'
 import { adminFetch } from '@/lib/admin-fetch'
 import { formatCurrency } from '@/lib/utils'
@@ -98,7 +99,7 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [monthlyView, setMonthlyView] = useState<'all' | 'category'>('all')
+  const [monthlyView, setMonthlyView] = useState<'all' | 'category' | 'product'>('category')
 
   useEffect(() => {
     async function fetchData() {
@@ -129,6 +130,11 @@ export default function AnalyticsPage() {
   const categoryChartData = (data?.byCategory ?? []).map((c) => ({
     name: c.category_name,
     売上: c.total,
+  }))
+
+  const productChartData = (data?.byProduct ?? []).slice(0, 10).map((p) => ({
+    name: p.product_name,
+    売上: p.total,
   }))
 
   const totalThisYear = (data?.monthly ?? []).reduce((s, m) => s + m.thisYear, 0)
@@ -199,6 +205,16 @@ export default function AnalyticsPage() {
                   >
                     カテゴリー別
                   </button>
+                  <button
+                    onClick={() => setMonthlyView('product')}
+                    className={`px-3 py-1 font-medium transition-colors border-l border-gray-200 ${
+                      monthlyView === 'product'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    商品別
+                  </button>
                 </div>
               </div>
               {monthlyView === 'all' ? (
@@ -209,10 +225,18 @@ export default function AnalyticsPage() {
                 >
                   CSVダウンロード
                 </button>
-              ) : (
+              ) : monthlyView === 'category' ? (
                 <button
                   onClick={() => downloadCsv(buildCategoryCsv(data.byCategory), `売上_カテゴリー別_${year}.csv`)}
                   disabled={data.byCategory.length === 0}
+                  className="text-sm text-green-600 hover:text-green-800 underline disabled:opacity-50"
+                >
+                  CSVダウンロード
+                </button>
+              ) : (
+                <button
+                  onClick={() => downloadCsv(buildProductCsv(data.byProduct), `売上_商品別_${year}.csv`)}
+                  disabled={data.byProduct.length === 0}
                   className="text-sm text-green-600 hover:text-green-800 underline disabled:opacity-50"
                 >
                   CSVダウンロード
@@ -227,7 +251,7 @@ export default function AnalyticsPage() {
               ) : (
                 <>
                   <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                    <BarChart data={chartData} margin={{ top: 24, right: 16, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                       <YAxis tickFormatter={formatYen} tick={{ fontSize: 11 }} width={52} />
@@ -235,7 +259,9 @@ export default function AnalyticsPage() {
                         formatter={(value) => [formatCurrency(Number(value ?? 0)), '']}
                       />
                       <Legend />
-                      <Bar dataKey="今年" fill="#16a34a" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="今年" fill="#16a34a" radius={[3, 3, 0, 0]}>
+                        <LabelList dataKey="今年" position="top" formatter={(v) => (v ? formatCurrency(Number(v)) : '')} style={{ fontSize: 11, fill: '#374151', fontWeight: 600 }} />
+                      </Bar>
                       {chartData.some((d) => d.hasLastYear) && (
                         <Bar dataKey="前年" fill="#86efac" radius={[3, 3, 0, 0]} />
                       )}
@@ -271,14 +297,34 @@ export default function AnalyticsPage() {
                 <p className="text-gray-400 text-sm py-8 text-center">データがありません</p>
               ) : (
                 <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={categoryChartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                  <BarChart data={categoryChartData} margin={{ top: 24, right: 16, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                     <YAxis tickFormatter={formatYen} tick={{ fontSize: 11 }} width={52} />
                     <Tooltip
                       formatter={(value) => [formatCurrency(Number(value ?? 0)), '']}
                     />
-                    <Bar dataKey="売上" fill="#16a34a" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="売上" fill="#16a34a" radius={[3, 3, 0, 0]}>
+                      <LabelList dataKey="売上" position="top" formatter={(v) => (v ? formatCurrency(Number(v)) : '')} style={{ fontSize: 11, fill: '#374151', fontWeight: 600 }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )
+            )}
+            {/* 商品別：横棒グラフ */}
+            {monthlyView === 'product' && (
+              productChartData.length === 0 ? (
+                <p className="text-gray-400 text-sm py-8 text-center">データがありません</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={Math.max(280, productChartData.length * 44)}>
+                  <BarChart data={productChartData} layout="vertical" margin={{ top: 4, right: 72, left: 8, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                    <XAxis type="number" tickFormatter={formatYen} tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={140} interval={0} />
+                    <Tooltip formatter={(value) => [formatCurrency(Number(value ?? 0)), '']} />
+                    <Bar dataKey="売上" fill="#16a34a" radius={[0, 3, 3, 0]}>
+                      <LabelList dataKey="売上" position="right" formatter={(v) => (v ? formatCurrency(Number(v)) : '')} style={{ fontSize: 11, fill: '#374151', fontWeight: 600 }} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               )
