@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { verifyAdmin } from '@/lib/admin-auth'
+import {
+  aggregateCases,
+  getActiveOverrides,
+  resolveUnitPriceOverride,
+} from '@/lib/company-overrides'
+import type { CompanyOverride } from '@/types'
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   // 1. verifyAdmin
@@ -80,6 +86,54 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .eq('id', orderData.company_id)
     .single()
 
+  // 取引先別の個別単価特例（company_overrides）を取得（作成APIと同じロジックを共有）
+  let overrides: CompanyOverride[] = []
+  {
+    const { data: ovData, error: ovError } = await supabase
+      .from('company_overrides')
+      .select('*')
+      .eq('company_id', orderData.company_id)
+    if (ovError) {
+      console.error('[items PATCH] company_overrides 取得エラー:', ovError)
+    } else if (ovData) {
+      overrides = ovData as CompanyOverride[]
+    }
+  }
+
+  // 通常行のカテゴリを取得してケース数を集計 → 有効 override を確定
+  const normalProductIds = typedItems
+    .filter((i): i is { is_custom?: false; product_id: string; pricing_tier_id?: string | null; quantity: number } =>
+      i.is_custom !== true
+    )
+    .map((i) => i.product_id)
+
+  const productCategory = new Map<string, string>()
+  if (normalProductIds.length > 0) {
+    const { data: catRows, error: catError } = await supabase
+      .from('products')
+      .select('id, category')
+      .in('id', normalProductIds)
+    if (catError) {
+      console.error('[items PATCH] products category 取得エラー:', catError)
+    } else {
+      for (const p of catRows ?? []) {
+        if (p.category) productCategory.set(p.id, p.category as string)
+      }
+    }
+  }
+
+  const caseAgg = aggregateCases(
+    typedItems
+      .filter((i) => i.is_custom !== true)
+      .map((i) => ({
+        productId: (i as { product_id: string }).product_id,
+        quantity: i.quantity,
+        isCustom: false,
+      })),
+    productCategory
+  )
+  const activeOverrides = getActiveOverrides(overrides, caseAgg)
+
   // 3. 各明細行の商品情報・価格を DB から取得して組み立て
   const orderItemsData: Array<{
     order_id: string
@@ -156,6 +210,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         prices.find((pp: { price_rank: string }) => pp.price_rank === company?.price_rank) ??
         prices.find((pp: { price_rank: string }) => pp.price_rank === 'standard')
       unitPrice = (priceEntry as { price_per_unit?: number } | undefined)?.price_per_unit ?? 0
+    }
+
+    // 個別単価オーバーライドの適用（通常価格確定の直後・スナップショット保存）
+    const overridePrice = resolveUnitPriceOverride(activeOverrides, {
+      productId: product.id,
+      pricingTierId: pricingTierId,
+      category: productCategory.get(product.id) ?? null,
+    })
+    if (overridePrice != null) {
+      unitPrice = overridePrice
     }
 
     const subtotal = tierQuantity
