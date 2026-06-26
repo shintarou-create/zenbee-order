@@ -873,6 +873,20 @@ export default function AdminCustomersPage() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">メールアドレス</label>
+                <input
+                  type="email"
+                  value={formData.email || ''}
+                  onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))}
+                  placeholder="example@example.com"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  請求書のメール送信などに使用します。
+                </p>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">発送方法</label>
                 <select
                   value={formData.delivery_method || 'yamato'}
