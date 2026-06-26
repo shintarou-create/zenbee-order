@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { companyId, newCompanyName, items, notes, deliveryDate } = body
+    const { companyId, newCompanyName, items, notes, deliveryDate, deliveryTimeSlot } = body
 
     if (!companyId && !newCompanyName?.trim()) {
       return NextResponse.json({ error: '取引先を指定してください' }, { status: 400 })
@@ -52,6 +52,10 @@ export async function POST(req: NextRequest) {
       if (isNaN(d.getTime()) || d < now || d > maxDate) {
         return NextResponse.json({ error: '納品希望日が無効です（本日〜180日以内）' }, { status: 400 })
       }
+    }
+    const VALID_TIME_SLOTS = ['morning', 'afternoon', 'evening1', 'evening2', 'evening3']
+    if (deliveryTimeSlot && !VALID_TIME_SLOTS.includes(deliveryTimeSlot)) {
+      return NextResponse.json({ error: '配達時間帯の指定が不正です' }, { status: 400 })
     }
 
     const supabase = createServiceClient()
@@ -258,6 +262,7 @@ export async function POST(req: NextRequest) {
         total_amount: totalAmount,
         notes: notes || null,
         delivery_date: deliveryDate || null,
+        delivery_time_slot: deliveryTimeSlot || null,
       })
       .select()
       .single()

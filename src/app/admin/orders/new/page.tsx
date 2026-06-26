@@ -84,6 +84,7 @@ export default function AdminOrderNewPage() {
 
   // 注文情報
   const [deliveryDate, setDeliveryDate] = useState('')
+  const [deliveryTimeSlot, setDeliveryTimeSlot] = useState('')
   const [notes, setNotes] = useState('')
 
   // 送信
@@ -232,6 +233,7 @@ export default function AdminOrderNewPage() {
             }
       ),
       deliveryDate: deliveryDate || null,
+      deliveryTimeSlot: deliveryTimeSlot || null,
       notes: notes || null,
     }
 
@@ -508,6 +510,24 @@ export default function AdminOrderNewPage() {
           <p className="text-xs text-gray-500">
             本日以降で指定できます（任意）
           </p>
+        </section>
+
+        {/* 配達時間帯 */}
+        <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
+          <h2 className="text-base font-bold text-gray-900">配達時間帯</h2>
+          <select
+            value={deliveryTimeSlot}
+            onChange={(e) => setDeliveryTimeSlot(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+          >
+            <option value="">指定なし</option>
+            <option value="morning">午前中</option>
+            <option value="afternoon">14時〜16時</option>
+            <option value="evening1">16時〜18時</option>
+            <option value="evening2">18時〜20時</option>
+            <option value="evening3">19時〜21時</option>
+          </select>
+          <p className="text-xs text-gray-500">ヤマトの送り状に反映されます（任意）</p>
         </section>
 
         {/* 備考 */}
