@@ -4,7 +4,13 @@ import { generateOrderNumber } from '@/lib/utils'
 import { notifyOrderCreated } from '@/lib/line-messaging'
 import { calculateShipping } from '@/lib/shipping'
 import { isBlockedDeliveryDate, isTooSoonDeliveryDate, hasMixedShipStart } from '@/lib/delivery-rules'
-import type { CreateOrderRequest, CartItem, CoolType } from '@/types'
+import {
+  aggregateCases,
+  getActiveOverrides,
+  resolveUnitPriceOverride,
+  resolveFixedShippingFee,
+} from '@/lib/company-overrides'
+import type { CreateOrderRequest, CartItem, CoolType, CompanyOverride } from '@/types'
 
 export async function POST(req: NextRequest) {
   try {
@@ -125,6 +131,7 @@ export async function POST(req: NextRequest) {
 
     let products: Array<{
       id: string; name: string; unit: string; cool_type: number
+      category: string
       step_qty: number; min_order_qty: number; stock_status: string
       ship_start_date: string | null
       product_prices: Array<{ price_rank: string; price_per_unit: number }>
@@ -167,6 +174,35 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+
+    // パス0: 取引先別の個別単価・送料特例（company_overrides）を取得
+    let overrides: CompanyOverride[] = []
+    {
+      const { data: ovData, error: ovError } = await supabase
+        .from('company_overrides')
+        .select('*')
+        .eq('company_id', company.id)
+      if (ovError) {
+        console.error('company_overrides 取得エラー:', ovError)
+      } else if (ovData) {
+        overrides = ovData as CompanyOverride[]
+      }
+    }
+
+    // パス1: ケース数を事前集計（商品単位・カテゴリ単位）
+    const productCategory = new Map<string, string>()
+    for (const p of products) {
+      if (p.category) productCategory.set(p.id, p.category)
+    }
+    const caseAgg = aggregateCases(
+      normalItems.map((i) => ({ productId: i.productId, quantity: i.quantity, isCustom: false })),
+      productCategory
+    )
+
+    // パス2: 有効な override を確定
+    const activeOverrides = getActiveOverrides(overrides, caseAgg)
+    // パス4（送料）用: 固定送料を決定
+    const activeFixedShippingFee = resolveFixedShippingFee(activeOverrides)
 
     // 在庫確認と金額計算
     let totalAmount = 0
@@ -245,6 +281,16 @@ export async function POST(req: NextRequest) {
         unitPrice = priceEntry?.price_per_unit || 0
       }
 
+      // パス3: 個別単価オーバーライドの適用（通常価格確定の直後）
+      const overridePrice = resolveUnitPriceOverride(activeOverrides, {
+        productId: product.id,
+        pricingTierId: pricingTierId,
+        category: product.category ?? null,
+      })
+      if (overridePrice != null) {
+        unitPrice = overridePrice
+      }
+
       // 在庫確認
       if (product.stock_status === 'cross') {
         return NextResponse.json(
@@ -285,8 +331,11 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // 送料計算
-    const shippingBreakdown = calculateShipping(cartItemsForShipping)
+    // パス4: 送料計算（発送方法 ＋ 固定送料override）
+    const shippingBreakdown = calculateShipping(cartItemsForShipping, {
+      deliveryMethod: company.delivery_method ?? 'yamato',
+      fixedShippingFee: activeFixedShippingFee,
+    })
     totalAmount += shippingBreakdown.total
 
     // 今日の注文数を取得してシーケンス番号を計算

@@ -4,6 +4,7 @@
 // ============================================================
 
 export type PriceRank = 'standard' | 'premium' | 'vip'
+export type DeliveryMethod = 'yamato' | 'direct_delivery' | 'pickup'
 
 // ============================================================
 // Category
@@ -50,6 +51,8 @@ export interface Company {
   phone: string | null
   email: string | null
   price_rank: PriceRank
+  // 発送方法（direct_delivery / pickup は送料一律¥0）
+  delivery_method: DeliveryMethod
   notes: string | null
   is_active: boolean
   // 初回オンボーディング
@@ -78,6 +81,22 @@ export type CompanyUpdate = Partial<CompanyInput>
 export type Customer = Company
 export type CustomerInput = CompanyInput
 export type CustomerUpdate = CompanyUpdate
+
+// ============================================================
+// CompanyOverride（取引先別の個別単価・固定送料特例）
+// ============================================================
+export interface CompanyOverride {
+  id: string
+  company_id: string
+  scope_type: 'product' | 'category'
+  product_id: string | null
+  category: string | null
+  pricing_tier_id: string | null
+  min_cases: number
+  unit_price: number | null
+  fixed_shipping_fee: number | null
+  created_at: string
+}
 
 // ============================================================
 // LineUser

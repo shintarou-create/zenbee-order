@@ -12,7 +12,35 @@ export interface ShippingBreakdown {
   total: number
 }
 
-export function calculateShipping(items: CartItem[]): ShippingBreakdown {
+export interface ShippingOptions {
+  // 'direct_delivery' / 'pickup' は送料一律¥0
+  deliveryMethod?: 'yamato' | 'direct_delivery' | 'pickup'
+  // yamato かつ非null の場合、自動計算せず固定送料1行のみ
+  fixedShippingFee?: number | null
+}
+
+export function calculateShipping(
+  items: CartItem[],
+  options?: ShippingOptions
+): ShippingBreakdown {
+  const deliveryMethod = options?.deliveryMethod ?? 'yamato'
+  const fixedShippingFee = options?.fixedShippingFee ?? null
+
+  // 直接配達・来店引取りは送料一律¥0（自動計算・冷凍箱数チェックともスキップ）
+  if (deliveryMethod === 'direct_delivery' || deliveryMethod === 'pickup') {
+    return { lines: [], total: 0 }
+  }
+
+  // ヤマト発送 かつ 固定送料特例あり: 既存の自動計算を行わず固定送料1行のみ
+  if (fixedShippingFee != null) {
+    return {
+      lines: [
+        { label: '送料（特例固定）', quantity: 1, unitCost: fixedShippingFee, cost: fixedShippingFee },
+      ],
+      total: fixedShippingFee,
+    }
+  }
+
   const lines: ShippingLine[] = []
 
   // 青果（kg単位）: 10kg箱¥1,300優先、端数5kg以下なら5kg箱¥1,000

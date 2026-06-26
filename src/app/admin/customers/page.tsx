@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
 import CustomerTable from '@/components/admin/CustomerTable'
-import type { Company, PriceRank } from '@/types'
+import type { Company, PriceRank, DeliveryMethod, CompanyOverride } from '@/types'
 
 const PRICE_RANKS: { value: string; label: string }[] = [
   { value: 'all', label: 'すべて' },
@@ -43,6 +43,50 @@ const STAGE_FILTER_OPTIONS: { value: 'all' | Stage; label: string }[] = [
 
 const LINE_USER_ID_RE = /^U[0-9a-f]{32}$/
 
+const DELIVERY_METHODS: { value: DeliveryMethod; label: string }[] = [
+  { value: 'yamato', label: 'ヤマト発送' },
+  { value: 'direct_delivery', label: '直接配達（送料¥0）' },
+  { value: 'pickup', label: '来店引取り（送料¥0）' },
+]
+
+// products.category の実値（日本語）
+const OVERRIDE_CATEGORIES = [
+  '柑橘',
+  'ジュース720ml',
+  'ジュース180ml',
+  'ジュース2Lパック',
+  '冷凍ジュース20L',
+  '枇杷',
+  'その他',
+]
+
+type ProductForOverride = {
+  id: string
+  name: string
+  category: string
+  pricing_tiers: { id: string; tier_label: string; quantity: number; is_active: boolean }[]
+}
+
+type OverrideForm = {
+  scope_type: 'product' | 'category'
+  product_id: string
+  category: string
+  pricing_tier_id: string
+  min_cases: string
+  unit_price: string
+  fixed_shipping_fee: string
+}
+
+const initialOverrideForm: OverrideForm = {
+  scope_type: 'product',
+  product_id: '',
+  category: '',
+  pricing_tier_id: '',
+  min_cases: '1',
+  unit_price: '',
+  fixed_shipping_fee: '',
+}
+
 const initialFormData: Partial<Company> = {
   company_name: '',
   representative_name: '',
@@ -54,6 +98,7 @@ const initialFormData: Partial<Company> = {
   phone: '',
   email: '',
   price_rank: 'standard',
+  delivery_method: 'yamato',
   notes: '',
   is_active: true,
   has_separate_billing: false,
@@ -82,6 +127,15 @@ export default function AdminCustomersPage() {
   const [approvingId, setApprovingId] = useState<string | null>(null)
   const [generatingCodeId, setGeneratingCodeId] = useState<string | null>(null)
 
+  // 個別単価・送料特例
+  const [products, setProducts] = useState<ProductForOverride[]>([])
+  const [overrides, setOverrides] = useState<CompanyOverride[]>([])
+  const [overridesLoading, setOverridesLoading] = useState(false)
+  const [overrideForm, setOverrideForm] = useState<OverrideForm>(initialOverrideForm)
+  const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null)
+  const [overrideSaving, setOverrideSaving] = useState(false)
+  const [overrideError, setOverrideError] = useState<string | null>(null)
+
   // LINE 紐づけモーダル
   const [linkingCompany, setLinkingCompany] = useState<Company | null>(null)
   const [linkLineUserId, setLinkLineUserId] = useState('')
@@ -91,7 +145,42 @@ export default function AdminCustomersPage() {
 
   useEffect(() => {
     fetchCompanies()
+    fetchProducts()
   }, [])
+
+  async function fetchProducts() {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name, category, pricing_tiers:product_pricing_tiers (id, tier_label, quantity, is_active)')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true })
+      if (error) throw error
+      setProducts((data ?? []) as unknown as ProductForOverride[])
+    } catch (err) {
+      console.error('商品取得エラー:', err)
+    }
+  }
+
+  async function fetchOverrides(companyId: string) {
+    setOverridesLoading(true)
+    try {
+      const res = await adminFetch(`/api/admin/companies/${companyId}/overrides`)
+      const json = (await res.json()) as { data?: CompanyOverride[]; error?: string }
+      if (res.ok) {
+        setOverrides(json.data ?? [])
+      } else {
+        console.error('特例取得エラー:', json.error)
+        setOverrides([])
+      }
+    } catch (err) {
+      console.error('特例取得エラー:', err)
+      setOverrides([])
+    } finally {
+      setOverridesLoading(false)
+    }
+  }
 
   async function fetchCompanies() {
     setIsLoading(true)
@@ -154,12 +243,21 @@ export default function AdminCustomersPage() {
   function handleEdit(company: Company) {
     setEditingCompany(company)
     setFormData({ ...company })
+    setOverrides([])
+    setOverrideForm(initialOverrideForm)
+    setEditingOverrideId(null)
+    setOverrideError(null)
+    fetchOverrides(company.id)
     setShowModal(true)
   }
 
   function handleAddNew() {
     setEditingCompany(null)
     setFormData(initialFormData)
+    setOverrides([])
+    setOverrideForm(initialOverrideForm)
+    setEditingOverrideId(null)
+    setOverrideError(null)
     setShowModal(true)
   }
 
@@ -210,6 +308,7 @@ export default function AdminCustomersPage() {
         phone: formData.phone || null,
         email: formData.email || null,
         price_rank: formData.price_rank || 'standard',
+        delivery_method: formData.delivery_method || 'yamato',
         notes: formData.notes || null,
         is_active: formData.is_active ?? true,
         has_separate_billing: formData.has_separate_billing ?? false,
@@ -354,6 +453,104 @@ export default function AdminCustomersPage() {
       setLinking(false)
     }
   }
+
+  function handleEditOverride(o: CompanyOverride) {
+    setEditingOverrideId(o.id)
+    setOverrideForm({
+      scope_type: o.scope_type,
+      product_id: o.product_id ?? '',
+      category: o.category ?? '',
+      pricing_tier_id: o.pricing_tier_id ?? '',
+      min_cases: String(o.min_cases),
+      unit_price: o.unit_price != null ? String(o.unit_price) : '',
+      fixed_shipping_fee: o.fixed_shipping_fee != null ? String(o.fixed_shipping_fee) : '',
+    })
+    setOverrideError(null)
+  }
+
+  function handleCancelOverrideEdit() {
+    setEditingOverrideId(null)
+    setOverrideForm(initialOverrideForm)
+    setOverrideError(null)
+  }
+
+  async function handleSaveOverride() {
+    if (!editingCompany) return
+    setOverrideError(null)
+
+    if (overrideForm.scope_type === 'product' && !overrideForm.product_id) {
+      setOverrideError('商品を選択してください')
+      return
+    }
+    if (overrideForm.scope_type === 'category' && !overrideForm.category) {
+      setOverrideError('カテゴリを選択してください')
+      return
+    }
+
+    const payload = {
+      scope_type: overrideForm.scope_type,
+      product_id: overrideForm.scope_type === 'product' ? overrideForm.product_id : null,
+      category: overrideForm.scope_type === 'category' ? overrideForm.category : null,
+      pricing_tier_id: overrideForm.pricing_tier_id || null,
+      min_cases: overrideForm.min_cases || '1',
+      unit_price: overrideForm.unit_price,
+      fixed_shipping_fee: overrideForm.fixed_shipping_fee,
+    }
+
+    setOverrideSaving(true)
+    try {
+      const url = editingOverrideId
+        ? `/api/admin/companies/${editingCompany.id}/overrides/${editingOverrideId}`
+        : `/api/admin/companies/${editingCompany.id}/overrides`
+      const res = await adminFetch(url, {
+        method: editingOverrideId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const json = (await res.json()) as { error?: string }
+      if (!res.ok) {
+        setOverrideError(json.error || '保存に失敗しました')
+        return
+      }
+      setOverrideForm(initialOverrideForm)
+      setEditingOverrideId(null)
+      await fetchOverrides(editingCompany.id)
+    } catch {
+      setOverrideError('通信エラーが発生しました')
+    } finally {
+      setOverrideSaving(false)
+    }
+  }
+
+  async function handleDeleteOverride(overrideId: string) {
+    if (!editingCompany) return
+    try {
+      const res = await adminFetch(
+        `/api/admin/companies/${editingCompany.id}/overrides/${overrideId}`,
+        { method: 'DELETE' }
+      )
+      const json = (await res.json()) as { error?: string }
+      if (!res.ok) {
+        setOverrideError(json.error || '削除に失敗しました')
+        return
+      }
+      if (editingOverrideId === overrideId) handleCancelOverrideEdit()
+      await fetchOverrides(editingCompany.id)
+    } catch {
+      setOverrideError('通信エラーが発生しました')
+    }
+  }
+
+  function overrideTargetLabel(o: CompanyOverride): string {
+    if (o.scope_type === 'product') {
+      return products.find((p) => p.id === o.product_id)?.name ?? '（不明な商品）'
+    }
+    return o.category ?? '（カテゴリ未設定）'
+  }
+
+  const overrideFormProduct = products.find((p) => p.id === overrideForm.product_id)
+  // 数量段階は商品スコープでのみ指定（カテゴリスコープは品種横断のため入数問わず＝空）
+  const overrideTierOptions = (overrideFormProduct?.pricing_tiers ?? []).filter((t) => t.is_active)
 
   return (
     <div className="space-y-4">
@@ -675,6 +872,26 @@ export default function AdminCustomersPage() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">発送方法</label>
+                <select
+                  value={formData.delivery_method || 'yamato'}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, delivery_method: e.target.value as DeliveryMethod }))
+                  }
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  {DELIVERY_METHODS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  直接配達・来店引取りは送料一律¥0で計算されます。
+                </p>
+              </div>
+
               {/* 請求先トグル */}
               <div className="border-t border-gray-100 pt-3">
                 <div className="flex items-center gap-2 mb-2">
@@ -778,6 +995,186 @@ export default function AdminCustomersPage() {
                   有効（発注可能）
                 </label>
               </div>
+
+              {/* 個別単価・送料特例（既存取引先のみ） */}
+              {editingCompany && (
+                <div className="border-t border-gray-100 pt-3 space-y-3">
+                  <h3 className="text-sm font-bold text-gray-900">個別単価・送料特例</h3>
+
+                  {/* 一覧 */}
+                  {overridesLoading ? (
+                    <p className="text-xs text-gray-400">読み込み中...</p>
+                  ) : overrides.length === 0 ? (
+                    <p className="text-xs text-gray-400">登録された特例はありません。</p>
+                  ) : (
+                    <div className="border border-gray-100 rounded-lg divide-y divide-gray-100">
+                      {overrides.map((o) => (
+                        <div key={o.id} className="flex items-start gap-2 p-2.5 text-sm">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900">
+                              {o.scope_type === 'product' ? '商品' : 'カテゴリ'}：{overrideTargetLabel(o)}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {o.min_cases}ケース以上
+                              {o.pricing_tier_id ? '・入数指定あり' : ''}
+                              {o.unit_price != null ? `・単価¥${o.unit_price.toLocaleString()}` : ''}
+                              {o.fixed_shipping_fee != null ? `・固定送料¥${o.fixed_shipping_fee.toLocaleString()}` : ''}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleEditOverride(o)}
+                            className="text-xs text-blue-600 hover:text-blue-700 shrink-0"
+                          >
+                            編集
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteOverride(o.id)}
+                            className="text-xs text-red-500 hover:text-red-600 shrink-0"
+                          >
+                            削除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 追加・編集フォーム */}
+                  <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                    <p className="text-xs font-semibold text-gray-600">
+                      {editingOverrideId ? '特例を編集' : '特例を追加'}
+                    </p>
+
+                    <div className="flex gap-2">
+                      {(['product', 'category'] as const).map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() =>
+                            setOverrideForm((p) => ({
+                              ...p,
+                              scope_type: s,
+                              product_id: '',
+                              category: '',
+                              pricing_tier_id: '',
+                            }))
+                          }
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                            overrideForm.scope_type === s
+                              ? 'bg-green-600 text-white'
+                              : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                          }`}
+                        >
+                          {s === 'product' ? '商品単位' : 'カテゴリ単位'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {overrideForm.scope_type === 'product' ? (
+                      <select
+                        value={overrideForm.product_id}
+                        onChange={(e) =>
+                          setOverrideForm((p) => ({ ...p, product_id: e.target.value, pricing_tier_id: '' }))
+                        }
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                      >
+                        <option value="">商品を選択...</option>
+                        {products.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <select
+                        value={overrideForm.category}
+                        onChange={(e) => setOverrideForm((p) => ({ ...p, category: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                      >
+                        <option value="">カテゴリを選択...</option>
+                        {OVERRIDE_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    {overrideForm.scope_type === 'product' && overrideTierOptions.length > 0 && (
+                      <select
+                        value={overrideForm.pricing_tier_id}
+                        onChange={(e) => setOverrideForm((p) => ({ ...p, pricing_tier_id: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                      >
+                        <option value="">入数：指定なし（全段階対象）</option>
+                        {overrideTierOptions.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.tier_label}（{t.quantity}本）
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-0.5">最小ケース数</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={overrideForm.min_cases}
+                          onChange={(e) => setOverrideForm((p) => ({ ...p, min_cases: e.target.value }))}
+                          className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-0.5">個別単価</label>
+                        <input
+                          type="number"
+                          value={overrideForm.unit_price}
+                          onChange={(e) => setOverrideForm((p) => ({ ...p, unit_price: e.target.value }))}
+                          placeholder="通常価格"
+                          className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-0.5">固定送料</label>
+                        <input
+                          type="number"
+                          value={overrideForm.fixed_shipping_fee}
+                          onChange={(e) =>
+                            setOverrideForm((p) => ({ ...p, fixed_shipping_fee: e.target.value }))
+                          }
+                          placeholder="通常計算"
+                          className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                        />
+                      </div>
+                    </div>
+
+                    {overrideError && <p className="text-xs text-red-600">{overrideError}</p>}
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSaveOverride}
+                        disabled={overrideSaving}
+                        className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-1.5 rounded-lg text-xs disabled:opacity-50 transition-colors"
+                      >
+                        {overrideSaving ? '保存中...' : editingOverrideId ? '更新' : '追加'}
+                      </button>
+                      {editingOverrideId && (
+                        <button
+                          type="button"
+                          onClick={handleCancelOverrideEdit}
+                          className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium px-4 py-1.5 rounded-lg text-xs transition-colors"
+                        >
+                          キャンセル
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="p-4 border-t border-gray-100 flex gap-3">

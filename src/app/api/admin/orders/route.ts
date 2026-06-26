@@ -5,7 +5,13 @@ import { generateOrderNumber } from '@/lib/utils'
 import { notifyOrderCreated } from '@/lib/line-messaging'
 import { calculateShipping } from '@/lib/shipping'
 import { hasMixedShipStart } from '@/lib/delivery-rules'
-import type { CartItem, CoolType } from '@/types'
+import {
+  aggregateCases,
+  getActiveOverrides,
+  resolveUnitPriceOverride,
+  resolveFixedShippingFee,
+} from '@/lib/company-overrides'
+import type { CartItem, CoolType, CompanyOverride, DeliveryMethod } from '@/types'
 
 export async function POST(req: NextRequest) {
   const role = await verifyAdmin(req)
@@ -61,12 +67,12 @@ export async function POST(req: NextRequest) {
     const supabase = createServiceClient()
 
     // 取引先を解決
-    let company: { id: string; company_name: string; price_rank: string }
+    let company: { id: string; company_name: string; price_rank: string; delivery_method: DeliveryMethod }
 
     if (companyId) {
       const { data, error } = await supabase
         .from('companies')
-        .select('id, company_name, price_rank')
+        .select('id, company_name, price_rank, delivery_method')
         .eq('id', companyId)
         .single()
       if (error || !data) {
@@ -78,7 +84,7 @@ export async function POST(req: NextRequest) {
       const trimmedName = (newCompanyName as string).trim()
       const { data: existing } = await supabase
         .from('companies')
-        .select('id, company_name, price_rank')
+        .select('id, company_name, price_rank, delivery_method')
         .eq('company_name', trimmedName)
         .maybeSingle()
 
@@ -94,7 +100,7 @@ export async function POST(req: NextRequest) {
             is_active: true,
             has_separate_billing: false,
           })
-          .select('id, company_name, price_rank')
+          .select('id, company_name, price_rank, delivery_method')
           .single()
         if (insertError || !inserted) {
           console.error('companies INSERT error:', insertError)
@@ -110,6 +116,7 @@ export async function POST(req: NextRequest) {
 
     let products: Array<{
       id: string; name: string; unit: string; cool_type: number
+      category: string
       step_qty: number; min_order_qty: number; stock_status: string
       ship_start_date: string | null
       product_prices: Array<{ price_rank: string; price_per_unit: number }>
@@ -131,6 +138,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'お届け開始時期が異なる商品は同時に注文できません' }, { status: 400 })
     }
 
+
+    // パス0: 取引先別の個別単価・送料特例（company_overrides）を取得
+    let overrides: CompanyOverride[] = []
+    {
+      const { data: ovData, error: ovError } = await supabase
+        .from('company_overrides')
+        .select('*')
+        .eq('company_id', company.id)
+      if (ovError) {
+        console.error('company_overrides 取得エラー:', ovError)
+      } else if (ovData) {
+        overrides = ovData as CompanyOverride[]
+      }
+    }
+
+    // パス1: ケース数を事前集計（商品単位・カテゴリ単位）
+    const productCategory = new Map<string, string>()
+    for (const p of products) {
+      if (p.category) productCategory.set(p.id, p.category)
+    }
+    const caseAgg = aggregateCases(
+      normalItems.map((i: { productId: string; quantity: number }) => ({
+        productId: i.productId,
+        quantity: i.quantity,
+        isCustom: false,
+      })),
+      productCategory
+    )
+
+    // パス2: 有効な override を確定
+    const activeOverrides = getActiveOverrides(overrides, caseAgg)
+    // パス4（送料）用: 固定送料を決定
+    const activeFixedShippingFee = resolveFixedShippingFee(activeOverrides)
 
     // 価格・送料計算
     let totalAmount = 0
@@ -199,6 +239,16 @@ export async function POST(req: NextRequest) {
         unitPrice = priceEntry?.price_per_unit || 0
       }
 
+      // パス3: 個別単価オーバーライドの適用（通常価格確定の直後）
+      const overridePrice = resolveUnitPriceOverride(activeOverrides, {
+        productId: product.id,
+        pricingTierId: pricingTierId,
+        category: product.category ?? null,
+      })
+      if (overridePrice != null) {
+        unitPrice = overridePrice
+      }
+
       if (product.stock_status === 'cross') {
         return NextResponse.json({ error: `${product.name} は現在在庫がありません` }, { status: 400 })
       }
@@ -235,7 +285,11 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const shippingBreakdown = calculateShipping(cartItemsForShipping)
+    // パス4: 送料計算（発送方法 ＋ 固定送料override）
+    const shippingBreakdown = calculateShipping(cartItemsForShipping, {
+      deliveryMethod: company.delivery_method ?? 'yamato',
+      fixedShippingFee: activeFixedShippingFee,
+    })
     totalAmount += shippingBreakdown.total
 
     // order_number 採番
