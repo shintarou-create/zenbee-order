@@ -291,7 +291,7 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
       '',                                          //  4: 伝票番号（自動採番）
       shipDateStr,                                 //  5: 出荷予定日
       deliveryDate,                                //  6: お届け予定日
-      formatDeliveryTimeSlot(order.deliveryTimeSlot),   //  7: 配達時間帯
+      toYamatoTimeSlotCode(order.deliveryTimeSlot),     //  7: 配達時間帯（ヤマトコード）
       '',                                          //  8: お届け先コード
       company.phone.replace(/-/g, ''),             //  9: お届け先電話番号
       '',                                          // 10: お届け先電話番号枝
@@ -407,6 +407,20 @@ export function generateYamatoCsv(orders: OrderForCsv[], shipDate: string): Uint
   const csvText = lines.join('\r\n')
   const encoded = iconv.encode(csvText, 'Shift_JIS')
   return new Uint8Array(encoded.buffer, encoded.byteOffset, encoded.byteLength)
+}
+
+// ヤマトB2クラウド「外部データ取込」用：配達時間帯を半角4桁コードに変換する。
+// formatDeliveryTimeSlot（画面表示用の日本語ラベル）とはキーを共有するが用途が異なる。
+function toYamatoTimeSlotCode(slot: string | null | undefined): string {
+  if (!slot) return ''
+  const codes: Record<string, string> = {
+    'morning':  '0812',
+    'afternoon':'1416',
+    'evening1': '1618',
+    'evening2': '1820',
+    'evening3': '1921',
+  }
+  return codes[slot] || ''   // 未知の値は空（指定なし）にフォールバック
 }
 
 export function formatDeliveryTimeSlot(slot: string | null | undefined): string {
