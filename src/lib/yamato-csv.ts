@@ -382,7 +382,7 @@ function orderToRows(order: OrderForCsv): string[][] {
     row[39] = getYamatoCustomerCode()                    // 40: 請求先顧客コード
     // row[40]                                           // 41: 請求先分類コード
     row[41] = getYamatoFreightManagementNo()             // 42: 運賃管理番号
-    row[73] = isMultiPackage ? orderNum : ''             // 74: 複数口くくりキー（複数口時のみ注文番号）
+    row[73] = isMultiPackage ? orderNum.replace(/-/g, '') : '' // 74: 複数口くくりキー（半角英数字20文字・ハイフン不可。複数口時のみ注文番号）
     return row
   }
 
