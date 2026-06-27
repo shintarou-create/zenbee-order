@@ -281,10 +281,11 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
     handling1: string,
     handling2: string,
     boxCount: number,
+    isMultiPackage: boolean,
   ): string[] {
     return [
       orderNum,                                    //  1: お客様管理番号
-      '0',                                         //  2: 送り状種類（発払い）
+      isMultiPackage ? '6' : '0',                  //  2: 送り状種類（6=複数口 / 0=発払い）
       String(coolType),                            //  3: クール区分
       '',                                          //  4: 伝票番号（自動採番）
       shipDateStr,                                 //  5: 出荷予定日
@@ -321,7 +322,7 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
       '',                                          // 36: 営業所止置き
       '',                                          // 37: 営業所コード
       String(boxCount),                            // 38: 発行枚数
-      '',                                          // 39: 個数口枠の印字
+      isMultiPackage ? '3' : '',                   // 39: 個数口枠の印字
       getYamatoCustomerCode(),                       // 40: ご請求先顧客コード
       '',                                          // 41: ご請求先分類コード
       getYamatoFreightManagementNo(),              // 42: 運賃管理番号
@@ -336,13 +337,24 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
     suffix++
     const cats = new Set(ambientItems.map(i => i.product.category))
     const [h1, h2] = getAmbientHandling(cats)
+    const ambientBoxes = calcAmbientBoxes(ambientItems)
+    // 常温が2箱以上なら複数口（送り状種類6）。発行枚数の上限99超は
+    // ヤマト仕様外のため通常の発払い（単一送り状）にフォールバックする。
+    let ambientMultiPackage = ambientBoxes >= 2
+    if (ambientBoxes > 99) {
+      console.warn(
+        `[yamato-csv] 注文 ${order.orderNumber} の常温箱数が99を超過(${ambientBoxes})。複数口を無効化し発払いにフォールバックします。`,
+      )
+      ambientMultiPackage = false
+    }
     rows.push(buildRow(
       typeCount > 1 ? `${order.orderNumber}-${suffix}` : order.orderNumber,
       0,
       buildItemNameFromProducts(ambientItems),
       h1,
       h2,
-      calcAmbientBoxes(ambientItems),
+      ambientBoxes,
+      ambientMultiPackage,
     ))
   }
 
@@ -355,6 +367,7 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
       '生物',
       '下積み厳禁',
       calcCoolBoxes(coolItems),
+      false,  // クール便は複数口にできないため常に単一送り状
     ))
   }
 
@@ -367,6 +380,7 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
       '',
       '下積み厳禁',
       calcFrozenBoxes(frozenItems),
+      false,  // クール便は複数口にできないため常に単一送り状
     ))
   }
 
