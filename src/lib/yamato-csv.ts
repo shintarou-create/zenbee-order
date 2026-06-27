@@ -56,54 +56,60 @@ export interface OrderForCsv {
 }
 
 // ────────────────────────────────────────────────────────────
-// ヤマトB2クラウド CSVヘッダー（43列固定）
+// ヤマトB2クラウド CSVヘッダー（基本レイアウト 49項目固定）
+// 「外部データから発行 → 基本レイアウト(csv,xls,xlsx)」の並びに一致させる
 // ────────────────────────────────────────────────────────────
 
 const CSV_HEADERS = [
-  'お客様管理番号',        //  1
-  '送り状種類',           //  2
-  'クール区分',           //  3
-  '伝票番号',             //  4
-  '出荷予定日',           //  5
-  'お届け予定日',          //  6
-  '配達時間帯',           //  7
-  'お届け先コード',        //  8
-  'お届け先電話番号',      //  9
-  'お届け先電話番号枝',    // 10
-  'お届け先郵便番号',      // 11
-  'お届け先住所',          // 12
-  'お届け先建物名',        // 13
-  'お届け先会社・部門１',   // 14
-  'お届け先会社・部門２',   // 15
-  'お届け先名',            // 16
-  'お届け先名略称カナ',    // 17
-  '敬称',                 // 18
-  'ご依頼主コード',        // 19
-  'ご依頼主電話番号',      // 20
-  'ご依頼主電話番号枝',    // 21
-  'ご依頼主郵便番号',      // 22
-  'ご依頼主住所',          // 23
-  'ご依頼主建物名',        // 24
-  'ご依頼主名',            // 25
-  'ご依頼主名略称カナ',    // 26
-  '品名コード１',          // 27
-  '品名１',               // 28
-  '品名コード２',          // 29
-  '品名２',               // 30
-  '荷扱い１',             // 31
-  '荷扱い２',             // 32
-  '記事',                 // 33
-  'コレクト代金引換額',    // 34
-  'コレクト内消費税',      // 35
-  '営業所止置き',          // 36
-  '営業所コード',          // 37
-  '発行枚数',             // 38
-  '個数口枠の印字',        // 39
-  'ご請求先顧客コード',    // 40
-  'ご請求先分類コード',    // 41
-  '運賃管理番号',          // 42
-  '備考',                 // 43
-  '複数口くくりキー',       // 44
+  'お客様管理番号',           //  1
+  '送り状種類',              //  2
+  'クール区分',              //  3
+  'お届け先コード',           //  4
+  'お届け先電話番号',         //  5
+  'お届け先電話番号枝番',     //  6
+  'お届け先名',              //  7
+  'お届け先郵便番号',         //  8
+  'お届け先住所',             //  9
+  'お届け先建物名',           // 10
+  'お届け先会社・部門名１',    // 11
+  'お届け先会社・部門名２',    // 12
+  'お届け先名略称カナ',       // 13
+  '敬称',                    // 14
+  'ご依頼主コード',           // 15
+  'ご依頼主電話番号',         // 16
+  'ご依頼主電話番号枝番',     // 17
+  'ご依頼主名',              // 18
+  'ご依頼主郵便番号',         // 19
+  'ご依頼主住所',             // 20
+  'ご依頼主建物名',           // 21
+  'ご依頼主名略称カナ',       // 22
+  '品名コード１',             // 23
+  '品名１',                  // 24
+  '品名コード２',             // 25
+  '品名２',                  // 26
+  '荷扱い１',                // 27
+  '荷扱い２',                // 28
+  '記事',                    // 29
+  'お届け予定（指定）日',      // 30
+  '配達時間帯区分',           // 31
+  'コレクト代金引換額',        // 32
+  'コレクト内消費税額等',      // 33
+  '営業所止置き',             // 34
+  '営業所コード',             // 35
+  '個数口枠の印字',           // 36
+  '発行枚数',                // 37
+  'ご請求先顧客コード',        // 38
+  'ご請求先分類コード',        // 39
+  '運賃管理番号',             // 40
+  'お届け予定ｅメール利用区分', // 41
+  'お届け予定ｅメールアドレス', // 42
+  '入力機種',                // 43
+  'お届け完了ｅメール利用区分', // 44
+  'お届け完了ｅメールアドレス', // 45
+  'お届け完了ｅメールメッセージ', // 46
+  'お届け予定ｅメールメッセージ', // 47
+  '複数口くくりキー',          // 48
+  '検索キータイトル１',        // 49
 ]
 
 // ────────────────────────────────────────────────────────────
@@ -254,7 +260,7 @@ function calcFrozenBoxes(items: OrderItemForCsv[]): number {
 // 1注文 → 1行または2行のCSVフィールド配列を生成
 // ────────────────────────────────────────────────────────────
 
-function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
+function orderToRows(order: OrderForCsv): string[][] {
   const sender = getSenderInfo()
   const { company, items } = order
 
@@ -288,47 +294,52 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
       orderNum,                                    //  1: お客様管理番号
       isMultiPackage ? '6' : '0',                  //  2: 送り状種類（6=複数口 / 0=発払い）
       String(coolType),                            //  3: クール区分
-      '',                                          //  4: 伝票番号（自動採番）
-      shipDateStr,                                 //  5: 出荷予定日
-      deliveryDate,                                //  6: お届け予定日
-      toYamatoTimeSlotCode(order.deliveryTimeSlot),     //  7: 配達時間帯（ヤマトコード）
-      '',                                          //  8: お届け先コード
-      company.phone.replace(/-/g, ''),             //  9: お届け先電話番号
-      '',                                          // 10: お届け先電話番号枝
-      company.postalCode.replace('-', ''),         // 11: お届け先郵便番号
-      recipientAddress,                            // 12: お届け先住所
-      recipientBuilding,                           // 13: お届け先建物名
-      company.companyName,                         // 14: お届け先会社・部門１
-      '',                                          // 15: お届け先会社・部門２
-      company.representativeName,                  // 16: お届け先名
-      '',                                          // 17: お届け先名略称カナ
-      '',                                          // 18: 敬称
-      getYamatoCustomerCode(),                       // 19: ご依頼主コード
-      sender.phone,                                // 20: ご依頼主電話番号
-      '',                                          // 21: ご依頼主電話番号枝
-      sender.postalCode,                           // 22: ご依頼主郵便番号
-      sender.address,                              // 23: ご依頼主住所
-      sender.building,                             // 24: ご依頼主建物名
-      sender.name,                                 // 25: ご依頼主名
-      '',                                          // 26: ご依頼主名略称カナ
-      '',                                          // 27: 品名コード１
-      itemName,                                    // 28: 品名１
-      '',                                          // 29: 品名コード２
-      '',                                          // 30: 品名２
-      handling1,                                   // 31: 荷扱い１
-      handling2,                                   // 32: 荷扱い２
-      '',                                          // 33: 記事（備考はヤマト伝票に出さない）
-      '',                                          // 34: コレクト代金引換額
-      '',                                          // 35: コレクト内消費税
-      '',                                          // 36: 営業所止置き
-      '',                                          // 37: 営業所コード
-      String(boxCount),                            // 38: 発行枚数
-      isMultiPackage ? '3' : '',                   // 39: 個数口枠の印字
-      getYamatoCustomerCode(),                       // 40: ご請求先顧客コード
-      '',                                          // 41: ご請求先分類コード
-      getYamatoFreightManagementNo(),              // 42: 運賃管理番号
-      '',                                          // 43: 備考
-      isMultiPackage ? orderNum : '',              // 44: 複数口くくりキー（複数口時のみ注文番号）
+      '',                                          //  4: お届け先コード
+      company.phone.replace(/-/g, ''),             //  5: お届け先電話番号
+      '',                                          //  6: お届け先電話番号枝番
+      company.representativeName,                  //  7: お届け先名
+      company.postalCode.replace('-', ''),         //  8: お届け先郵便番号
+      recipientAddress,                            //  9: お届け先住所
+      recipientBuilding,                           // 10: お届け先建物名
+      company.companyName,                         // 11: お届け先会社・部門名１
+      '',                                          // 12: お届け先会社・部門名２
+      '',                                          // 13: お届け先名略称カナ
+      '',                                          // 14: 敬称
+      getYamatoCustomerCode(),                     // 15: ご依頼主コード
+      sender.phone,                                // 16: ご依頼主電話番号
+      '',                                          // 17: ご依頼主電話番号枝番
+      sender.name,                                 // 18: ご依頼主名
+      sender.postalCode,                           // 19: ご依頼主郵便番号
+      sender.address,                              // 20: ご依頼主住所
+      sender.building,                             // 21: ご依頼主建物名
+      '',                                          // 22: ご依頼主名略称カナ
+      '',                                          // 23: 品名コード１
+      itemName,                                    // 24: 品名１
+      '',                                          // 25: 品名コード２
+      '',                                          // 26: 品名２
+      handling1,                                   // 27: 荷扱い１
+      handling2,                                   // 28: 荷扱い２
+      '',                                          // 29: 記事
+      deliveryDate,                                // 30: お届け予定（指定）日
+      toYamatoTimeSlotCode(order.deliveryTimeSlot),// 31: 配達時間帯区分（ヤマトコード）
+      '',                                          // 32: コレクト代金引換額
+      '',                                          // 33: コレクト内消費税額等
+      '',                                          // 34: 営業所止置き
+      '',                                          // 35: 営業所コード
+      isMultiPackage ? '3' : '',                   // 36: 個数口枠の印字
+      String(boxCount),                            // 37: 発行枚数
+      getYamatoCustomerCode(),                     // 38: ご請求先顧客コード
+      '',                                          // 39: ご請求先分類コード
+      getYamatoFreightManagementNo(),              // 40: 運賃管理番号
+      '',                                          // 41: お届け予定ｅメール利用区分
+      '',                                          // 42: お届け予定ｅメールアドレス
+      '',                                          // 43: 入力機種
+      '',                                          // 44: お届け完了ｅメール利用区分
+      '',                                          // 45: お届け完了ｅメールアドレス
+      '',                                          // 46: お届け完了ｅメールメッセージ
+      '',                                          // 47: お届け予定ｅメールメッセージ
+      isMultiPackage ? orderNum : '',              // 48: 複数口くくりキー（複数口時のみ注文番号）
+      '',                                          // 49: 検索キータイトル１
     ]
   }
 
@@ -395,11 +406,10 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function generateYamatoCsv(orders: OrderForCsv[], shipDate: string): Uint8Array {
-  const shipDateStr = getTodayJSTString()
   const lines: string[] = [CSV_HEADERS.map(escapeCSVField).join(',')]
 
   for (const order of orders) {
-    for (const row of orderToRows(order, shipDateStr)) {
+    for (const row of orderToRows(order)) {
       lines.push(row.map(escapeCSVField).join(','))
     }
   }
