@@ -103,6 +103,7 @@ const CSV_HEADERS = [
   'ご請求先分類コード',    // 41
   '運賃管理番号',          // 42
   '備考',                 // 43
+  '複数口くくりキー',       // 44
 ]
 
 // ────────────────────────────────────────────────────────────
@@ -327,6 +328,7 @@ function orderToRows(order: OrderForCsv, shipDateStr: string): string[][] {
       '',                                          // 41: ご請求先分類コード
       getYamatoFreightManagementNo(),              // 42: 運賃管理番号
       '',                                          // 43: 備考
+      isMultiPackage ? orderNum : '',              // 44: 複数口くくりキー（複数口時のみ注文番号）
     ]
   }
 
