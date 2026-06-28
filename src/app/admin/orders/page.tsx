@@ -413,11 +413,17 @@ function AdminOrdersContent() {
               </svg>
               納品書印刷
             </button>
-            <span className="text-sm text-gray-700 whitespace-nowrap">お届け予定日:</span>
+            <span
+              className="text-sm text-gray-700 whitespace-nowrap"
+              title="前日に印刷する場合は、この発送日を実際に発送する日に設定してください"
+            >
+              発送日（出荷予定日）:
+            </span>
             <input
               type="date"
               value={shipDate}
               onChange={(e) => setShipDate(e.target.value)}
+              title="前日に印刷する場合は、この発送日を実際に発送する日に設定してください"
               className="border border-green-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white"
             />
             <button

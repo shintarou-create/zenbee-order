@@ -311,9 +311,13 @@ function calcFrozenBoxes(items: OrderItemForCsv[]): number {
 // 1注文 → 1行または2行のCSVフィールド配列を生成
 // ────────────────────────────────────────────────────────────
 
-function orderToRows(order: OrderForCsv): string[][] {
+function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
   const sender = getSenderInfo()
   const { company, items } = order
+
+  // 画面入力(<input type="date">)は YYYY-MM-DD。CSVの出荷予定日列は YYYY/MM/DD。
+  // 単なる日付文字列のためTZ曖昧性は発生しない。ハイフン→スラッシュに統一する。
+  const shipDateStr = shipDate.replace(/-/g, '/')
 
   const { recipientAddress, recipientBuilding } = splitAddress(
     company.prefecture,
@@ -348,8 +352,8 @@ function orderToRows(order: OrderForCsv): string[][] {
     row[1]  = isMultiPackage ? '6' : '0'                 //  2: 送り状種類（6=複数口 / 0=発払い）
     row[2]  = String(coolType)                           //  3: クール区分
     // row[3]                                            //  4: 伝票番号（B2自動付与・空欄）
-    row[4]  = getTodayJSTString()                        //  5: 出荷予定日（今日のJST日付）
-    row[5]  = deliveryDate                               //  6: お届け予定日
+    row[4]  = shipDateStr                                //  5: 出荷予定日（画面で選んだ発送日 YYYY/MM/DD）
+    row[5]  = deliveryDate                               //  6: お届け予定日（各注文の delivery_date 由来・別物）
     row[6]  = toYamatoTimeSlotCode(order.deliveryTimeSlot) //  7: 配達時間帯（ヤマトコード）
     // row[7]                                            //  8: お届け先コード（空）
     row[8]  = company.phone.replace(/-/g, '')            //  9: お届け先電話番号
@@ -447,12 +451,11 @@ function orderToRows(order: OrderForCsv): string[][] {
 // 公開 API
 // ────────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function generateYamatoCsv(orders: OrderForCsv[], shipDate: string): Uint8Array {
   const lines: string[] = [CSV_HEADERS.map(escapeCSVField).join(',')]
 
   for (const order of orders) {
-    for (const row of orderToRows(order)) {
+    for (const row of orderToRows(order, shipDate)) {
       lines.push(row.map(escapeCSVField).join(','))
     }
   }
