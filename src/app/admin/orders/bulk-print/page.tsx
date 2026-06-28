@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Order } from '@/types'
 import DeliveryNoteLayout from '@/components/admin/DeliveryNoteLayout'
+import { waitForImages } from '@/lib/print-utils'
 
 export default function BulkPrintPage() {
   const searchParams = useSearchParams()
@@ -59,12 +60,18 @@ export default function BulkPrintPage() {
 
   useEffect(() => {
     if (!isLoading && orders.length > 0) {
-      const timer = setTimeout(async () => {
+      let cancelled = false
+      ;(async () => {
+        // ロゴ画像のロード完了を待ってから印刷（空枠防止）
+        await waitForImages()
+        if (cancelled) return
         await markDeliveryNotePrinted(orders)
         window.print()
         setPrinted(true)
-      }, 500)
-      return () => clearTimeout(timer)
+      })()
+      return () => {
+        cancelled = true
+      }
     }
   }, [isLoading, orders.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -130,7 +137,7 @@ export default function BulkPrintPage() {
       <div className="no-print mb-6 flex items-center gap-3 px-6 pt-4">
         <span className="text-sm text-gray-600">{orders.length}件の納品書</span>
         <button
-          onClick={async () => { await markDeliveryNotePrinted(orders); window.print(); setPrinted(true) }}
+          onClick={async () => { await waitForImages(); await markDeliveryNotePrinted(orders); window.print(); setPrinted(true) }}
           className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import type { Order } from '@/types'
 import DeliveryNoteLayout from '@/components/admin/DeliveryNoteLayout'
+import { waitForImages, printAfterImagesLoaded } from '@/lib/print-utils'
 
 export default function OrderPrintPage() {
   const params = useParams()
@@ -29,8 +30,16 @@ export default function OrderPrintPage() {
 
   useEffect(() => {
     if (order) {
-      const timer = setTimeout(() => window.print(), 500)
-      return () => clearTimeout(timer)
+      let cancelled = false
+      ;(async () => {
+        // ロゴ画像のロード完了を待ってから印刷（空枠防止）
+        await waitForImages()
+        if (cancelled) return
+        window.print()
+      })()
+      return () => {
+        cancelled = true
+      }
     }
   }, [order])
 
@@ -90,7 +99,7 @@ export default function OrderPrintPage() {
           <p className="text-sm text-gray-600">納品書を印刷またはPDF保存できます</p>
           <div className="flex items-center gap-3 flex-wrap">
             <button
-              onClick={() => window.print()}
+              onClick={() => printAfterImagesLoaded()}
               className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -99,7 +108,7 @@ export default function OrderPrintPage() {
               印刷する
             </button>
             <button
-              onClick={() => window.print()}
+              onClick={() => printAfterImagesLoaded()}
               className="border border-green-600 text-green-700 hover:bg-green-50 font-bold px-6 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors bg-white"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
