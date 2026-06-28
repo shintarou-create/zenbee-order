@@ -91,10 +91,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   if (typeof stockQty === 'number' && stockQty >= 0) {
+    // upsert: inventory 行が無い商品（bb0ae77以前作成等）でも在庫を保存できるようにする。
+    // reserved_qty は payload に含めない → 既存行は現在値を保持、新規行は DEFAULT 0。
     const { error: invError } = await supabase
       .from('inventory')
-      .update({ available_qty: stockQty })
-      .eq('product_id', productId)
+      .upsert({ product_id: productId, available_qty: stockQty }, { onConflict: 'product_id' })
     if (invError) {
       console.error('[products PATCH] inventory update error:', invError)
       return NextResponse.json({ error: '在庫数の保存に失敗しました' }, { status: 500 })

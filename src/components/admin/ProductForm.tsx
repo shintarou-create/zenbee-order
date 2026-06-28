@@ -366,7 +366,7 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
           />
           <span className="text-gray-500 text-sm">{unit}</span>
         </div>
-        <p className="mt-0.5 text-xs text-gray-400">この数を下回ると「在庫注意」、0以下で「在庫切れ」表示になります</p>
+        <p className="mt-0.5 text-xs text-gray-400">在庫数は社内管理用の記録です。お客様への在庫表示（在庫あり／注意／切れ）は、上の「在庫ステータス」で手動設定した内容が反映されます。</p>
       </div>
 
       {/* 価格設定 */}
