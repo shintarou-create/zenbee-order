@@ -66,6 +66,8 @@ export interface Company {
   billing_city: string | null
   billing_address: string | null
   billing_building: string | null
+  // 親会社（請求まとめ先）。NULL=自社単位で請求。自己参照FK・ON DELETE SET NULL。
+  parent_company_id: string | null
   created_at: string
   updated_at: string
   // Joined fields

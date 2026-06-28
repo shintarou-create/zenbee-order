@@ -108,6 +108,7 @@ const initialFormData: Partial<Company> = {
   billing_city: '',
   billing_address: '',
   billing_building: '',
+  parent_company_id: null,
 }
 
 export default function AdminCustomersPage() {
@@ -293,6 +294,12 @@ export default function AdminCustomersPage() {
 
   async function handleSave() {
     if (!formData.company_name?.trim()) return
+    // 親会社に自分自身は指定不可（DB側のCHECK制約とも整合。UIでも除外済みだが二重ガード）
+    if (editingCompany && formData.parent_company_id === editingCompany.id) {
+      setMessage({ type: 'error', text: '親会社に自分自身は指定できません' })
+      setTimeout(() => setMessage(null), 3000)
+      return
+    }
     setSaving(true)
     try {
       const supabase = createClient()
@@ -324,6 +331,8 @@ export default function AdminCustomersPage() {
         billing_building: formData.has_separate_billing
           ? (formData.billing_building || null)
           : null,
+        // 親会社（請求まとめ先）。空選択時は null。
+        parent_company_id: formData.parent_company_id || null,
       }
 
       if (editingCompany) {
@@ -731,6 +740,7 @@ export default function AdminCustomersPage() {
         ) : (
           <CustomerTable
             customers={filteredCompanies}
+            parentNameById={Object.fromEntries(companies.map((c) => [c.id, c.company_name]))}
             onEdit={handleEdit}
             onLinkLine={handleLinkLine}
             onApprove={handleApprove}
@@ -985,6 +995,34 @@ export default function AdminCustomersPage() {
                     />
                   </div>
                 )}
+              </div>
+
+              {/* 親会社（請求まとめ先） */}
+              <div className="border-t border-gray-100 pt-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  親会社（請求まとめ先）
+                </label>
+                <select
+                  value={formData.parent_company_id || ''}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, parent_company_id: e.target.value || null }))
+                  }
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  <option value="">（なし＝この会社単位で請求）</option>
+                  {companies
+                    .filter((c) => c.id !== editingCompany?.id)
+                    .slice()
+                    .sort((a, b) => a.company_name.localeCompare(b.company_name, 'ja'))
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.company_name}
+                      </option>
+                    ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  この店舗の請求を別の親会社にまとめる場合に選択します。「なし」なら従来どおりこの会社単位で請求します。
+                </p>
               </div>
 
               <div>

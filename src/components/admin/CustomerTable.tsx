@@ -12,6 +12,7 @@ const PRICE_RANK_OPTIONS = [
 
 interface CustomerTableProps {
   customers: Company[]
+  parentNameById?: Record<string, string>
   onEdit: (customer: Company) => void
   onLinkLine: (customer: Company) => void
   onApprove?: (customer: Company) => void
@@ -23,6 +24,7 @@ interface CustomerTableProps {
 
 export default function CustomerTable({
   customers,
+  parentNameById,
   onEdit,
   onLinkLine,
   onApprove,
@@ -168,6 +170,11 @@ export default function CustomerTable({
                 <tr key={company.id} className={`hover:bg-gray-50 transition-colors ${isPending ? 'bg-amber-50/40' : ''}`}>
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{company.company_name}</p>
+                    {company.parent_company_id && parentNameById?.[company.parent_company_id] && (
+                      <p className="text-xs text-purple-600 mt-0.5">
+                        親会社：{parentNameById[company.parent_company_id]}
+                      </p>
+                    )}
                     <div className="flex flex-wrap gap-1 mt-0.5">
                       {company.stage && (
                         <span
@@ -328,6 +335,11 @@ export default function CustomerTable({
               {/* 店名 + バッジ */}
               <div>
                 <p className="font-bold text-gray-900 text-base">{company.company_name}</p>
+                {company.parent_company_id && parentNameById?.[company.parent_company_id] && (
+                  <p className="text-xs text-purple-600 mt-0.5">
+                    親会社：{parentNameById[company.parent_company_id]}
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-1 mt-1">
                   {company.has_separate_billing && (
                     <span className="text-xs text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">
