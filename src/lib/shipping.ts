@@ -19,6 +19,15 @@ export interface ShippingOptions {
   fixedShippingFee?: number | null
 }
 
+// 商品名の全角英数字（U+FF01〜U+FF5E）を半角（U+0021〜U+007E）に正規化する。
+// 例: 「温州みかんジュース２L」→「温州みかんジュース2L」。
+// 送料判定（2L / 720ml / 180ml）はこの正規化後の文字列に対して半角リテラルで行う。
+function normalizeProductName(name: string): string {
+  return (name ?? '').replace(/[！-～]/g, (ch) =>
+    String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+  )
+}
+
 export function calculateShipping(
   items: CartItem[],
   options?: ShippingOptions
@@ -79,7 +88,7 @@ export function calculateShipping(
 
   // びわ（パック単位、冷蔵）: 12パックまで¥1,550
   const totalPacks = items
-    .filter((i) => i.unit === 'パック' && !i.productName.includes('2L'))
+    .filter((i) => i.unit === 'パック' && !normalizeProductName(i.productName).includes('2L'))
     .reduce((sum, i) => sum + i.quantity, 0)
 
   if (totalPacks > 0) {
@@ -94,7 +103,7 @@ export function calculateShipping(
 
   // 2Lジュース（パック単位）: 4パックまで¥1,300 / 5パック以上は送料無料
   const total2L = items
-    .filter((i) => i.unit === 'パック' && i.productName.includes('2L'))
+    .filter((i) => i.unit === 'パック' && normalizeProductName(i.productName).includes('2L'))
     .reduce((sum, i) => sum + i.quantity, 0)
 
   if (total2L > 0 && total2L <= 4) {
@@ -108,7 +117,7 @@ export function calculateShipping(
 
   // ジュース720ml: 12本=1箱¥1,500（1〜12本→¥1,500 / 13〜24本→¥3,000 / 25〜36本→¥4,500）
   const total720ml = items
-    .filter((i) => i.unit === '本' && i.productName.includes('720ml'))
+    .filter((i) => i.unit === '本' && normalizeProductName(i.productName).includes('720ml'))
     .reduce((sum, i) => sum + i.quantity * (i.tierQuantity ?? 1), 0)
 
   if (total720ml > 0) {
@@ -123,7 +132,7 @@ export function calculateShipping(
 
   // ジュース180ml: 30本ケース×N(¥1,300each) + 端数10本以内なら小口便(¥1,000) / 11〜29本なら追加ケース(¥1,300)
   const total180ml = items
-    .filter((i) => i.unit === '本' && i.productName.includes('180ml'))
+    .filter((i) => i.unit === '本' && normalizeProductName(i.productName).includes('180ml'))
     .reduce((sum, i) => sum + i.quantity * (i.tierQuantity ?? 1), 0)
 
   if (total180ml > 0) {
