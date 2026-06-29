@@ -29,6 +29,9 @@ export async function POST(req: NextRequest) {
           quantity,
           tier_quantity,
           product:products (name, category, unit, step_qty, cool_type)
+        ),
+        order_shipping (
+          quantity
         )
       `)
       .in('id', orderIds)
@@ -51,6 +54,9 @@ export async function POST(req: NextRequest) {
         deliveryDate: order.delivery_date || undefined,
         deliveryTimeSlot: order.delivery_time_slot || undefined,
         notes: order.notes || undefined,
+        // 口数（箱数）= 送料行の「本数」（行数）。送料欄UIは1行=1箱で、箱を増やす際は
+        // 行を追加する運用のため、quantity の合算ではなく行数（length）で数える。
+        shippingCount: (order.order_shipping || []).length,
         company: {
           postalCode: company?.postal_code || '',
           prefecture: company?.prefecture || '',

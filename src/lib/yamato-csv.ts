@@ -51,6 +51,10 @@ export interface OrderForCsv {
   deliveryDate?: string  // YYYY-MM-DD or YYYY/MM/DD
   deliveryTimeSlot?: string
   notes?: string
+  // 口数（箱数）の根拠。order_shipping（送料行）の本数。
+  // 送料行は quantity 常に1で保存されるため「送料行の本数 = 箱数 = 口数」。
+  // 未指定/0 の注文は最低1口として扱う。
+  shippingCount?: number
   company: CompanyForCsv
   items: OrderItemForCsv[]
 }
@@ -397,25 +401,50 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
     suffix++
     const cats = new Set(ambientItems.map(i => i.product.category))
     const [h1, h2] = getAmbientHandling(cats)
-    const ambientBoxes = calcAmbientBoxes(ambientItems)
-    // 常温が2箱以上なら複数口（送り状種類6）。発行枚数の上限99超は
-    // ヤマト仕様外のため通常の発払い（単一送り状）にフォールバックする。
-    let ambientMultiPackage = ambientBoxes >= 2
-    if (ambientBoxes > 99) {
-      console.warn(
-        `[yamato-csv] 注文 ${order.orderNumber} の常温箱数が99を超過(${ambientBoxes})。複数口を無効化し発払いにフォールバックします。`,
-      )
-      ambientMultiPackage = false
+    const itemName = buildItemNameFromProducts(ambientItems)
+
+    if (typeCount === 1) {
+      // 単一温度帯（常温のみ）。口数は kg・商品数ではなく「送料行の本数」で決める。
+      // 送料行は quantity 常に1で保存されるため「送料行の本数 = 箱数 = 口数」。
+      // 送料行が0本（未入力・送料無料等）の注文は最低1口として1行は出す。
+      const packages = Math.max(1, order.shippingCount ?? 0)
+      const isMultiPackage = packages >= 2
+      // ヤマトB2の複数口は「同じくくりキーを持つ行が口数ぶん並ぶ」ことで成立する。
+      // N>=2 なら必ず N 行に展開する（くくりキー・発行枚数は buildRow 内で全行同一になる）。
+      for (let k = 0; k < packages; k++) {
+        rows.push(buildRow(
+          order.orderNumber,
+          0,
+          itemName,
+          h1,
+          h2,
+          packages,
+          isMultiPackage,
+        ))
+      }
+    } else {
+      // 混載（常温＋クール/冷凍）。送料行はクール区分を持たず温度帯に按分できないため、
+      // 従来の箱数換算ロジックを維持し、温度帯ごとに別々の送り状として出力する。
+      const ambientBoxes = calcAmbientBoxes(ambientItems)
+      // 常温が2箱以上なら複数口（送り状種類6）。発行枚数の上限99超は
+      // ヤマト仕様外のため通常の発払い（単一送り状）にフォールバックする。
+      let ambientMultiPackage = ambientBoxes >= 2
+      if (ambientBoxes > 99) {
+        console.warn(
+          `[yamato-csv] 注文 ${order.orderNumber} の常温箱数が99を超過(${ambientBoxes})。複数口を無効化し発払いにフォールバックします。`,
+        )
+        ambientMultiPackage = false
+      }
+      rows.push(buildRow(
+        `${order.orderNumber}-${suffix}`,
+        0,
+        itemName,
+        h1,
+        h2,
+        ambientBoxes,
+        ambientMultiPackage,
+      ))
     }
-    rows.push(buildRow(
-      typeCount > 1 ? `${order.orderNumber}-${suffix}` : order.orderNumber,
-      0,
-      buildItemNameFromProducts(ambientItems),
-      h1,
-      h2,
-      ambientBoxes,
-      ambientMultiPackage,
-    ))
   }
 
   if (coolItems.length > 0) {
