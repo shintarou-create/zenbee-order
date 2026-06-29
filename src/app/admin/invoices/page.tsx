@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Invoice, Order } from '@/types'
-import { formatDate, formatCurrency } from '@/lib/utils'
+import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
 
 export default function AdminInvoicesPage() {
@@ -33,7 +33,7 @@ export default function AdminInvoicesPage() {
         .from('invoices')
         .select(`
           *,
-          company:companies (company_name),
+          company:companies (company_name, email, has_separate_billing, billing_name),
           invoice_items (id, order_id, amount)
         `)
         .eq('billing_month', selectedMonth)
@@ -107,10 +107,11 @@ export default function AdminInvoicesPage() {
         // 請求番号生成
         const invoiceNumber = `INV-${selectedMonth.replace('-', '')}-${String(created + 1).padStart(3, '0')}`
 
-        // 支払期限: 翌月末
-        const dueDate = new Date(year, month, 0)
-        dueDate.setMonth(dueDate.getMonth() + 1)
-        const dueDateStr = dueDate.toISOString().split('T')[0]
+        // 支払期限: billing_month の翌月末日（例: 2026-06 → 2026-07-31）。
+        // new Date(year, month + 1, 0) = 翌月(month+1, 1-indexed)の0日目 = 翌月末日。
+        // toISOString は UTC 変換で日付がずれるためローカルで手動フォーマットする。
+        const dueDate = new Date(year, month + 1, 0)
+        const dueDateStr = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`
 
         const { data: invoice, error: invoiceError } = await supabase
           .from('invoices')
@@ -177,6 +178,67 @@ export default function AdminInvoicesPage() {
     } catch (err) {
       console.error('ステータス更新エラー:', err)
     }
+  }
+
+  async function handleUpdateDueDate(invoiceId: string, newDueDate: string) {
+    try {
+      const supabase = createClient()
+      await supabase
+        .from('invoices')
+        .update({ due_date: newDueDate || null })
+        .eq('id', invoiceId)
+
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          inv.id === invoiceId ? { ...inv, due_date: newDueDate || null } : inv
+        )
+      )
+    } catch (err) {
+      console.error('支払期限更新エラー:', err)
+    }
+  }
+
+  // 請求書を新しいタブで開く（HTML印刷ページ）
+  function openInvoicePrint(invoiceId: string) {
+    window.open(`/admin/invoices/print?invoiceId=${invoiceId}`, '_blank')
+  }
+
+  // メール下書き（mailto）を開く。宛先 = 請求先会社の email。
+  function openMailDraft(invoice: Invoice) {
+    const company = invoice.company as
+      | { company_name?: string; email?: string | null; has_separate_billing?: boolean | null; billing_name?: string | null }
+      | undefined
+    const email = company?.email
+    if (!email) return
+
+    // 宛名: has_separate_billing かつ billing_name があればそれ、無ければ company_name
+    const addressee =
+      company?.has_separate_billing && company?.billing_name
+        ? company.billing_name
+        : company?.company_name ?? ''
+
+    let dueDateLabel = '別途ご連絡'
+    if (invoice.due_date) {
+      const [dy, dm, dd] = invoice.due_date.split('-').map((n) => parseInt(n))
+      dueDateLabel = `${dy}年${dm}月${dd}日`
+    }
+
+    const subject = `【善兵衛農園】${invoice.billing_month}分 ご請求書の送付`
+    const body = `${addressee} 御中
+
+いつもお世話になっております。株式会社善兵衛でございます。
+${invoice.billing_month}分のご請求書をお送りいたします。
+
+請求書番号: ${invoice.invoice_number}
+ご請求金額: ¥${invoice.total_amount.toLocaleString('ja-JP')}（税込）
+お支払期限: ${dueDateLabel}
+
+お振込先: PayPay銀行 ビジネス営業部（店番005）普通 5419086 カ）ゼンベエ
+
+※請求書PDFを添付しております。ご査収のほどよろしくお願い申し上げます。`
+
+    const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    window.location.href = mailto
   }
 
   async function handleDownloadFreeeCsv() {
@@ -274,6 +336,9 @@ export default function AdminInvoicesPage() {
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">{selectedMonth} の請求書</h2>
+          <p className="text-xs text-gray-400 mt-1">
+            ※「メール下書き」で開いたメールには、先に「請求書を開く」で保存した請求書PDFを手動で添付してください（mailto では添付できません）。
+          </p>
         </div>
 
         {isLoading ? (
@@ -287,15 +352,22 @@ export default function AdminInvoicesPage() {
         ) : (
           <div className="divide-y divide-gray-100">
             {invoices.map((invoice) => {
-              const company = invoice.company as { company_name?: string } | undefined
+              const company = invoice.company as { company_name?: string; email?: string | null } | undefined
+              const hasEmail = !!company?.email
               return (
-                <div key={invoice.id} className="px-4 py-4 flex items-center justify-between gap-3">
+                <div key={invoice.id} className="px-4 py-4 flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900">{invoice.invoice_number}</p>
                     <p className="text-sm text-gray-600">{company?.company_name}</p>
-                    {invoice.due_date && (
-                      <p className="text-xs text-gray-400">支払期限: {formatDate(invoice.due_date)}</p>
-                    )}
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="text-xs text-gray-400">支払期限</span>
+                      <input
+                        type="date"
+                        value={invoice.due_date ?? ''}
+                        onChange={(e) => handleUpdateDueDate(invoice.id, e.target.value)}
+                        className="text-xs border border-gray-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-green-400"
+                      />
+                    </div>
                   </div>
 
                   <div className="text-right flex-shrink-0">
@@ -314,7 +386,26 @@ export default function AdminInvoicesPage() {
                       <option value="paid">入金確認済み</option>
                       <option value="overdue">未払い</option>
                     </select>
+                  </div>
 
+                  {/* 操作ボタン（請求書を開く・メール下書き） */}
+                  <div className="flex items-center gap-2 w-full justify-end">
+                    <button
+                      onClick={() => openInvoicePrint(invoice.id)}
+                      className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                    >
+                      請求書を開く
+                    </button>
+                    {hasEmail ? (
+                      <button
+                        onClick={() => openMailDraft(invoice)}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
+                      >
+                        メール下書き
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-300">メール未登録</span>
+                    )}
                   </div>
                 </div>
               )
