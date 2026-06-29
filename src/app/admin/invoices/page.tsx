@@ -76,24 +76,25 @@ export default function AdminInvoicesPage() {
         return
       }
 
-      // 顧客ごとにグループ化
+      // 請求先会社ごとにグループ化
+      // 請求先会社ID = 親会社があれば親会社ID、無ければ自社ID（company が取れない場合も自社IDにフォールバック）
       const companyOrders: Record<string, Order[]> = {}
       for (const order of orders) {
-        const companyId = order.company_id
-        if (!companyOrders[companyId]) {
-          companyOrders[companyId] = []
+        const billingCompanyId = (order as Order).company?.parent_company_id ?? order.company_id
+        if (!companyOrders[billingCompanyId]) {
+          companyOrders[billingCompanyId] = []
         }
-        companyOrders[companyId].push(order as Order)
+        companyOrders[billingCompanyId].push(order as Order)
       }
 
       // 請求書を作成
       let created = 0
-      for (const [companyId, compOrders] of Object.entries(companyOrders)) {
+      for (const [billingCompanyId, compOrders] of Object.entries(companyOrders)) {
         // 既に請求書があるか確認
         const { data: existing } = await supabase
           .from('invoices')
           .select('id')
-          .eq('company_id', companyId)
+          .eq('company_id', billingCompanyId)
           .eq('billing_month', selectedMonth)
           .single()
 
@@ -115,7 +116,7 @@ export default function AdminInvoicesPage() {
           .from('invoices')
           .insert({
             invoice_number: invoiceNumber,
-            company_id: companyId,
+            company_id: billingCompanyId,
             billing_month: selectedMonth,
             total_amount: totalAmount,
             tax_amount: taxAmount,
