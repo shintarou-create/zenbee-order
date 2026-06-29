@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import type { Order } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor, formatDateWithDay } from '@/lib/utils'
+import { formatDeliveryTimeSlot } from '@/lib/yamato-csv'
 
 type SortKey = 'created_at' | 'delivery_date'
 type SortDir = 'asc' | 'desc'
@@ -286,9 +287,14 @@ export default function OrderTable({
                   {/* 納品日 */}
                   <td className="px-4 py-3 whitespace-nowrap">
                     {order.delivery_date ? (
-                      <span className="font-medium text-gray-900">
-                        {formatDateWithDay(order.delivery_date)}
-                      </span>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-gray-900">
+                          {formatDateWithDay(order.delivery_date)}
+                        </span>
+                        {order.delivery_time_slot && (
+                          <span className="text-xs text-gray-500">{formatDeliveryTimeSlot(order.delivery_time_slot)}</span>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-xs text-gray-300">—</span>
                     )}
@@ -411,6 +417,9 @@ export default function OrderTable({
                   <span className="text-sm font-medium text-gray-900">
                     {order.delivery_date ? formatDateWithDay(order.delivery_date) : '—'}
                   </span>
+                  {order.delivery_time_slot && (
+                    <p className="text-xs text-gray-500">{formatDeliveryTimeSlot(order.delivery_time_slot)}</p>
+                  )}
                 </div>
                 <div className="text-right">
                   <p className="font-bold text-green-700">{formatCurrency(order.total_amount)}</p>

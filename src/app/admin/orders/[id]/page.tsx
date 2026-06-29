@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
 import type { Order, OrderItem, OrderStatus, OrderShippingLine, Company, PriceRank } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
+import { formatDeliveryTimeSlot } from '@/lib/yamato-csv'
 
 interface EditableOrderItem {
   product_id: string | null
@@ -520,6 +521,10 @@ export default function AdminOrderDetailPage() {
             <div className="flex justify-between">
               <span className="text-gray-500">お届け予定日</span>
               <span>{order.delivery_date ? formatDate(order.delivery_date) : '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">配達時間帯</span>
+              <span>{order.delivery_time_slot ? formatDeliveryTimeSlot(order.delivery_time_slot) : '指定なし'}</span>
             </div>
             {order.notes && (
               <div>
