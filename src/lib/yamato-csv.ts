@@ -404,24 +404,30 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
     const itemName = buildItemNameFromProducts(ambientItems)
 
     if (typeCount === 1) {
-      // 単一温度帯（常温のみ）。口数は kg・商品数ではなく「送料行の本数」で決める。
-      // 送料行は quantity 常に1で保存されるため「送料行の本数 = 箱数 = 口数」。
-      // 送料行が0本（未入力・送料無料等）の注文は最低1口として1行は出す。
-      const packages = Math.max(1, order.shippingCount ?? 0)
-      const isMultiPackage = packages >= 2
-      // ヤマトB2の複数口は「同じくくりキーを持つ行が口数ぶん並ぶ」ことで成立する。
-      // N>=2 なら必ず N 行に展開する（くくりキー・発行枚数は buildRow 内で全行同一になる）。
-      for (let k = 0; k < packages; k++) {
-        rows.push(buildRow(
-          order.orderNumber,
-          0,
-          itemName,
-          h1,
-          h2,
-          packages,
-          isMultiPackage,
-        ))
+      // 単一温度帯（常温のみ）。口数は kg箱数（10kg基準）で決める。
+      // calcAmbientBoxes が唯一の根拠（柑橘=ceil(kg/10)・ジュース1ケース1箱・その他1箱）。
+      // 送料行の本数や order.shippingCount には依存しない（kg実態を反映するため）。
+      const ambientBoxes = calcAmbientBoxes(ambientItems)
+      // 2箱以上なら複数口（送り状種類6）。発行枚数の上限99超はヤマト仕様外のため
+      // 通常の発払い（単一送り状）にフォールバックする（混載側と同じ扱い）。
+      let isMultiPackage = ambientBoxes >= 2
+      if (ambientBoxes > 99) {
+        console.warn(
+          `[yamato-csv] 注文 ${order.orderNumber} の常温箱数が99を超過(${ambientBoxes})。複数口を無効化し発払いにフォールバックします。`,
+        )
+        isMultiPackage = false
       }
+      // 複数口でも行は1行のみ。発行枚数(row[37])=N をB2が展開する。
+      // 行を口数ぶん複製すると「行数 × 発行枚数」で二重計上されるため複製しない。
+      rows.push(buildRow(
+        order.orderNumber,
+        0,
+        itemName,
+        h1,
+        h2,
+        ambientBoxes,
+        isMultiPackage,
+      ))
     } else {
       // 混載（常温＋クール/冷凍）。送料行はクール区分を持たず温度帯に按分できないため、
       // 従来の箱数換算ロジックを維持し、温度帯ごとに別々の送り状として出力する。
