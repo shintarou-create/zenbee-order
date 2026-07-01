@@ -55,8 +55,10 @@ export async function POST(req: NextRequest) {
       const d = new Date(deliveryDate)
       const now = new Date()
       const maxDate = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000)
-      if (isNaN(d.getTime()) || d < now || d > maxDate) {
-        return NextResponse.json({ error: '納品希望日が無効です（本日〜180日以内）' }, { status: 400 })
+      // 過去日は許可（Freee発行済み分を実日付で登録するため）。
+      // フォーマットと未来上限（180日）のみ検証し、過去日弾きは行わない。
+      if (isNaN(d.getTime()) || d > maxDate) {
+        return NextResponse.json({ error: '納品希望日が無効です（未来180日以内で指定してください）' }, { status: 400 })
       }
     }
     const VALID_TIME_SLOTS = ['morning', 'afternoon', 'evening1', 'evening2', 'evening3']

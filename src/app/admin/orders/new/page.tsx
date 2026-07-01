@@ -91,8 +91,6 @@ export default function AdminOrderNewPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const todayStr = new Date().toLocaleDateString('sv-SE')
-
   useEffect(() => {
     async function load() {
       const supabase = createClient()
@@ -504,11 +502,10 @@ export default function AdminOrderNewPage() {
             type="date"
             value={deliveryDate}
             onChange={(e) => setDeliveryDate(e.target.value)}
-            min={todayStr}
             className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
           />
           <p className="text-xs text-gray-500">
-            本日以降で指定できます（任意）
+            過去日も指定できます（任意）
           </p>
         </section>
 
