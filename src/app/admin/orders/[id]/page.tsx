@@ -54,6 +54,8 @@ export default function AdminOrderDetailPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [shippingLines, setShippingLines] = useState<{ id?: string; label: string; cost: number }[]>([])
   const [savingShipping, setSavingShipping] = useState(false)
+  const [shippingTemplates, setShippingTemplates] = useState<{ label: string; cost: number }[]>([])
+  const [calcingShipping, setCalcingShipping] = useState(false)
 
   // 取引先編集
   const [showCompanyEditModal, setShowCompanyEditModal] = useState(false)
@@ -127,6 +129,20 @@ export default function AdminOrderDetailPage() {
 
     fetchOrder()
   }, [orderId])
+
+  // 送料テンプレート（箱）を取得（「テンプレートから追加」プルダウン用）
+  useEffect(() => {
+    async function fetchTemplates() {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('shipping_box_templates')
+        .select('label, cost')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+      if (data) setShippingTemplates(data as { label: string; cost: number }[])
+    }
+    fetchTemplates()
+  }, [])
 
   // pending 注文のときだけ商品一覧を取得（商品追加セレクタ用）
   useEffect(() => {
@@ -343,6 +359,38 @@ export default function AdminOrderDetailPage() {
     } finally {
       setSavingShipping(false)
       setTimeout(() => setMessage(null), 3000)
+    }
+  }
+
+  async function handleCalcShipping() {
+    if (!order) return
+    if (!window.confirm('現在の送料行を自動計算の結果で置き換えます。よろしいですか？')) return
+    setCalcingShipping(true)
+    try {
+      const res = await adminFetch(`/api/admin/orders/${orderId}/calc-shipping`)
+      const json = await res.json()
+      if (!res.ok) {
+        setMessage({ type: 'error', text: json.error || '送料の自動計算に失敗しました' })
+        return
+      }
+      const lines = (json.lines as { label: string; cost: number }[]) ?? []
+      // 自動計算結果で全置き換え（追加ではなくリセット）。
+      setShippingLines(lines.map((l) => ({ label: l.label, cost: l.cost })))
+      const warnings = (json.warnings as string[]) ?? []
+      if (warnings.length > 0) {
+        setMessage({
+          type: 'success',
+          text: `自動計算しました。ただし手入力が必要な商品があります: ${warnings.join('、')}`,
+        })
+      } else {
+        setMessage({ type: 'success', text: '送料を自動計算しました。内容を確認して「送料を保存」を押してください。' })
+      }
+    } catch (err) {
+      console.error('送料自動計算エラー:', err)
+      setMessage({ type: 'error', text: '送料の自動計算に失敗しました' })
+    } finally {
+      setCalcingShipping(false)
+      setTimeout(() => setMessage(null), 6000)
     }
   }
 
@@ -793,16 +841,43 @@ export default function AdminOrderDetailPage() {
         )}
         {/* 送料明細（編集可能） */}
         <div className="border-t border-gray-100">
-          <div className="px-4 py-2 bg-gray-50 flex items-center justify-between">
+          <div className="px-4 py-2 bg-gray-50 flex items-center justify-between gap-2 flex-wrap">
             <span className="text-xs font-semibold text-gray-500">送料</span>
             {isShippingEditable && (
-              <button
-                type="button"
-                onClick={() => setShippingLines((prev) => [...prev, { label: '', cost: 0 }])}
-                className="text-xs text-green-600 hover:text-green-700 font-medium"
-              >
-                ＋ 送料行を追加
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* テンプレートから追加 */}
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const tpl = shippingTemplates.find((t) => t.label === e.target.value)
+                    if (tpl) setShippingLines((prev) => [...prev, { label: tpl.label, cost: tpl.cost }])
+                    e.target.value = ''
+                  }}
+                  className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-green-400"
+                >
+                  <option value="">テンプレートから追加…</option>
+                  {shippingTemplates.map((t) => (
+                    <option key={t.label} value={t.label}>
+                      {t.label}（{formatCurrency(t.cost)}）
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleCalcShipping}
+                  disabled={calcingShipping}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+                >
+                  {calcingShipping ? '計算中...' : '送料を自動計算'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShippingLines((prev) => [...prev, { label: '', cost: 0 }])}
+                  className="text-xs text-green-600 hover:text-green-700 font-medium"
+                >
+                  ＋ 送料行を追加
+                </button>
+              </div>
             )}
           </div>
           {shippingLines.length === 0 && (
