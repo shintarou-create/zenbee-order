@@ -11,6 +11,7 @@ export default function AdminInvoicesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [downloadingCsv, setDownloadingCsv] = useState(false)
+  const [gmailDraftingId, setGmailDraftingId] = useState<string | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // 月選択（デフォルト: 先月）
@@ -248,6 +249,37 @@ ${invoice.billing_month}分のご請求書をお送りいたします。
     window.location.href = mailto
   }
 
+  // Gmail下書きを作成（サーバーでPDF生成→Gmail APIで下書き作成・PDF添付）
+  async function handleCreateGmailDraft(invoice: Invoice) {
+    setGmailDraftingId(invoice.id)
+    try {
+      const res = await adminFetch(`/api/admin/invoices/${invoice.id}/gmail-draft`, {
+        method: 'POST',
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const text =
+          res.status === 503
+            ? 'Gmail連携が未設定です。管理者に連絡してください。'
+            : json.error || 'Gmail下書きの作成に失敗しました'
+        setMessage({ type: 'error', text })
+        setTimeout(() => setMessage(null), 6000)
+        return
+      }
+      setMessage({
+        type: 'success',
+        text: 'Gmailの下書きを作成しました。Gmailを開いて送信してください（下記リンク）。',
+      })
+      setTimeout(() => setMessage(null), 10000)
+    } catch (err) {
+      console.error('Gmail下書き作成エラー:', err)
+      setMessage({ type: 'error', text: 'Gmail下書きの作成に失敗しました' })
+      setTimeout(() => setMessage(null), 6000)
+    } finally {
+      setGmailDraftingId(null)
+    }
+  }
+
   async function handleDownloadFreeeCsv() {
     setDownloadingCsv(true)
     try {
@@ -301,6 +333,19 @@ ${invoice.billing_month}分のご請求書をお送りいたします。
           message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
         }`}>
           {message.text}
+          {message.type === 'success' && message.text.includes('Gmail') && (
+            <>
+              {' '}
+              <a
+                href="https://mail.google.com/mail/u/0/#drafts"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline font-bold text-green-800 hover:text-green-900"
+              >
+                Gmailの下書きを開く
+              </a>
+            </>
+          )}
         </div>
       )}
 
@@ -404,12 +449,21 @@ ${invoice.billing_month}分のご請求書をお送りいたします。
                       請求書を開く
                     </button>
                     {hasEmail ? (
-                      <button
-                        onClick={() => openMailDraft(invoice)}
-                        className="text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
-                      >
-                        メール下書き
-                      </button>
+                      <>
+                        <button
+                          onClick={() => openMailDraft(invoice)}
+                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
+                        >
+                          メール下書き
+                        </button>
+                        <button
+                          onClick={() => handleCreateGmailDraft(invoice)}
+                          disabled={gmailDraftingId === invoice.id}
+                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 disabled:opacity-50 transition-colors"
+                        >
+                          {gmailDraftingId === invoice.id ? '作成中...' : 'Gmail下書きを作成'}
+                        </button>
+                      </>
                     ) : (
                       <span className="text-xs text-gray-300">メール未登録</span>
                     )}
