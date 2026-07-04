@@ -27,11 +27,16 @@ async function resolveLaunchOptions(): Promise<LaunchOptions> {
   const isProd = process.env.NODE_ENV === 'production'
 
   if (isProd) {
-    // Vercel / 本番 serverless: @sparticuz/chromium の同梱バイナリを使う。
-    const chromium = (await import('@sparticuz/chromium')).default
+    // Vercel / 本番 serverless: @sparticuz/chromium-min を使い、共有ライブラリ込みの
+    // chromium バイナリ(pack.tar・66MB)を実行時にリモート取得して /tmp に展開する。
+    // （同梱版だと .br 圧縮の libnss3.so 等が Vercel のトレースから漏れて起動失敗するため）
+    const chromium = (await import('@sparticuz/chromium-min')).default
+    const packUrl =
+      process.env.CHROMIUM_PACK_URL ||
+      'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar'
     return {
       args: chromium.args,
-      executablePath: await chromium.executablePath(),
+      executablePath: await chromium.executablePath(packUrl),
       headless: chromium.headless, // 'shell'（新しい chromium ヘッドレス）
       defaultViewport: chromium.defaultViewport ?? A4_VIEWPORT,
     }
