@@ -12,6 +12,7 @@ export default function AdminInvoicesPage() {
   const [generating, setGenerating] = useState(false)
   const [downloadingCsv, setDownloadingCsv] = useState(false)
   const [gmailDraftingId, setGmailDraftingId] = useState<string | null>(null)
+  const [bulkRunning, setBulkRunning] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // 月選択（デフォルト: 先月）
@@ -211,70 +212,84 @@ export default function AdminInvoicesPage() {
     window.open(`/admin/invoices/print?invoiceId=${invoiceId}`, '_blank')
   }
 
-  // メール下書き（mailto）を開く。宛先 = 請求先会社の email。
-  function openMailDraft(invoice: Invoice) {
-    const company = invoice.company as
-      | { company_name?: string; email?: string | null; has_separate_billing?: boolean | null; billing_name?: string | null }
-      | undefined
-    const email = company?.email
-    if (!email) return
-
-    // 宛名: has_separate_billing かつ billing_name があればそれ、無ければ company_name
-    const addressee =
-      company?.has_separate_billing && company?.billing_name
-        ? company.billing_name
-        : company?.company_name ?? ''
-
-    let dueDateLabel = '別途ご連絡'
-    if (invoice.due_date) {
-      const [dy, dm, dd] = invoice.due_date.split('-').map((n) => parseInt(n))
-      dueDateLabel = `${dy}年${dm}月${dd}日`
-    }
-
-    const subject = `【善兵衛農園】${invoice.billing_month}分 ご請求書の送付`
-    const body = `${addressee} 御中
-
-いつもお世話になっております。株式会社善兵衛でございます。
-${invoice.billing_month}分のご請求書をお送りいたします。
-
-請求書番号: ${invoice.invoice_number}
-ご請求金額: ¥${invoice.total_amount.toLocaleString('ja-JP')}（税込）
-お支払期限: ${dueDateLabel}
-
-お振込先: PayPay銀行 ビジネス営業部（店番005）普通 5419086 カ）ゼンベエ
-
-※請求書PDFを添付しております。ご査収のほどよろしくお願い申し上げます。`
-
-    const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-    window.location.href = mailto
-  }
-
-  // Gmail下書きを作成（サーバーでPDF生成→Gmail APIで下書き作成・PDF添付）
-  async function handleCreateGmailDraft(invoice: Invoice) {
-    setGmailDraftingId(invoice.id)
+  // 1社分のGmail下書きを作成する共通処理。成功可否とエラー文言を返す。
+  // 成功時はローカルstateの gmail_draft_created_at を即時反映（バッジが緑になる）。
+  async function createGmailDraftFor(invoice: Invoice): Promise<{ ok: boolean; error?: string }> {
     try {
       const res = await adminFetch(`/api/admin/invoices/${invoice.id}/gmail-draft`, {
         method: 'POST',
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
-        // APIが返した error メッセージをそのまま表示（原因を画面で判別できるように）
-        const text = json.error || `Gmail下書きの作成に失敗しました（HTTP ${res.status}）`
-        setMessage({ type: 'error', text })
-        setTimeout(() => setMessage(null), 12000)
-        return
+        return { ok: false, error: json.error || `HTTP ${res.status}` }
       }
+      const createdAt = json.gmailDraftCreatedAt || new Date().toISOString()
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          inv.id === invoice.id ? { ...inv, gmail_draft_created_at: createdAt } : inv
+        )
+      )
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  // 単体：Gmail下書きを作成（サーバーでPDF生成→Gmail APIで下書き作成・PDF添付）
+  async function handleCreateGmailDraft(invoice: Invoice) {
+    setGmailDraftingId(invoice.id)
+    setMessage({ type: 'success', text: 'PDFを作成しています（初回は準備に30秒ほどかかります）…' })
+    const r = await createGmailDraftFor(invoice)
+    if (!r.ok) {
+      setMessage({ type: 'error', text: r.error || 'Gmail下書きの作成に失敗しました' })
+      setTimeout(() => setMessage(null), 12000)
+    } else {
       setMessage({
         type: 'success',
         text: 'Gmailの下書きを作成しました。Gmailを開いて送信してください（下記リンク）。',
       })
       setTimeout(() => setMessage(null), 10000)
-    } catch (err) {
-      console.error('Gmail下書き作成エラー:', err)
-      setMessage({ type: 'error', text: 'Gmail下書きの作成に失敗しました' })
-      setTimeout(() => setMessage(null), 6000)
+    }
+    setGmailDraftingId(null)
+  }
+
+  // 一括：メール登録あり かつ 未作成の請求書を1社ずつ直列で処理（並列禁止）。
+  async function handleBulkGmailDraft() {
+    const targets = invoices.filter((inv) => {
+      const c = inv.company as { email?: string | null } | undefined
+      return !!c?.email && !inv.gmail_draft_created_at
+    })
+    if (targets.length === 0) return
+    if (!window.confirm(`${targets.length}社分のGmail下書きを作成します。よろしいですか？`)) return
+
+    setBulkRunning(true)
+    const failures: { name: string; error: string }[] = []
+    let success = 0
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        const invoice = targets[i]
+        setMessage({
+          type: 'success',
+          text: `Gmail下書きを作成中… ${i + 1} / ${targets.length} 社（初回は準備に30秒ほどかかります）`,
+        })
+        const r = await createGmailDraftFor(invoice)
+        if (r.ok) {
+          success++
+        } else {
+          failures.push({ name: getCompanyView(invoice).displayName, error: r.error || '不明なエラー' })
+        }
+      }
+      const failText =
+        failures.length > 0
+          ? '（' + failures.map((f) => `${f.name}: ${f.error}`).join(' / ') + '）'
+          : '。Gmailの下書きを確認してください。'
+      setMessage({
+        type: failures.length > 0 ? 'error' : 'success',
+        text: `完了：成功${success}社／失敗${failures.length}社${failText}`,
+      })
+      setTimeout(() => setMessage(null), 15000)
     } finally {
-      setGmailDraftingId(null)
+      setBulkRunning(false)
     }
   }
 
@@ -311,6 +326,40 @@ ${invoice.billing_month}分のご請求書をお送りいたします。
       setDownloadingCsv(false)
     }
   }
+
+  // 請求先会社の表示情報。has_separate_billing かつ billing_name があれば billing_name を主表示、
+  // company_name を「店舗名」として添える。
+  function getCompanyView(invoice: Invoice) {
+    const c = invoice.company as
+      | { company_name?: string; email?: string | null; has_separate_billing?: boolean | null; billing_name?: string | null }
+      | undefined
+    const useBilling = !!(c?.has_separate_billing && c?.billing_name)
+    const displayName = useBilling ? c!.billing_name! : c?.company_name ?? '（会社名未設定）'
+    const storeName = useBilling ? c?.company_name ?? '' : ''
+    return { email: c?.email ?? null, displayName, storeName }
+  }
+
+  // ISO日時 → 日本時間「M/D HH:mm」
+  function formatDraftBadge(ts: string): string {
+    const jst = new Date(new Date(ts).toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }))
+    const hh = String(jst.getHours()).padStart(2, '0')
+    const mi = String(jst.getMinutes()).padStart(2, '0')
+    return `${jst.getMonth() + 1}/${jst.getDate()} ${hh}:${mi}`
+  }
+
+  // 一括対象（メール登録あり かつ 未作成）
+  const bulkTargetCount = invoices.filter((inv) => {
+    const c = inv.company as { email?: string | null } | undefined
+    return !!c?.email && !inv.gmail_draft_created_at
+  }).length
+
+  // メール未登録の請求書（警告バナー用）
+  const noEmailNames = invoices
+    .filter((inv) => {
+      const c = inv.company as { email?: string | null } | undefined
+      return !c?.email
+    })
+    .map((inv) => getCompanyView(inv).displayName)
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -379,16 +428,31 @@ ${invoice.billing_month}分のご請求書をお送りいたします。
             </svg>
             {downloadingCsv ? 'ダウンロード中...' : 'freee CSV'}
           </button>
+          <button
+            onClick={handleBulkGmailDraft}
+            disabled={bulkRunning || gmailDraftingId !== null || bulkTargetCount === 0}
+            className="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            {bulkRunning ? '作成中...' : `全社まとめてGmail下書き作成${bulkTargetCount > 0 ? `（${bulkTargetCount}社）` : ''}`}
+          </button>
         </div>
       </div>
+
+      {/* メール未登録の事前警告バナー */}
+      {noEmailNames.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="font-bold">メール未登録の取引先が{noEmailNames.length}社あります：</span>
+          {noEmailNames.join('、')}
+        </div>
+      )}
 
       {/* 請求書一覧 */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">{selectedMonth} の請求書</h2>
-          <p className="text-xs text-gray-400 mt-1">
-            ※「メール下書き」で開いたメールには、先に「請求書を開く」で保存した請求書PDFを手動で添付してください（mailto では添付できません）。
-          </p>
         </div>
 
         {isLoading ? (
@@ -402,26 +466,47 @@ ${invoice.billing_month}分のご請求書をお送りいたします。
         ) : (
           <div className="divide-y divide-gray-100">
             {invoices.map((invoice) => {
-              const company = invoice.company as { company_name?: string; email?: string | null } | undefined
-              const hasEmail = !!company?.email
+              const { email, displayName, storeName } = getCompanyView(invoice)
+              const hasEmail = !!email
+              const busy = gmailDraftingId !== null || bulkRunning
               return (
-                <div key={invoice.id} className="px-4 py-4 flex items-center justify-between gap-3 flex-wrap">
+                <div key={invoice.id} className="px-4 py-4 flex items-start justify-between gap-3 flex-wrap">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{invoice.invoice_number}</p>
-                    <p className="text-sm text-gray-600">{company?.company_name}</p>
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-xs text-gray-400">支払期限</span>
-                      <input
-                        type="date"
-                        value={invoice.due_date ?? ''}
-                        onChange={(e) => handleUpdateDueDate(invoice.id, e.target.value)}
-                        className="text-xs border border-gray-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-green-400"
-                      />
+                    {/* 会社名（主役） */}
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <p className="text-lg font-semibold text-gray-900 truncate">{displayName}</p>
+                      {storeName && <span className="text-xs text-gray-400">（店舗名: {storeName}）</span>}
+                    </div>
+                    {/* 請求書番号・支払期限（小さくグレー・1行） */}
+                    <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-gray-400">
+                      <span>{invoice.invoice_number}</span>
+                      <span className="text-gray-300">/</span>
+                      <span className="flex items-center gap-1">
+                        支払期限
+                        <input
+                          type="date"
+                          value={invoice.due_date ?? ''}
+                          onChange={(e) => handleUpdateDueDate(invoice.id, e.target.value)}
+                          className="text-xs border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 focus:outline-none focus:ring-1 focus:ring-green-400"
+                        />
+                      </span>
+                    </div>
+                    {/* 状態バッジ */}
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                      {invoice.gmail_draft_created_at ? (
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                          下書き作成済み {formatDraftBadge(invoice.gmail_draft_created_at)}
+                        </span>
+                      ) : (
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                          未作成
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   <div className="text-right flex-shrink-0">
-                    <p className="font-bold text-green-700">{formatCurrency(invoice.total_amount)}</p>
+                    <p className="font-bold text-green-700 text-lg">{formatCurrency(invoice.total_amount)}</p>
                     <p className="text-xs text-gray-400">税額: {formatCurrency(invoice.tax_amount)}</p>
                   </div>
 
@@ -436,9 +521,17 @@ ${invoice.billing_month}分のご請求書をお送りいたします。
                       <option value="paid">入金確認済み</option>
                       <option value="overdue">未払い</option>
                     </select>
+                    {invoice.status === 'draft' && (
+                      <button
+                        onClick={() => handleUpdateStatus(invoice.id, 'sent')}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
+                      >
+                        送信済みにする
+                      </button>
+                    )}
                   </div>
 
-                  {/* 操作ボタン（請求書を開く・メール下書き） */}
+                  {/* 操作ボタン（請求書を開く・Gmail下書き） */}
                   <div className="flex items-center gap-2 w-full justify-end">
                     <button
                       onClick={() => openInvoicePrint(invoice.id)}
@@ -447,21 +540,13 @@ ${invoice.billing_month}分のご請求書をお送りいたします。
                       請求書を開く
                     </button>
                     {hasEmail ? (
-                      <>
-                        <button
-                          onClick={() => openMailDraft(invoice)}
-                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
-                        >
-                          メール下書き
-                        </button>
-                        <button
-                          onClick={() => handleCreateGmailDraft(invoice)}
-                          disabled={gmailDraftingId === invoice.id}
-                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 disabled:opacity-50 transition-colors"
-                        >
-                          {gmailDraftingId === invoice.id ? '作成中...' : 'Gmail下書きを作成'}
-                        </button>
-                      </>
+                      <button
+                        onClick={() => handleCreateGmailDraft(invoice)}
+                        disabled={busy}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 disabled:opacity-50 transition-colors"
+                      >
+                        {gmailDraftingId === invoice.id ? '作成中...' : 'Gmail下書きを作成'}
+                      </button>
                     ) : (
                       <span className="text-xs text-gray-300">メール未登録</span>
                     )}

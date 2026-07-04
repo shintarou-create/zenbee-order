@@ -115,7 +115,18 @@ ${monthLabel}分のご請求書を添付にてお送りいたします。
       return NextResponse.json({ error: `Gmail下書きAPIエラー: ${em(err)}` }, { status: 500 })
     }
 
-    return NextResponse.json({ ok: true, draftId })
+    // 下書き作成成功後、作成日時を記録する。
+    // この更新に失敗しても下書き自体は作成済みなのでレスポンスは成功として返す。
+    const gmailDraftCreatedAt = new Date().toISOString()
+    const { error: updateError } = await supabase
+      .from('invoices')
+      .update({ gmail_draft_created_at: gmailDraftCreatedAt })
+      .eq('id', invoiceId)
+    if (updateError) {
+      console.error('[gmail-draft] gmail_draft_created_at 更新失敗:', updateError)
+    }
+
+    return NextResponse.json({ ok: true, draftId, gmailDraftCreatedAt })
   } catch (err) {
     console.error('[gmail-draft] 予期しないエラー:', err)
     return NextResponse.json({ error: `Gmail下書きの作成に失敗しました: ${em(err)}` }, { status: 500 })

@@ -267,6 +267,8 @@ export interface Invoice {
   status: InvoiceStatus
   due_date: string | null
   paid_at: string | null
+  // Gmail下書きを作成した日時（未作成は null）
+  gmail_draft_created_at: string | null
   created_at: string
   // Joined fields
   company?: Company
