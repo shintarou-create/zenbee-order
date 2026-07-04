@@ -258,12 +258,10 @@ ${invoice.billing_month}分のご請求書をお送りいたします。
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const text =
-          res.status === 503
-            ? 'Gmail連携が未設定です。管理者に連絡してください。'
-            : json.error || 'Gmail下書きの作成に失敗しました'
+        // APIが返した error メッセージをそのまま表示（原因を画面で判別できるように）
+        const text = json.error || `Gmail下書きの作成に失敗しました（HTTP ${res.status}）`
         setMessage({ type: 'error', text })
-        setTimeout(() => setMessage(null), 6000)
+        setTimeout(() => setMessage(null), 12000)
         return
       }
       setMessage({

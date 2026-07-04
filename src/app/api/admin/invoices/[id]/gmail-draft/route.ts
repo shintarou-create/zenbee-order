@@ -3,7 +3,12 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { buildInvoiceDetail } from '@/lib/invoice-detail-data'
 import { renderInvoiceHtml } from '@/lib/invoice-html'
 import { htmlToPdf } from '@/lib/pdf-render'
-import { hasGmailConfig, createGmailDraft } from '@/lib/gmail'
+import { hasGmailConfig, getGmailAccessToken, createGmailDraft } from '@/lib/gmail'
+
+// 例外メッセージを先頭200字に丸める（画面表示・ログ用）
+function em(err: unknown): string {
+  return (err instanceof Error ? err.message : String(err)).slice(0, 200)
+}
 
 // 請求書PDFを生成し、Gmailに下書き（PDF添付）を作成する。
 // 認証は middleware（/api/admin/*：LIFFアクセストークン→admin_users照合）で実施済み。
@@ -46,9 +51,15 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: '取引先のメールアドレスが未登録です' }, { status: 400 })
     }
 
-    // 請求書PDFを生成
+    // 請求書PDFを生成（puppeteer/chromium）
     const html = renderInvoiceHtml(detail)
-    const pdf = await htmlToPdf(html)
+    let pdf: Buffer
+    try {
+      pdf = await htmlToPdf(html)
+    } catch (err) {
+      console.error('[gmail-draft] PDF生成失敗:', err)
+      return NextResponse.json({ error: `PDF生成に失敗: ${em(err)}` }, { status: 500 })
+    }
 
     const monthLabel = jpMonth(detail.invoice.billing_month)
     const addressee = detail.billing.name
@@ -77,16 +88,36 @@ ${monthLabel}分のご請求書を添付にてお送りいたします。
 
     const filename = `請求書_${companyForFile}_${detail.invoice.billing_month}.pdf`
 
-    const { draftId } = await createGmailDraft({
-      to: email,
-      subject,
-      bodyText,
-      attachment: { filename, content: pdf, mimeType: 'application/pdf' },
-    })
+    // Gmail アクセストークン取得（refresh_token → access_token）
+    let accessToken: string
+    try {
+      accessToken = await getGmailAccessToken()
+    } catch (err) {
+      console.error('[gmail-draft] Gmail認証失敗:', err)
+      return NextResponse.json({ error: `Gmail認証に失敗: ${em(err)}` }, { status: 500 })
+    }
+
+    // Gmail 下書き作成（drafts.create）
+    let draftId = ''
+    try {
+      const result = await createGmailDraft(
+        {
+          to: email,
+          subject,
+          bodyText,
+          attachment: { filename, content: pdf, mimeType: 'application/pdf' },
+        },
+        accessToken,
+      )
+      draftId = result.draftId
+    } catch (err) {
+      console.error('[gmail-draft] Gmail下書きAPI失敗:', err)
+      return NextResponse.json({ error: `Gmail下書きAPIエラー: ${em(err)}` }, { status: 500 })
+    }
 
     return NextResponse.json({ ok: true, draftId })
   } catch (err) {
-    console.error('Gmail下書き作成エラー:', err)
-    return NextResponse.json({ error: 'Gmail下書きの作成に失敗しました' }, { status: 500 })
+    console.error('[gmail-draft] 予期しないエラー:', err)
+    return NextResponse.json({ error: `Gmail下書きの作成に失敗しました: ${em(err)}` }, { status: 500 })
   }
 }

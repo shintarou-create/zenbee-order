@@ -1,8 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    // iconv-lite の Shift_JIS エンコードテーブルを webpack バンドル外で読み込む
-    serverComponentsExternalPackages: ['iconv-lite'],
+    // webpack バンドル外で読み込むサーバー専用パッケージ:
+    // - iconv-lite: Shift_JIS エンコードテーブル
+    // - @sparticuz/chromium / puppeteer-core: chromium バイナリをバンドルすると
+    //   本番(Vercel)で ENOENT になるため必ず external にする
+    serverComponentsExternalPackages: ['iconv-lite', '@sparticuz/chromium', 'puppeteer-core'],
   },
   images: {
     remotePatterns: [

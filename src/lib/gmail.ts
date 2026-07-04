@@ -12,7 +12,7 @@ export function hasGmailConfig(): boolean {
 }
 
 // refresh_token から access_token を取得
-async function getAccessToken(): Promise<string> {
+export async function getGmailAccessToken(): Promise<string> {
   const params = new URLSearchParams({
     client_id: process.env.GMAIL_CLIENT_ID!,
     client_secret: process.env.GMAIL_CLIENT_SECRET!,
@@ -59,10 +59,13 @@ export type GmailDraftInput = {
 
 /**
  * PDF添付付きのGmail下書きを作成する。成功時は draftId を返す。
+ * accessToken は呼び出し側で getGmailAccessToken() から取得して渡す
+ * （トークン更新失敗と下書きAPI失敗を呼び出し側で切り分けられるようにするため）。
  */
-export async function createGmailDraft(input: GmailDraftInput): Promise<{ draftId: string }> {
-  const accessToken = await getAccessToken()
-
+export async function createGmailDraft(
+  input: GmailDraftInput,
+  accessToken: string,
+): Promise<{ draftId: string }> {
   const boundary = 'zenbee_boundary_' + Buffer.from(input.subject).toString('hex').slice(0, 16)
   const attachmentBase64 = input.attachment.content.toString('base64')
 
