@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
         invoice_items (
           order:orders (
             shipping_date,
+            delivery_date,
             order_items (product_name, unit, quantity, unit_price, subtotal, tier_label, tier_quantity, is_custom, product:products (name, unit, category)),
             order_shipping (label, cost)
           )
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
       type InvoiceItemRow = {
         order?: {
           shipping_date?: string | null
+          delivery_date?: string | null
           order_items?: Array<{
             product_name: string
             unit: string
@@ -73,8 +75,8 @@ export async function POST(req: NextRequest) {
         const order = invItem.order
         if (!order) continue
 
-        // 出荷日を "M/D" 形式に変換
-        const sd = order.shipping_date || ''
+        // 「M/D納品」は納品日基準。delivery_date 優先・shipping_date フォールバック。
+        const sd = order.delivery_date || order.shipping_date || ''
         const parts = sd.split('-')
         const md = parts[1] && parts[2]
           ? `${parseInt(parts[1])}/${parseInt(parts[2])}`

@@ -53,24 +53,31 @@ export default function AdminInvoicesPage() {
     try {
       const supabase = createClient()
 
-      // 対象月の発送済み注文を取得
+      // 対象月の発送済み注文を取得。
+      // 月判定は「納品日(delivery_date)ベース」が正。手入力注文は shipping_date が
+      // 入らない（NULL）ため、delivery_date があればそれ、無ければ shipping_date に
+      // フォールバックして判定する。Supabase の gte/lte では NULL 側が漏れるため、
+      // ステータスのみで取得し月範囲はクライアント側でフィルタする（月数十件規模）。
       const [year, month] = selectedMonth.split('-').map(Number)
-      const monthStart = new Date(year, month - 1, 1).toISOString()
-      const monthEnd = new Date(year, month, 0, 23, 59, 59).toISOString()
 
-      const { data: orders, error: ordersError } = await supabase
+      const { data: allOrders, error: ordersError } = await supabase
         .from('orders')
         .select(`
           *,
           company:companies (*)
         `)
         .in('status', ['shipped', 'done'])
-        .gte('shipping_date', monthStart.split('T')[0])
-        .lte('shipping_date', monthEnd.split('T')[0])
 
       if (ordersError) throw ordersError
 
-      if (!orders || orders.length === 0) {
+      // 請求月判定日 = delivery_date ?? shipping_date。その年月が selectedMonth と一致する注文のみ。
+      const orders = (allOrders || []).filter((o) => {
+        const basis = (o.delivery_date ?? o.shipping_date) as string | null
+        if (!basis) return false
+        return basis.slice(0, 7) === selectedMonth
+      })
+
+      if (orders.length === 0) {
         setMessage({ type: 'error', text: '対象月に発送済みの注文がありません' })
         setTimeout(() => setMessage(null), 3000)
         return

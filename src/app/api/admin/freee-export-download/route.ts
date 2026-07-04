@@ -26,6 +26,7 @@ type OrderRow = {
   id: string
   company_id: string
   shipping_date: string | null
+  delivery_date: string | null
   company: { company_name?: string } | null
 }
 type OrderItemRow = {
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
     // Stage 1: orders + company (avoids FK embed reliability issues)
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
-      .select('id, company_id, shipping_date, company:companies(company_name)')
+      .select('id, company_id, shipping_date, delivery_date, company:companies(company_name)')
       .gte('created_at', fromUtc)
       .lte('created_at', toUtc)
       .order('created_at', { ascending: true })
@@ -144,7 +145,8 @@ export async function POST(req: NextRequest) {
         companiesMap.set(cid, { companyName, items: [] })
       }
 
-      const sd = order.shipping_date ?? ''
+      // 「M/D納品」は納品日基準。delivery_date 優先・shipping_date フォールバック。
+      const sd = order.delivery_date ?? order.shipping_date ?? ''
       const parts = sd.split('-')
       const md = parts[1] && parts[2] ? `${parseInt(parts[1])}/${parseInt(parts[2])}` : ''
       const entry = companiesMap.get(cid)!
