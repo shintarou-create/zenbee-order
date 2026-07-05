@@ -65,6 +65,8 @@ export default function AdminProductsPage() {
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [pricingTiersProduct, setPricingTiersProduct] = useState<Product | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  // 表示フィルタ（すべて / 販売中のみ=is_active / 非表示のみ=!is_active）
+  const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'active' | 'inactive'>('all')
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -97,15 +99,29 @@ export default function AdminProductsPage() {
     setTimeout(() => setMessage(null), 3000)
   }
 
-  // カテゴリ別に商品をグループ化
+  // 表示フィルタ判定
+  function matchesVisibility(p: Product): boolean {
+    if (visibilityFilter === 'active') return p.is_active
+    if (visibilityFilter === 'inactive') return !p.is_active
+    return true
+  }
+
+  // カテゴリ別に商品をグループ化（表示フィルタ適用）
   function getProductsByCategory(categoryId: string) {
     return products
       .filter((p) => p.category_id === categoryId)
+      .filter(matchesVisibility)
       .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
   }
 
-  // カテゴリに紐づかない商品
-  const uncategorizedProducts = products.filter((p) => !p.category_id)
+  // カテゴリに紐づかない商品（表示フィルタ適用）
+  const uncategorizedProducts = products.filter((p) => !p.category_id).filter(matchesVisibility)
+
+  const visibilityCounts = {
+    all: products.length,
+    active: products.filter((p) => p.is_active).length,
+    inactive: products.filter((p) => !p.is_active).length,
+  }
 
   async function handleCategoryDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -316,6 +332,28 @@ export default function AdminProductsPage() {
           {message.text}
         </div>
       )}
+
+      {/* 表示フィルタチップ */}
+      <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-1">
+        {([
+          { value: 'all', label: 'すべて', count: visibilityCounts.all },
+          { value: 'active', label: '販売中のみ', count: visibilityCounts.active },
+          { value: 'inactive', label: '非表示のみ', count: visibilityCounts.inactive },
+        ] as const).map((f) => (
+          <button
+            key={f.value}
+            onClick={() => setVisibilityFilter(f.value)}
+            className={`flex items-center gap-1.5 px-3 min-h-[44px] rounded-full text-sm font-bold whitespace-nowrap transition-colors ${
+              visibilityFilter === f.value ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            {f.label}
+            <span className={`text-xs px-1.5 rounded-full ${visibilityFilter === f.value ? 'bg-white/20' : 'bg-gray-100 text-gray-500'}`}>
+              {f.count}
+            </span>
+          </button>
+        ))}
+      </div>
 
       {isLoading ? (
         <div className="flex justify-center py-12">

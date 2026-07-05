@@ -114,7 +114,7 @@ function SortableProductRow({
           }
         }}
         disabled={updating}
-        className={`flex-shrink-0 text-sm font-bold w-8 h-8 rounded-full flex items-center justify-center transition-opacity ${
+        className={`flex-shrink-0 text-base font-bold w-11 h-11 rounded-full flex items-center justify-center transition-opacity ${
           STOCK_STATUS_CLASSES[product.stock_status ?? 'circle']
         } ${updating ? 'opacity-40' : 'hover:opacity-80'}`}
         title="クリックで在庫ステータスを切り替え（○→△→×→○）"
@@ -122,17 +122,17 @@ function SortableProductRow({
         {STOCK_STATUS_LABELS[product.stock_status ?? 'circle']}
       </button>
 
-      {/* 操作ボタン */}
+      {/* 操作ボタン（タップ領域44px以上） */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
         <button
           onClick={() => onPricingTiers(product)}
-          className="text-xs font-medium px-2 py-1 rounded-lg border border-purple-200 text-purple-600 hover:bg-purple-50 transition-colors"
+          className="text-xs font-medium px-2.5 min-h-[44px] rounded-lg border border-purple-200 text-purple-600 hover:bg-purple-50 transition-colors"
         >
           価格段階
         </button>
         <button
           onClick={() => onToggleActive(product)}
-          className={`text-xs font-medium px-2 py-1 rounded-lg border transition-colors ${
+          className={`text-xs font-medium px-2.5 min-h-[44px] rounded-lg border transition-colors ${
             product.is_active
               ? 'border-gray-200 text-gray-600 hover:bg-gray-50'
               : 'border-green-200 text-green-600 hover:bg-green-50'
@@ -142,7 +142,7 @@ function SortableProductRow({
         </button>
         <button
           onClick={() => onEdit(product)}
-          className="text-xs font-medium px-2 py-1 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors"
+          className="text-xs font-medium px-2.5 min-h-[44px] rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors"
         >
           編集
         </button>
