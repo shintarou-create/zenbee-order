@@ -3,15 +3,9 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import type { Order, Product, Inventory } from '@/types'
+import type { Order } from '@/types'
 import { formatDate, formatDateWithDay, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
-import PendingProductsSummary from '@/components/admin/PendingProductsSummary'
 import FreeeExportBanner from '@/components/admin/FreeeExportBanner'
-
-interface LowStockItem {
-  product: Product
-  inventory: Inventory
-}
 
 interface PendingCompany {
   id: string
@@ -35,6 +29,27 @@ interface ActionOrder {
   order_items: ActionOrderItem[]
 }
 
+// 「次の納品」集計用（PendingProductsSummary と同じ集計ロジック: product_id 単位・tier実本数）
+interface UpcomingItem {
+  product_id: string
+  quantity: number
+  tier_quantity: number | null
+}
+interface UpcomingOrder {
+  id: string
+  delivery_date: string | null
+  order_items: UpcomingItem[]
+}
+interface ProductMaster {
+  id: string
+  name: string
+  unit: string
+}
+interface CrossStockProduct {
+  id: string
+  name: string
+}
+
 function formatItemSummary(items: ActionOrderItem[], maxItems = 3): string {
   if (!items || items.length === 0) return ''
   const visible = items.slice(0, maxItems)
@@ -55,89 +70,65 @@ const HUB_ITEMS = [
 ]
 
 export default function AdminDashboard() {
-  const [todayOrderCount, setTodayOrderCount] = useState(0)
-  const [pendingOrderCount, setPendingOrderCount] = useState(0)
-  const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([])
-  const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [detailsOpen, setDetailsOpen] = useState(false)
 
+  // 次の納品
+  const [upcomingOrders, setUpcomingOrders] = useState<UpcomingOrder[]>([])
+  const [products, setProducts] = useState<ProductMaster[]>([])
+  const [nullDateCount, setNullDateCount] = useState(0)
+
+  // 対応が必要なこと
+  const [overdueOrders, setOverdueOrders] = useState<ActionOrder[]>([])
+  const [overdueCount, setOverdueCount] = useState(0)
   const [pendingCompanies, setPendingCompanies] = useState<PendingCompany[]>([])
   const [pendingCompaniesCount, setPendingCompaniesCount] = useState(0)
   const [unconfirmedOrders, setUnconfirmedOrders] = useState<ActionOrder[]>([])
   const [unconfirmedCount, setUnconfirmedCount] = useState(0)
-  const [unshippedSoonOrders, setUnshippedSoonOrders] = useState<ActionOrder[]>([])
-  const [unshippedSoonCount, setUnshippedSoonCount] = useState(0)
+
+  // 詳細データ
+  const [crossStock, setCrossStock] = useState<CrossStockProduct[]>([])
+  const [recentOrders, setRecentOrders] = useState<Order[]>([])
 
   const [bannerType, setBannerType] = useState<'remind' | 'done' | 'no_orders' | null>(null)
-  const [mobileSectionsOpen, setMobileSectionsOpen] = useState(false)
 
   useEffect(() => {
     async function fetchDashboard() {
       try {
         const supabase = createClient()
+        const todayJSTStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
 
-        // 今日の注文数
-        const today = new Date()
-        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-        const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
-
-        const { count: todayCount } = await supabase
+        // 次の納品: 今日以降の pending 注文（アイテム込み・納品日昇順）
+        const { data: upcoming } = await supabase
           .from('orders')
-          .select('id', { count: 'exact', head: true })
-          .gte('created_at', todayStart.toISOString())
-          .lt('created_at', todayEnd.toISOString())
+          .select('id, delivery_date, order_items(product_id, quantity, tier_quantity)')
+          .eq('status', 'pending')
+          .gte('delivery_date', todayJSTStr)
+          .order('delivery_date', { ascending: true })
+        setUpcomingOrders((upcoming || []) as unknown as UpcomingOrder[])
 
-        setTodayOrderCount(todayCount || 0)
+        // 商品マスタ（名前・単位）
+        const { data: prods } = await supabase.from('products').select('id, name, unit')
+        setProducts((prods || []) as ProductMaster[])
 
-        // 確認待ち注文数
-        const { count: pendingCount } = await supabase
+        // 納品日未設定の pending 件数
+        const { count: nullCnt } = await supabase
           .from('orders')
           .select('id', { count: 'exact', head: true })
           .eq('status', 'pending')
+          .is('delivery_date', null)
+        setNullDateCount(nullCnt || 0)
 
-        setPendingOrderCount(pendingCount || 0)
-
-        // 在庫少ない商品（在庫-引当 < 10）
-        const { data: inventories } = await supabase
-          .from('inventory')
-          .select(`
-            *,
-            product:products (*)
-          `)
-          .order('available_qty', { ascending: true })
-
-        if (inventories) {
-          const low = inventories
-            .filter((inv) => {
-              const net = (inv.available_qty || 0) - (inv.reserved_qty || 0)
-              return net < 10 && inv.product?.is_active
-            })
-            .slice(0, 5)
-            .map((inv) => ({
-              product: inv.product as Product,
-              inventory: {
-                id: inv.id,
-                product_id: inv.product_id,
-                available_qty: inv.available_qty,
-                reserved_qty: inv.reserved_qty,
-                updated_at: inv.updated_at,
-              } as Inventory,
-            }))
-          setLowStockItems(low)
-        }
-
-        // 最近の注文（10件）
-        const { data: orders } = await supabase
+        // 納品日超過: 今日より前の pending 注文（5件＋件数）
+        const { data: overdue, count: overdueCnt } = await supabase
           .from('orders')
-          .select(`
-            *,
-            company:companies (company_name, representative_name)
-          `)
-          .neq('status', 'cancelled')
-          .order('created_at', { ascending: false })
-          .limit(10)
-
-        setRecentOrders((orders || []) as Order[])
+          .select('id, order_number, delivery_date, company:companies(company_name), order_items(product_name, quantity, unit)', { count: 'exact' })
+          .eq('status', 'pending')
+          .lt('delivery_date', todayJSTStr)
+          .order('delivery_date', { ascending: true })
+          .limit(5)
+        setOverdueCount(overdueCnt || 0)
+        setOverdueOrders((overdue || []) as unknown as ActionOrder[])
 
         // 承認待ちの取引先
         const { data: pendingComps, count: pendingCompsCount } = await supabase
@@ -146,7 +137,6 @@ export default function AdminDashboard() {
           .eq('approval_status', 'pending')
           .order('created_at', { ascending: true })
           .limit(5)
-
         setPendingCompaniesCount(pendingCompsCount || 0)
         setPendingCompanies((pendingComps || []) as PendingCompany[])
 
@@ -158,27 +148,26 @@ export default function AdminDashboard() {
           .or('details_confirmed.is.null,details_confirmed.eq.false')
           .order('delivery_date', { ascending: true, nullsFirst: false })
           .limit(5)
-
         setUnconfirmedCount(unconfirmedCnt || 0)
         setUnconfirmedOrders((unconfirmed || []) as unknown as ActionOrder[])
 
-        // 未出荷の注文（納品日が今日〜7日後）
-        const todayJSTStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
-        const [tyear, tmonth, tday] = todayJSTStr.split('-').map(Number)
-        const plus7date = new Date(tyear, tmonth - 1, tday + 7)
-        const plus7JSTStr = `${plus7date.getFullYear()}-${String(plus7date.getMonth() + 1).padStart(2, '0')}-${String(plus7date.getDate()).padStart(2, '0')}`
+        // 在庫×の商品（is_active=true かつ stock_status='cross'）
+        const { data: crossProducts } = await supabase
+          .from('products')
+          .select('id, name')
+          .eq('is_active', true)
+          .eq('stock_status', 'cross')
+          .order('name', { ascending: true })
+        setCrossStock((crossProducts || []) as CrossStockProduct[])
 
-        const { data: unshippedSoon, count: unshippedSoonCnt } = await supabase
+        // 最近の注文（10件）
+        const { data: orders } = await supabase
           .from('orders')
-          .select('id, order_number, delivery_date, company:companies(company_name), order_items(product_name, quantity, unit)', { count: 'exact' })
-          .eq('status', 'pending')
-          .gte('delivery_date', todayJSTStr)
-          .lte('delivery_date', plus7JSTStr)
-          .order('delivery_date', { ascending: true })
-          .limit(5)
-
-        setUnshippedSoonCount(unshippedSoonCnt || 0)
-        setUnshippedSoonOrders((unshippedSoon || []) as unknown as ActionOrder[])
+          .select(`*, company:companies (company_name, representative_name)`)
+          .neq('status', 'cancelled')
+          .order('created_at', { ascending: false })
+          .limit(10)
+        setRecentOrders((orders || []) as Order[])
       } catch (err) {
         console.error('ダッシュボード取得エラー:', err)
       } finally {
@@ -202,7 +191,41 @@ export default function AdminDashboard() {
   const tomorrowDate = new Date(ryear, rmonth - 1, rday + 1)
   const tomorrowJST = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth() + 1).padStart(2, '0')}-${String(tomorrowDate.getDate()).padStart(2, '0')}`
 
-  const hasActionItems = pendingCompaniesCount > 0 || unconfirmedCount > 0 || unshippedSoonCount > 0
+  // 次の納品: 納品日でグループ化
+  const groupsMap = new Map<string, UpcomingOrder[]>()
+  for (const o of upcomingOrders) {
+    if (!o.delivery_date) continue
+    const arr = groupsMap.get(o.delivery_date) ?? []
+    arr.push(o)
+    groupsMap.set(o.delivery_date, arr)
+  }
+  const groupKeys = Array.from(groupsMap.keys()).sort()
+  const nearestKey = groupKeys[0] ?? null
+  const nearestOrders = nearestKey ? groupsMap.get(nearestKey)! : []
+  const nextGroups = groupKeys.slice(1, 4).map((k) => ({ date: k, count: groupsMap.get(k)!.length }))
+  const isNearestSoon = nearestKey === todayJST || nearestKey === tomorrowJST
+
+  // 次の納品グループの商品合計（product_id 単位・tier は実本数・単位は本、数量降順）
+  const productById = new Map(products.map((p) => [p.id, p]))
+  const aggMap = new Map<string, { name: string; unit: string; qty: number }>()
+  for (const o of nearestOrders) {
+    for (const it of o.order_items ?? []) {
+      const p = productById.get(it.product_id)
+      if (!p) continue
+      const realQty = it.tier_quantity ? it.quantity * it.tier_quantity : it.quantity
+      const existing = aggMap.get(it.product_id)
+      if (existing) existing.qty += realQty
+      else aggMap.set(it.product_id, { name: p.name, unit: it.tier_quantity ? '本' : p.unit, qty: realQty })
+    }
+  }
+  const aggList = Array.from(aggMap.values())
+    .filter((a) => a.qty > 0)
+    .sort((a, b) => b.qty - a.qty)
+  const shownItems = aggList.length > 6 ? aggList.slice(0, 5) : aggList
+  const moreItemCount = aggList.length > 6 ? aggList.length - 5 : 0
+
+  const hasActionItems = overdueCount > 0 || pendingCompaniesCount > 0 || unconfirmedCount > 0
+  const nothingToDo = !hasActionItems && bannerType !== 'remind'
 
   return (
     <div className="flex flex-col gap-6">
@@ -224,11 +247,92 @@ export default function AdminDashboard() {
         ))}
       </div>
 
+      {/* 次の納品（最重要ブロック） */}
+      <div className="order-2 bg-white rounded-xl border-2 border-fukamidori shadow-sm overflow-hidden">
+        {!nearestKey ? (
+          <div className="px-4 py-4">
+            <p className="text-sm text-gray-500">直近の納品予定はありません</p>
+            {nullDateCount > 0 && (
+              <Link href="/admin/orders?status=pending" className="mt-2 inline-block text-xs text-amber-700 font-medium hover:underline">
+                納品日未設定 {nullDateCount}件 →
+              </Link>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* ヘッダー */}
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2 flex-wrap">
+              <h2 className={`text-base font-bold ${isNearestSoon ? 'text-amber-700' : 'text-gray-900'}`}>
+                次の納品 {formatDateWithDay(nearestKey)}
+              </h2>
+              <span className="text-sm font-medium text-gray-500 whitespace-nowrap">{nearestOrders.length}件の注文</span>
+            </div>
+
+            {/* 商品合計 */}
+            {shownItems.length > 0 ? (
+              <div className="divide-y divide-gray-50">
+                {shownItems.map((item) => (
+                  <div key={item.name} className="px-4 py-2 flex items-center justify-between gap-3">
+                    <span className="text-sm text-gray-800 truncate min-w-0">{item.name}</span>
+                    <span className="flex items-baseline gap-0.5 flex-shrink-0">
+                      <span className="text-lg font-bold text-gray-900 tabular-nums">{item.qty}</span>
+                      <span className="text-xs text-gray-500">{item.unit}</span>
+                    </span>
+                  </div>
+                ))}
+                {moreItemCount > 0 && (
+                  <div className="px-4 py-2 text-xs text-gray-400">ほか{moreItemCount}品</div>
+                )}
+              </div>
+            ) : (
+              <div className="px-4 py-3 text-sm text-gray-400">商品明細がありません</div>
+            )}
+
+            {/* 注文管理で開く */}
+            <div className="px-4 py-3 border-t border-gray-100">
+              <Link
+                href={`/admin/orders?status=pending&from=${nearestKey}&to=${nearestKey}`}
+                className="flex items-center justify-center w-full md:w-auto md:inline-flex min-h-[44px] px-4 rounded-lg bg-fukamidori text-white text-sm font-bold active:opacity-90 transition-opacity"
+              >
+                この{nearestOrders.length}件を注文管理で開く
+              </Link>
+            </div>
+
+            {/* その先の納品 */}
+            {nextGroups.length > 0 && (
+              <div className="px-4 py-3 border-t border-gray-100">
+                <p className="text-xs text-gray-400 mb-2">その先の納品</p>
+                <div className="flex flex-wrap gap-2">
+                  {nextGroups.map((g) => (
+                    <Link
+                      key={g.date}
+                      href={`/admin/orders?status=pending&from=${g.date}&to=${g.date}`}
+                      className="flex items-center min-h-[44px] px-3 rounded-lg border border-gray-200 text-sm text-gray-700 active:bg-gray-50 transition-colors whitespace-nowrap"
+                    >
+                      {formatDateWithDay(g.date)} {g.count}件
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 納品日未設定 */}
+            {nullDateCount > 0 && (
+              <div className="px-4 py-2 border-t border-gray-100">
+                <Link href="/admin/orders?status=pending" className="text-xs text-amber-700 font-medium hover:underline">
+                  納品日未設定 {nullDateCount}件 →
+                </Link>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
       {/* 対応が必要なこと */}
-      <div className="order-2 space-y-3">
+      <div className="order-3 space-y-3">
         <h2 className="font-bold text-gray-900">対応が必要なこと</h2>
 
-        {!hasActionItems ? (
+        {nothingToDo ? (
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-2 text-sm text-green-700 font-medium">
             <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -237,6 +341,44 @@ export default function AdminDashboard() {
           </div>
         ) : (
           <div className="space-y-3">
+            {/* 納品日超過（最優先） */}
+            {overdueCount > 0 && (
+              <div className="bg-white rounded-xl border border-red-100 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-red-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">納品日超過</span>
+                    <span className="text-sm text-gray-500">納品日を過ぎた未発送</span>
+                  </div>
+                  <span className="text-sm font-bold text-gray-700">{overdueCount}件</span>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {overdueOrders.map((order) => (
+                    <Link
+                      key={order.id}
+                      href={`/admin/orders/${order.id}`}
+                      className="px-4 py-3 min-h-[44px] flex items-center justify-between hover:bg-gray-50 active:bg-gray-50 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 text-sm truncate">{order.company?.company_name ?? '—'}</p>
+                        <p className="text-xs text-red-600 font-bold">納品 {formatDateWithDay(order.delivery_date)}</p>
+                        {order.order_items && order.order_items.length > 0 && (
+                          <p className="text-xs text-gray-400 truncate mt-0.5">{formatItemSummary(order.order_items)}</p>
+                        )}
+                      </div>
+                      <span className="text-xs text-red-600 font-medium whitespace-nowrap ml-2">出荷へ →</span>
+                    </Link>
+                  ))}
+                </div>
+                {overdueCount > overdueOrders.length && (
+                  <div className="px-4 py-2 border-t border-gray-100">
+                    <Link href="/admin/orders?status=pending" className="text-sm text-red-600 font-medium hover:underline">
+                      他 {overdueCount - overdueOrders.length}件（注文管理へ）
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* 承認待ちの取引先 */}
             {pendingCompaniesCount > 0 && (
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -252,7 +394,7 @@ export default function AdminDashboard() {
                     <Link
                       key={company.id}
                       href="/admin/customers"
-                      className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 active:bg-gray-50 transition-colors"
+                      className="px-4 py-3 min-h-[44px] flex items-center justify-between hover:bg-gray-50 active:bg-gray-50 transition-colors"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-gray-900 text-sm truncate">{company.company_name}</p>
@@ -290,20 +432,16 @@ export default function AdminDashboard() {
                     <Link
                       key={order.id}
                       href={`/admin/orders/${order.id}`}
-                      className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 active:bg-gray-50 transition-colors"
+                      className="px-4 py-3 min-h-[44px] flex items-center justify-between hover:bg-gray-50 active:bg-gray-50 transition-colors"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium text-gray-900 text-sm truncate">
-                          {order.company?.company_name ?? '—'}
-                        </p>
+                        <p className="font-medium text-gray-900 text-sm truncate">{order.company?.company_name ?? '—'}</p>
                         <p className="text-xs text-gray-500">
                           {order.order_number}
                           {order.delivery_date ? `　納品 ${formatDateWithDay(order.delivery_date)}` : ''}
                         </p>
                         {order.order_items && order.order_items.length > 0 && (
-                          <p className="text-xs text-gray-400 truncate mt-0.5">
-                            {formatItemSummary(order.order_items)}
-                          </p>
+                          <p className="text-xs text-gray-400 truncate mt-0.5">{formatItemSummary(order.order_items)}</p>
                         )}
                       </div>
                       <span className="text-xs text-gray-600 font-medium whitespace-nowrap ml-2">確認する →</span>
@@ -319,113 +457,23 @@ export default function AdminDashboard() {
                 )}
               </div>
             )}
-
-            {/* 未出荷の注文（7日以内） */}
-            {unshippedSoonCount > 0 && (
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">未出荷</span>
-                    <span className="text-sm text-gray-500">納品日が近い未発送の注文</span>
-                  </div>
-                  <span className="text-sm font-bold text-gray-700">{unshippedSoonCount}件</span>
-                </div>
-                <div className="divide-y divide-gray-50">
-                  {unshippedSoonOrders.map((order) => {
-                    const isUrgent = !!order.delivery_date && order.delivery_date <= tomorrowJST
-                    return (
-                      <Link
-                        key={order.id}
-                        href={`/admin/orders/${order.id}`}
-                        className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 active:bg-gray-50 transition-colors"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            {isUrgent && (
-                              <span className="text-xs bg-red-100 text-red-700 rounded px-1.5 py-0.5 font-bold flex-shrink-0">至急</span>
-                            )}
-                            <p className="font-medium text-gray-900 text-sm truncate min-w-0">
-                              {order.company?.company_name ?? '—'}
-                            </p>
-                          </div>
-                          <p className={`text-xs ${isUrgent ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
-                            納品 {formatDateWithDay(order.delivery_date)}
-                          </p>
-                          {order.order_items && order.order_items.length > 0 && (
-                            <p className="text-xs text-gray-400 truncate mt-0.5">
-                              {formatItemSummary(order.order_items)}
-                            </p>
-                          )}
-                        </div>
-                        <span className={`text-xs font-medium whitespace-nowrap ml-2 ${isUrgent ? 'text-red-600' : 'text-amber-700'}`}>出荷へ →</span>
-                      </Link>
-                    )
-                  })}
-                </div>
-                {unshippedSoonCount > unshippedSoonOrders.length && (
-                  <div className="px-4 py-2 border-t border-gray-100">
-                    <Link href="/admin/orders" className="text-sm text-amber-700 font-medium hover:underline">
-                      他 {unshippedSoonCount - unshippedSoonOrders.length}件（受注一覧へ）
-                    </Link>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
       </div>
 
-      {/* freee CSV バナー（remind時は order-3 でサマリーカードの前、それ以外は order-10 で最下部） */}
-      <div className={bannerType === 'remind' ? 'order-3' : 'order-10'}>
+      {/* freee CSV バナー（remind時は order-4 で対応セクション直下、それ以外は order-20 で最下部） */}
+      <div className={bannerType === 'remind' ? 'order-4' : 'order-20'}>
         <FreeeExportBanner onBannerTypeChange={setBannerType} />
       </div>
 
-      {/* サマリーカード */}
-      <div className="order-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Link
-          href="/admin/orders"
-          className={`bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:bg-gray-50 transition-colors ${todayOrderCount === 0 ? 'opacity-60' : ''}`}
-        >
-          <p className="text-sm text-gray-500">本日の受注</p>
-          <p className={`text-3xl font-bold mt-1 ${todayOrderCount > 0 ? 'text-green-700' : 'text-gray-300'}`}>
-            {todayOrderCount}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">件</p>
-        </Link>
-        <Link
-          href="/admin/orders?status=pending"
-          className={`bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:bg-gray-50 transition-colors ${pendingOrderCount === 0 ? 'opacity-60' : ''}`}
-        >
-          <p className="text-sm text-gray-500">確認待ち</p>
-          <p className={`text-3xl font-bold mt-1 ${pendingOrderCount > 0 ? 'text-yellow-600' : 'text-gray-300'}`}>
-            {pendingOrderCount}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">件</p>
-        </Link>
-        <Link
-          href="/admin/products"
-          className={`bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:bg-gray-50 transition-colors ${lowStockItems.length === 0 ? 'opacity-60' : ''}`}
-        >
-          <p className="text-sm text-gray-500">在庫注意</p>
-          <p className={`text-3xl font-bold mt-1 ${lowStockItems.length > 0 ? 'text-red-600' : 'text-gray-300'}`}>
-            {lowStockItems.length}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">商品</p>
-        </Link>
-        <Link href="/admin/orders" className="bg-green-50 rounded-xl border border-green-200 shadow-sm p-4 hover:bg-green-100 transition-colors">
-          <p className="text-sm text-green-700">受注一覧へ</p>
-          <p className="text-2xl font-bold text-green-700 mt-1">→</p>
-        </Link>
-      </div>
-
-      {/* 詳細データ開閉ボタン（スマホのみ） */}
+      {/* 詳細データ開閉ボタン（全サイズ・デフォルト閉） */}
       <button
-        className="order-5 md:hidden w-full bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3 flex items-center justify-between text-sm font-medium text-gray-700"
-        onClick={() => setMobileSectionsOpen((v) => !v)}
+        className="order-5 w-full bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3 min-h-[44px] flex items-center justify-between text-sm font-medium text-gray-700"
+        onClick={() => setDetailsOpen((v) => !v)}
       >
-        <span>詳細データ（在庫・集計・最近の注文）</span>
+        <span>詳細データ（在庫・最近の注文）</span>
         <svg
-          className={`w-5 h-5 flex-shrink-0 transition-transform ${mobileSectionsOpen ? 'rotate-180' : ''}`}
+          className={`w-5 h-5 flex-shrink-0 transition-transform ${detailsOpen ? 'rotate-180' : ''}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -434,38 +482,24 @@ export default function AdminDashboard() {
         </svg>
       </button>
 
-      {/* 未発送商品合計 */}
-      <div className={`order-6 ${mobileSectionsOpen ? '' : 'hidden'} md:block`}>
-        <PendingProductsSummary />
-      </div>
-
-      {/* 在庫アラート + 最近の注文 */}
-      <div className={`order-7 ${mobileSectionsOpen ? '' : 'hidden'} md:grid md:grid-cols-2 gap-6`}>
-        {lowStockItems.length > 0 && (
+      {/* 詳細データ本体 */}
+      <div className={`order-6 ${detailsOpen ? 'md:grid md:grid-cols-2 gap-6 space-y-6 md:space-y-0' : 'hidden'}`}>
+        {/* 在庫×の商品 */}
+        {crossStock.length > 0 && (
           <div className="bg-white rounded-xl border border-red-100 shadow-sm">
             <div className="px-4 py-3 border-b border-red-100 flex items-center gap-2">
               <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
-              <h2 className="font-bold text-red-700">在庫注意商品</h2>
+              <h2 className="font-bold text-red-700">在庫×の商品</h2>
             </div>
             <div className="divide-y divide-gray-50">
-              {lowStockItems.map(({ product, inventory }) => {
-                const net = inventory.available_qty - inventory.reserved_qty
-                return (
-                  <div key={product.id} className="px-4 py-3 flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-gray-900 text-sm">{product.name}</p>
-                      <p className="text-xs text-gray-500">引当後: {net}{product.unit}</p>
-                    </div>
-                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                      net <= 0 ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
-                    }`}>
-                      {net <= 0 ? '在庫切れ' : '残りわずか'}
-                    </span>
-                  </div>
-                )
-              })}
+              {crossStock.map((product) => (
+                <div key={product.id} className="px-4 py-3 flex items-center justify-between">
+                  <p className="font-medium text-gray-900 text-sm truncate min-w-0">{product.name}</p>
+                  <span className="text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-700 flex-shrink-0 ml-2">×</span>
+                </div>
+              ))}
             </div>
             <div className="px-4 py-2 border-t border-gray-100">
               <Link href="/admin/products" className="text-sm text-green-600 font-medium hover:underline">
@@ -475,6 +509,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* 最近の注文 */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <h2 className="font-bold text-gray-900">最近の注文</h2>
@@ -484,23 +519,23 @@ export default function AdminDashboard() {
           </div>
           <div className="divide-y divide-gray-50">
             {recentOrders.length === 0 ? (
-              <div className="px-4 py-6 text-center text-gray-400 text-sm">
-                注文がありません
-              </div>
+              <div className="px-4 py-6 text-center text-gray-400 text-sm">注文がありません</div>
             ) : (
               recentOrders.map((order) => (
                 <Link
                   key={order.id}
                   href={`/admin/orders/${order.id}`}
-                  className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                  className="px-4 py-3 min-h-[44px] flex items-center justify-between gap-2 hover:bg-gray-50 transition-colors"
                 >
-                  <div>
-                    <p className="font-medium text-gray-900 text-sm">{order.order_number}</p>
-                    <p className="text-xs text-gray-500">
-                      {(order.company as { company_name: string } | undefined)?.company_name} ・ {formatDate(order.created_at)}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-gray-900 text-sm truncate">
+                      {(order.company as { company_name?: string } | undefined)?.company_name ?? '—'}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {order.order_number} ・ {formatDate(order.created_at)}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right flex-shrink-0">
                     <p className="font-bold text-green-700 text-sm">{formatCurrency(order.total_amount)}</p>
                     <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${getOrderStatusColor(order.status)}`}>
                       {getOrderStatusLabel(order.status)}

@@ -592,16 +592,21 @@ export default function AdminInvoicesPage() {
 
       {/* 上部サマリー（未入金 / 入金済み） */}
       {invoices.length > 0 && (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-white rounded-xl border border-amber-200 shadow-sm p-4">
-            <p className="text-xs font-medium text-amber-700">未入金</p>
-            <p className="text-lg font-bold text-amber-800 mt-1">¥{unpaidSum.toLocaleString('ja-JP')}</p>
-            <p className="text-xs text-gray-400">{unpaidList.length}件</p>
-          </div>
-          <div className="bg-white rounded-xl border border-green-200 shadow-sm p-4">
-            <p className="text-xs font-medium text-green-700">入金済み</p>
-            <p className="text-lg font-bold text-green-800 mt-1">¥{paidSum.toLocaleString('ja-JP')}</p>
-            <p className="text-xs text-gray-400">{paidList.length}件</p>
+        <div>
+          <p className="text-xs text-gray-400 mb-1.5">
+            {selectedMonth} 合計 ¥{(unpaidSum + paidSum).toLocaleString('ja-JP')}（{invoices.length}件）
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white rounded-xl border border-amber-200 shadow-sm p-4">
+              <p className="text-xs font-medium text-amber-700">未入金</p>
+              <p className="text-lg font-bold text-amber-800 mt-1">¥{unpaidSum.toLocaleString('ja-JP')}</p>
+              <p className="text-xs text-gray-400">{unpaidList.length}件</p>
+            </div>
+            <div className="bg-white rounded-xl border border-green-200 shadow-sm p-4">
+              <p className="text-xs font-medium text-green-700">入金済み</p>
+              <p className="text-lg font-bold text-green-800 mt-1">¥{paidSum.toLocaleString('ja-JP')}</p>
+              <p className="text-xs text-gray-400">{paidList.length}件</p>
+            </div>
           </div>
         </div>
       )}
@@ -766,28 +771,6 @@ export default function AdminInvoicesPage() {
           </>
         )}
       </div>
-
-      {/* 合計サマリー（既存・月合計） */}
-      {invoices.length > 0 && (
-        <div className="bg-green-50 rounded-xl border border-green-200 p-4">
-          <div className="flex justify-between text-sm">
-            <span className="font-medium text-green-800">{selectedMonth} 請求合計</span>
-            <span className="font-bold text-green-700">
-              {formatCurrency(invoices.reduce((sum, inv) => sum + inv.total_amount, 0))}
-            </span>
-          </div>
-          <div className="flex justify-between text-xs text-green-600 mt-1">
-            <span>{invoices.length}件の請求書</span>
-            <span>
-              入金済み: {formatCurrency(
-                invoices
-                  .filter((inv) => inv.status === 'paid')
-                  .reduce((sum, inv) => sum + inv.total_amount, 0)
-              )}
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* 一括アクションバー（選択1件以上で固定表示） */}
       {selectedCount > 0 && (
