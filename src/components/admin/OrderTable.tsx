@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import Link from 'next/link'
 import type { Order } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor, formatDateWithDay } from '@/lib/utils'
@@ -20,6 +20,8 @@ interface OrderTableProps {
   onUndoDeliveryNotePrinted?: (orderId: string) => Promise<void>
   onUndoShipped?: (orderId: string) => Promise<void>
   detailLinkSuffix?: string
+  // 納品日でグループ化し、各グループに見出し＋グループ全選択チェックを表示する
+  groupByDeliveryDate?: boolean
 }
 
 function formatItemLabel(item: { product_name: string; quantity: number; unit?: string | null; tier_quantity?: number | null }): string {
@@ -115,10 +117,12 @@ export default function OrderTable({
   onUndoDeliveryNotePrinted,
   onUndoShipped,
   detailLinkSuffix = '',
+  groupByDeliveryDate = false,
 }: OrderTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('delivery_date')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const todayJST = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -152,6 +156,35 @@ export default function OrderTable({
       checked ? [...selectedIds, orderId] : selectedIds.filter((id) => id !== orderId)
     )
   }
+
+  function toggleGroup(ids: string[], checked: boolean) {
+    if (!onSelectChange) return
+    if (checked) onSelectChange(Array.from(new Set([...selectedIds, ...ids])))
+    else onSelectChange(selectedIds.filter((id) => !ids.includes(id)))
+  }
+
+  // 納品日でグループ化（昇順・null は最後）。groupByDeliveryDate 時のみ使用。
+  const deliveryGroups = useMemo(() => {
+    if (!groupByDeliveryDate) return null
+    const base = [...orders].sort((a, b) => {
+      const av = a.delivery_date ?? ''
+      const bv = b.delivery_date ?? ''
+      if (!av && !bv) return 0
+      if (!av) return 1
+      if (!bv) return -1
+      return av < bv ? -1 : av > bv ? 1 : 0
+    })
+    const map = new Map<string, Order[]>()
+    for (const o of base) {
+      const key = o.delivery_date ?? ''
+      const arr = map.get(key) ?? []
+      arr.push(o)
+      map.set(key, arr)
+    }
+    return Array.from(map.entries()).map(([date, os]) => ({ date, orders: os, ids: os.map((o) => o.id) }))
+  }, [orders, groupByDeliveryDate])
+
+  const colCount = (showCheckbox ? 1 : 0) + 7
 
   async function handleStatusBadgeClick(order: Order) {
     if (updatingId) return
@@ -189,6 +222,230 @@ export default function OrderTable({
     )
   }
 
+  // 納品日グループ見出しの日付ラベル・色
+  function groupLabel(date: string): string {
+    return date ? `${formatDateWithDay(date)} — ` : '納品日未設定 — '
+  }
+  const isPastDate = (date: string) => !!date && date <= todayJST
+
+  function renderTableRow(order: Order) {
+    const company = order.company as
+      | { company_name?: string; representative_name?: string; has_separate_billing?: boolean }
+      | undefined
+    const shippingTotal = (order.order_shipping ?? []).reduce((sum, s) => sum + s.cost, 0)
+    const items = order.order_items ?? []
+    return (
+      <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+        {showCheckbox && (
+          <td className="px-3 py-3">
+            <input
+              type="checkbox"
+              checked={selectedIds.includes(order.id)}
+              onChange={(e) => handleSelectOne(order.id, e.target.checked)}
+              className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+            />
+          </td>
+        )}
+
+        {/* お客様 */}
+        <td className="px-4 py-3 max-w-[200px]">
+          <p className="font-medium text-base text-gray-900 leading-snug truncate">
+            {company?.company_name || '—'}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5 truncate">
+            {order.order_number}・{formatDate(order.created_at)}
+          </p>
+          {(order.details_confirmed || order.shipping_label_printed) && (
+            <div className="flex items-center gap-1 mt-1 flex-wrap">
+              {order.details_confirmed && (
+                <span className="inline-flex items-center gap-0.5 text-xs font-medium text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
+                  ✓ 確認済
+                </span>
+              )}
+              <LabelBadge order={order} onUnmarkLabel={onUnmarkLabel} />
+            </div>
+          )}
+        </td>
+
+        {/* 注文内容 */}
+        <td className="px-4 py-3 max-w-[220px]">
+          {items.length === 0 ? (
+            <span className="text-xs text-gray-300">—</span>
+          ) : (
+            <div className="space-y-0.5">
+              {items.slice(0, 3).map((item, i) => (
+                <p key={i} className="text-xs text-gray-600 leading-snug">
+                  {formatItemLabel(item)}
+                </p>
+              ))}
+              {items.length > 3 && (
+                <p className="text-xs text-gray-400">ほか{items.length - 3}点</p>
+              )}
+            </div>
+          )}
+        </td>
+
+        {/* 納品日 */}
+        <td className="px-4 py-3 whitespace-nowrap">
+          {order.delivery_date ? (
+            <div className="flex flex-col">
+              <span className="font-medium text-gray-900">
+                {formatDateWithDay(order.delivery_date)}
+              </span>
+              {order.delivery_time_slot && (
+                <span className="text-xs text-gray-500">{formatDeliveryTimeSlot(order.delivery_time_slot)}</span>
+              )}
+            </div>
+          ) : (
+            <span className="text-xs text-gray-300">—</span>
+          )}
+        </td>
+
+        {/* 金額 */}
+        <td className="px-4 py-3 text-right whitespace-nowrap">
+          <p className="font-bold text-green-700">{formatCurrency(order.total_amount)}</p>
+          {shippingTotal > 0 && (
+            <p className="text-xs text-gray-400 mt-0.5">送料 {formatCurrency(shippingTotal)}</p>
+          )}
+        </td>
+
+        {/* ステータス */}
+        <td className="px-4 py-3 text-center">
+          <StatusBadge
+            order={order}
+            updatingId={updatingId}
+            onUndoDeliveryNotePrinted={onUndoDeliveryNotePrinted}
+            onUndoShipped={onUndoShipped}
+            onClick={handleStatusBadgeClick}
+          />
+        </td>
+
+        {/* 備考 */}
+        <td className="px-4 py-3 max-w-[160px]">
+          {order.notes ? (
+            <p className="text-xs text-orange-500 truncate">{order.notes}</p>
+          ) : (
+            <span className="text-xs text-gray-300">—</span>
+          )}
+        </td>
+
+        {/* 詳細 */}
+        <td className="px-4 py-3 text-center">
+          <Link
+            href={`${basePath}/${order.id}${detailLinkSuffix}`}
+            className="text-green-600 hover:text-green-800 font-medium text-xs"
+          >
+            詳細
+          </Link>
+        </td>
+      </tr>
+    )
+  }
+
+  function renderCard(order: Order) {
+    const company = order.company as { company_name?: string } | undefined
+    const shippingTotal = (order.order_shipping ?? []).reduce((sum, s) => sum + s.cost, 0)
+    const items = order.order_items ?? []
+    return (
+      <div key={order.id} className="p-4 space-y-2">
+        {/* お客様名 + ステータスバッジ */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-start gap-2 min-w-0">
+            {showCheckbox && (
+              <input
+                type="checkbox"
+                checked={selectedIds.includes(order.id)}
+                onChange={(e) => handleSelectOne(order.id, e.target.checked)}
+                className="mt-1 w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500 flex-shrink-0"
+              />
+            )}
+            <p className="font-semibold text-gray-900 text-base leading-snug truncate">
+              {company?.company_name || '—'}
+            </p>
+          </div>
+          <div className="flex-shrink-0">
+            <StatusBadge
+              order={order}
+              updatingId={updatingId}
+              onUndoDeliveryNotePrinted={onUndoDeliveryNotePrinted}
+              onUndoShipped={onUndoShipped}
+              onClick={handleStatusBadgeClick}
+            />
+          </div>
+        </div>
+
+        {/* 注文番号・発注日 */}
+        <p className="text-xs text-gray-400">
+          {order.order_number}・{formatDate(order.created_at)}
+        </p>
+
+        {/* 確認済・伝票済バッジ */}
+        {(order.details_confirmed || order.shipping_label_printed) && (
+          <div className="flex items-center gap-1 flex-wrap">
+            {order.details_confirmed && (
+              <span className="inline-flex items-center gap-0.5 text-xs font-medium text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
+                ✓ 確認済
+              </span>
+            )}
+            <LabelBadge order={order} onUnmarkLabel={onUnmarkLabel} />
+          </div>
+        )}
+
+        {/* 注文内容 */}
+        {items.length > 0 && (
+          <div className="pt-2 border-t border-gray-100 space-y-0.5">
+            {items.slice(0, 3).map((item, i) => (
+              <p key={i} className="text-xs text-gray-600 leading-snug">
+                {formatItemLabel(item)}
+              </p>
+            ))}
+            {items.length > 3 && (
+              <p className="text-xs text-gray-400">ほか{items.length - 3}点</p>
+            )}
+          </div>
+        )}
+
+        {/* 納品日・金額 */}
+        <div className="flex items-end justify-between pt-1">
+          <div>
+            <span className="text-xs text-gray-500">納品日 </span>
+            <span className="text-sm font-medium text-gray-900">
+              {order.delivery_date ? formatDateWithDay(order.delivery_date) : '—'}
+            </span>
+            {order.delivery_time_slot && (
+              <p className="text-xs text-gray-500">{formatDeliveryTimeSlot(order.delivery_time_slot)}</p>
+            )}
+          </div>
+          <div className="text-right">
+            <p className="font-bold text-green-700">{formatCurrency(order.total_amount)}</p>
+            {shippingTotal > 0 && (
+              <p className="text-xs text-gray-400">送料 {formatCurrency(shippingTotal)}</p>
+            )}
+          </div>
+        </div>
+
+        {/* 備考 */}
+        <p className="text-xs">
+          {order.notes ? (
+            <span className="text-orange-500 block truncate">{order.notes}</span>
+          ) : (
+            <span className="text-gray-300">—</span>
+          )}
+        </p>
+
+        {/* 詳細リンク */}
+        <div className="flex justify-end pt-1">
+          <Link
+            href={`${basePath}/${order.id}${detailLinkSuffix}`}
+            className="text-green-600 hover:text-green-800 font-medium text-sm"
+          >
+            詳細を見る →
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div>
       {/* ===== PC: Table (md+) ===== */}
@@ -208,17 +465,21 @@ export default function OrderTable({
               )}
               <th className="px-4 py-3 text-left text-gray-600 font-semibold whitespace-nowrap">お客様</th>
               <th className="px-4 py-3 text-left text-gray-600 font-semibold whitespace-nowrap">注文内容</th>
-              <th
-                className="px-4 py-3 text-left text-gray-600 font-semibold cursor-pointer select-none hover:text-gray-900 whitespace-nowrap"
-                onClick={() => handleSort('delivery_date')}
-              >
-                納品日
-                {sortKey !== 'delivery_date' ? (
-                  <span className="ml-1 text-gray-300">↕</span>
-                ) : (
-                  <span className="ml-1 text-green-600">{sortDir === 'asc' ? '↑' : '↓'}</span>
-                )}
-              </th>
+              {groupByDeliveryDate ? (
+                <th className="px-4 py-3 text-left text-gray-600 font-semibold whitespace-nowrap">納品日</th>
+              ) : (
+                <th
+                  className="px-4 py-3 text-left text-gray-600 font-semibold cursor-pointer select-none hover:text-gray-900 whitespace-nowrap"
+                  onClick={() => handleSort('delivery_date')}
+                >
+                  納品日
+                  {sortKey !== 'delivery_date' ? (
+                    <span className="ml-1 text-gray-300">↕</span>
+                  ) : (
+                    <span className="ml-1 text-green-600">{sortDir === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </th>
+              )}
               <th className="px-4 py-3 text-right text-gray-600 font-semibold whitespace-nowrap">金額</th>
               <th className="px-4 py-3 text-center text-gray-600 font-semibold whitespace-nowrap">ステータス</th>
               <th className="px-4 py-3 text-left text-gray-600 font-semibold whitespace-nowrap">備考</th>
@@ -226,230 +487,62 @@ export default function OrderTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {sortedOrders.map((order) => {
-              const company = order.company as
-                | { company_name?: string; representative_name?: string; has_separate_billing?: boolean }
-                | undefined
-              const shippingTotal = (order.order_shipping ?? []).reduce((sum, s) => sum + s.cost, 0)
-              const items = order.order_items ?? []
-
-              return (
-                <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-                  {showCheckbox && (
-                    <td className="px-3 py-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(order.id)}
-                        onChange={(e) => handleSelectOne(order.id, e.target.checked)}
-                        className="rounded border-gray-300 text-green-600 focus:ring-green-500"
-                      />
-                    </td>
-                  )}
-
-                  {/* お客様 */}
-                  <td className="px-4 py-3 max-w-[200px]">
-                    <p className="font-medium text-base text-gray-900 leading-snug truncate">
-                      {company?.company_name || '—'}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5 truncate">
-                      {order.order_number}・{formatDate(order.created_at)}
-                    </p>
-                    {(order.details_confirmed || order.shipping_label_printed) && (
-                      <div className="flex items-center gap-1 mt-1 flex-wrap">
-                        {order.details_confirmed && (
-                          <span className="inline-flex items-center gap-0.5 text-xs font-medium text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
-                            ✓ 確認済
-                          </span>
-                        )}
-                        <LabelBadge order={order} onUnmarkLabel={onUnmarkLabel} />
-                      </div>
-                    )}
-                  </td>
-
-                  {/* 注文内容 */}
-                  <td className="px-4 py-3 max-w-[220px]">
-                    {items.length === 0 ? (
-                      <span className="text-xs text-gray-300">—</span>
-                    ) : (
-                      <div className="space-y-0.5">
-                        {items.slice(0, 3).map((item, i) => (
-                          <p key={i} className="text-xs text-gray-600 leading-snug">
-                            {formatItemLabel(item)}
-                          </p>
-                        ))}
-                        {items.length > 3 && (
-                          <p className="text-xs text-gray-400">ほか{items.length - 3}点</p>
-                        )}
-                      </div>
-                    )}
-                  </td>
-
-                  {/* 納品日 */}
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    {order.delivery_date ? (
-                      <div className="flex flex-col">
-                        <span className="font-medium text-gray-900">
-                          {formatDateWithDay(order.delivery_date)}
-                        </span>
-                        {order.delivery_time_slot && (
-                          <span className="text-xs text-gray-500">{formatDeliveryTimeSlot(order.delivery_time_slot)}</span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-300">—</span>
-                    )}
-                  </td>
-
-                  {/* 金額 */}
-                  <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <p className="font-bold text-green-700">{formatCurrency(order.total_amount)}</p>
-                    {shippingTotal > 0 && (
-                      <p className="text-xs text-gray-400 mt-0.5">送料 {formatCurrency(shippingTotal)}</p>
-                    )}
-                  </td>
-
-                  {/* ステータス */}
-                  <td className="px-4 py-3 text-center">
-                    <StatusBadge
-                      order={order}
-                      updatingId={updatingId}
-                      onUndoDeliveryNotePrinted={onUndoDeliveryNotePrinted}
-                      onUndoShipped={onUndoShipped}
-                      onClick={handleStatusBadgeClick}
-                    />
-                  </td>
-
-                  {/* 備考 */}
-                  <td className="px-4 py-3 max-w-[160px]">
-                    {order.notes ? (
-                      <p className="text-xs text-orange-500 truncate">{order.notes}</p>
-                    ) : (
-                      <span className="text-xs text-gray-300">—</span>
-                    )}
-                  </td>
-
-                  {/* 詳細 */}
-                  <td className="px-4 py-3 text-center">
-                    <Link
-                      href={`${basePath}/${order.id}${detailLinkSuffix}`}
-                      className="text-green-600 hover:text-green-800 font-medium text-xs"
-                    >
-                      詳細
-                    </Link>
-                  </td>
-                </tr>
-              )
-            })}
+            {deliveryGroups
+              ? deliveryGroups.map((g) => {
+                  const allSel = g.ids.length > 0 && g.ids.every((id) => selectedIds.includes(id))
+                  return (
+                    <Fragment key={g.date || '__null__'}>
+                      <tr className="bg-gray-50 border-y border-gray-200">
+                        <td colSpan={colCount} className="px-3 py-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            {showCheckbox && (
+                              <input
+                                type="checkbox"
+                                checked={allSel}
+                                onChange={(e) => toggleGroup(g.ids, e.target.checked)}
+                                className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                              />
+                            )}
+                            <span className={`text-sm font-bold ${isPastDate(g.date) ? 'text-red-600' : 'text-gray-700'}`}>
+                              {groupLabel(g.date)}{g.orders.length}件
+                            </span>
+                          </label>
+                        </td>
+                      </tr>
+                      {g.orders.map(renderTableRow)}
+                    </Fragment>
+                  )
+                })
+              : sortedOrders.map(renderTableRow)}
           </tbody>
         </table>
       </div>
 
       {/* ===== Mobile: Cards (< md) ===== */}
       <div className="block md:hidden divide-y divide-gray-100">
-        {sortedOrders.map((order) => {
-          const company = order.company as { company_name?: string } | undefined
-          const shippingTotal = (order.order_shipping ?? []).reduce((sum, s) => sum + s.cost, 0)
-          const items = order.order_items ?? []
-
-          return (
-            <div key={order.id} className="p-4 space-y-2">
-              {/* お客様名 + ステータスバッジ */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-start gap-2 min-w-0">
-                  {showCheckbox && (
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(order.id)}
-                      onChange={(e) => handleSelectOne(order.id, e.target.checked)}
-                      className="mt-1 rounded border-gray-300 text-green-600 focus:ring-green-500 flex-shrink-0"
-                    />
-                  )}
-                  <p className="font-semibold text-gray-900 text-base leading-snug truncate">
-                    {company?.company_name || '—'}
-                  </p>
-                </div>
-                <div className="flex-shrink-0">
-                  <StatusBadge
-                    order={order}
-                    updatingId={updatingId}
-                    onUndoDeliveryNotePrinted={onUndoDeliveryNotePrinted}
-                    onUndoShipped={onUndoShipped}
-                    onClick={handleStatusBadgeClick}
-                  />
-                </div>
-              </div>
-
-              {/* 注文番号・発注日 */}
-              <p className="text-xs text-gray-400">
-                {order.order_number}・{formatDate(order.created_at)}
-              </p>
-
-              {/* 確認済・伝票済バッジ */}
-              {(order.details_confirmed || order.shipping_label_printed) && (
-                <div className="flex items-center gap-1 flex-wrap">
-                  {order.details_confirmed && (
-                    <span className="inline-flex items-center gap-0.5 text-xs font-medium text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
-                      ✓ 確認済
+        {deliveryGroups
+          ? deliveryGroups.map((g) => {
+              const allSel = g.ids.length > 0 && g.ids.every((id) => selectedIds.includes(id))
+              return (
+                <div key={g.date || '__null__'}>
+                  <label className="bg-gray-50 px-4 py-2 flex items-center gap-2 border-y border-gray-100 cursor-pointer min-h-[44px]">
+                    {showCheckbox && (
+                      <input
+                        type="checkbox"
+                        checked={allSel}
+                        onChange={(e) => toggleGroup(g.ids, e.target.checked)}
+                        className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                      />
+                    )}
+                    <span className={`text-sm font-bold ${isPastDate(g.date) ? 'text-red-600' : 'text-gray-700'}`}>
+                      {groupLabel(g.date)}{g.orders.length}件
                     </span>
-                  )}
-                  <LabelBadge order={order} onUnmarkLabel={onUnmarkLabel} />
+                  </label>
+                  <div className="divide-y divide-gray-100">{g.orders.map(renderCard)}</div>
                 </div>
-              )}
-
-              {/* 注文内容 */}
-              {items.length > 0 && (
-                <div className="pt-2 border-t border-gray-100 space-y-0.5">
-                  {items.slice(0, 3).map((item, i) => (
-                    <p key={i} className="text-xs text-gray-600 leading-snug">
-                      {formatItemLabel(item)}
-                    </p>
-                  ))}
-                  {items.length > 3 && (
-                    <p className="text-xs text-gray-400">ほか{items.length - 3}点</p>
-                  )}
-                </div>
-              )}
-
-              {/* 納品日・金額 */}
-              <div className="flex items-end justify-between pt-1">
-                <div>
-                  <span className="text-xs text-gray-500">納品日 </span>
-                  <span className="text-sm font-medium text-gray-900">
-                    {order.delivery_date ? formatDateWithDay(order.delivery_date) : '—'}
-                  </span>
-                  {order.delivery_time_slot && (
-                    <p className="text-xs text-gray-500">{formatDeliveryTimeSlot(order.delivery_time_slot)}</p>
-                  )}
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-green-700">{formatCurrency(order.total_amount)}</p>
-                  {shippingTotal > 0 && (
-                    <p className="text-xs text-gray-400">送料 {formatCurrency(shippingTotal)}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* 備考 */}
-              <p className="text-xs">
-                {order.notes ? (
-                  <span className="text-orange-500 block truncate">{order.notes}</span>
-                ) : (
-                  <span className="text-gray-300">—</span>
-                )}
-              </p>
-
-              {/* 詳細リンク */}
-              <div className="flex justify-end pt-1">
-                <Link
-                  href={`${basePath}/${order.id}${detailLinkSuffix}`}
-                  className="text-green-600 hover:text-green-800 font-medium text-sm"
-                >
-                  詳細を見る →
-                </Link>
-              </div>
-            </div>
-          )
-        })}
+              )
+            })
+          : sortedOrders.map(renderCard)}
       </div>
     </div>
   )
