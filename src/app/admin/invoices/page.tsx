@@ -6,14 +6,20 @@ import type { Invoice, Order } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
 
+type TabKey = 'all' | 'draft' | 'sent' | 'paid'
+
 export default function AdminInvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [downloadingCsv, setDownloadingCsv] = useState(false)
   const [gmailDraftingId, setGmailDraftingId] = useState<string | null>(null)
+  const [pdfDownloadingId, setPdfDownloadingId] = useState<string | null>(null)
   const [bulkRunning, setBulkRunning] = useState(false)
+  const [bulkStatusRunning, setBulkStatusRunning] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [activeTab, setActiveTab] = useState<TabKey>('all')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   // 月選択（デフォルト: 先月）
   const now = new Date()
@@ -43,6 +49,7 @@ export default function AdminInvoicesPage() {
 
       if (error) throw error
       setInvoices((data || []) as Invoice[])
+      setSelectedIds(new Set())
     } catch (err) {
       console.error('請求書取得エラー:', err)
     } finally {
@@ -162,25 +169,23 @@ export default function AdminInvoicesPage() {
     }
   }
 
+  // ステータス訂正（プルダウン）。paid_at 規則は一括APIと統一:
+  //   → 'paid': paid_at が null なら now()、既にあれば維持。
+  //   → 'paid' 以外: paid_at を null に戻す。
   async function handleUpdateStatus(invoiceId: string, newStatus: string) {
+    const current = invoices.find((i) => i.id === invoiceId)
+    const newPaidAt = newStatus === 'paid' ? current?.paid_at ?? new Date().toISOString() : null
     try {
       const supabase = createClient()
       await supabase
         .from('invoices')
-        .update({
-          status: newStatus,
-          paid_at: newStatus === 'paid' ? new Date().toISOString() : null,
-        })
+        .update({ status: newStatus, paid_at: newPaidAt })
         .eq('id', invoiceId)
 
       setInvoices((prev) =>
         prev.map((inv) =>
           inv.id === invoiceId
-            ? {
-                ...inv,
-                status: newStatus as Invoice['status'],
-                paid_at: newStatus === 'paid' ? new Date().toISOString() : null,
-              }
+            ? { ...inv, status: newStatus as Invoice['status'], paid_at: newPaidAt }
             : inv
         )
       )
@@ -210,6 +215,45 @@ export default function AdminInvoicesPage() {
   // 請求書を新しいタブで開く（HTML印刷ページ）
   function openInvoicePrint(invoiceId: string) {
     window.open(`/admin/invoices/print?invoiceId=${invoiceId}`, '_blank')
+  }
+
+  // PDFを保存（郵送用）。fetch→blob→<a download>、失敗時は window.open フォールバック。
+  async function handleDownloadPdf(invoice: Invoice) {
+    setPdfDownloadingId(invoice.id)
+    setMessage({ type: 'success', text: 'PDF作成中…（初回は準備に30秒ほどかかります）' })
+    try {
+      const res = await adminFetch(`/api/admin/invoices/${invoice.id}/pdf`, { method: 'POST' })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        setMessage({ type: 'error', text: json.error || 'PDF生成に失敗しました' })
+        setTimeout(() => setMessage(null), 12000)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const c = invoice.company as { company_name?: string } | undefined
+      const fileCompany = c?.company_name || getCompanyView(invoice).displayName
+      const filename = `請求書_${fileCompany}_${invoice.billing_month}.pdf`
+      try {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      } catch {
+        // ダウンロード発火に失敗する環境向けフォールバック
+        window.open(url, '_blank')
+      }
+      setMessage({ type: 'success', text: 'PDFを保存しました' })
+      setTimeout(() => setMessage(null), 4000)
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+    } catch (err) {
+      setMessage({ type: 'error', text: `PDF生成に失敗: ${err instanceof Error ? err.message : String(err)}` })
+      setTimeout(() => setMessage(null), 12000)
+    } finally {
+      setPdfDownloadingId(null)
+    }
   }
 
   // 1社分のGmail下書きを作成する共通処理。成功可否とエラー文言を返す。
@@ -253,31 +297,39 @@ export default function AdminInvoicesPage() {
     setGmailDraftingId(null)
   }
 
-  // 一括：メール登録あり かつ 未作成の請求書を1社ずつ直列で処理（並列禁止）。
+  // 一括：選択中のうち メール登録あり かつ 未作成 を1社ずつ直列で処理（並列禁止）。
   async function handleBulkGmailDraft() {
-    const targets = invoices.filter((inv) => {
+    const sel = invoices.filter((inv) => selectedIds.has(inv.id))
+    const targets = sel.filter((inv) => {
       const c = inv.company as { email?: string | null } | undefined
       return !!c?.email && !inv.gmail_draft_created_at
     })
-    if (targets.length === 0) return
-    if (!window.confirm(`${targets.length}社分のGmail下書きを作成します。よろしいですか？`)) return
+    const skipN = sel.length - targets.length
+    if (targets.length === 0) {
+      setMessage({ type: 'error', text: '対象がありません（メール登録あり かつ 未作成のみ作成できます）' })
+      setTimeout(() => setMessage(null), 5000)
+      return
+    }
+    if (
+      !window.confirm(
+        `${targets.length}社分のGmail下書きを作成します。よろしいですか？` +
+          (skipN > 0 ? `\n（対象${targets.length}件・スキップ${skipN}件：作成済みまたはメール未登録）` : '')
+      )
+    )
+      return
 
     setBulkRunning(true)
     const failures: { name: string; error: string }[] = []
     let success = 0
     try {
       for (let i = 0; i < targets.length; i++) {
-        const invoice = targets[i]
         setMessage({
           type: 'success',
           text: `Gmail下書きを作成中… ${i + 1} / ${targets.length} 社（初回は準備に30秒ほどかかります）`,
         })
-        const r = await createGmailDraftFor(invoice)
-        if (r.ok) {
-          success++
-        } else {
-          failures.push({ name: getCompanyView(invoice).displayName, error: r.error || '不明なエラー' })
-        }
+        const r = await createGmailDraftFor(targets[i])
+        if (r.ok) success++
+        else failures.push({ name: getCompanyView(targets[i]).displayName, error: r.error || '不明なエラー' })
       }
       const failText =
         failures.length > 0
@@ -288,8 +340,64 @@ export default function AdminInvoicesPage() {
         text: `完了：成功${success}社／失敗${failures.length}社${failText}`,
       })
       setTimeout(() => setMessage(null), 15000)
+      setSelectedIds(new Set())
     } finally {
       setBulkRunning(false)
+    }
+  }
+
+  // 一括：ステータス更新（送信済み / 入金済み）。選択中の全idを送り、サーバー側で条件再検証。
+  async function handleBulkStatus(status: 'sent' | 'paid') {
+    const sel = invoices.filter((inv) => selectedIds.has(inv.id))
+    if (sel.length === 0) return
+    const isTarget = status === 'sent' ? (i: Invoice) => i.status === 'draft' : (i: Invoice) => i.status !== 'paid'
+    const targets = sel.filter(isTarget)
+    const skipN = sel.length - targets.length
+    const label = status === 'sent' ? '送信済み' : '入金済み'
+    const skipReason = status === 'sent' ? '既に送信済み/入金済みのため' : '既に入金済みのため'
+
+    if (targets.length === 0) {
+      setMessage({
+        type: 'error',
+        text: status === 'sent' ? '対象がありません（未送信のみ送信済みにできます）' : '対象がありません（入金済み以外が対象です）',
+      })
+      setTimeout(() => setMessage(null), 5000)
+      return
+    }
+    if (
+      !window.confirm(
+        `${targets.length}件を${label}にします。よろしいですか？` +
+          (skipN > 0 ? `\n（対象${targets.length}件・スキップ${skipN}件：${skipReason}）` : '')
+      )
+    )
+      return
+
+    setBulkStatusRunning(true)
+    try {
+      const res = await adminFetch('/api/admin/invoices/bulk-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: sel.map((s) => s.id), status }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMessage({ type: 'error', text: json.error || '一括更新に失敗しました' })
+        setTimeout(() => setMessage(null), 10000)
+        return
+      }
+      const updated = (json.updated as string[] | undefined)?.length ?? 0
+      const skipped = (json.skipped as unknown[] | undefined)?.length ?? 0
+      setMessage({
+        type: 'success',
+        text: `${updated}件更新しました${skipped > 0 ? `。${skipped}件スキップ（${skipReason}）` : ''}`,
+      })
+      setTimeout(() => setMessage(null), 8000)
+      await fetchInvoices()
+    } catch (err) {
+      setMessage({ type: 'error', text: `一括更新に失敗: ${err instanceof Error ? err.message : String(err)}` })
+      setTimeout(() => setMessage(null), 10000)
+    } finally {
+      setBulkStatusRunning(false)
     }
   }
 
@@ -347,19 +455,36 @@ export default function AdminInvoicesPage() {
     return `${jst.getMonth() + 1}/${jst.getDate()} ${hh}:${mi}`
   }
 
-  // 一括対象（メール登録あり かつ 未作成）
-  const bulkTargetCount = invoices.filter((inv) => {
-    const c = inv.company as { email?: string | null } | undefined
-    return !!c?.email && !inv.gmail_draft_created_at
-  }).length
+  // ISO日時 → 日本時間「M/D」
+  function formatPaidBadge(ts: string): string {
+    const jst = new Date(new Date(ts).toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }))
+    return `${jst.getMonth() + 1}/${jst.getDate()}`
+  }
 
-  // メール未登録の請求書（警告バナー用）
-  const noEmailNames = invoices
-    .filter((inv) => {
-      const c = inv.company as { email?: string | null } | undefined
-      return !c?.email
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
     })
-    .map((inv) => getCompanyView(inv).displayName)
+  }
+
+  function toggleSelectAllTab() {
+    const ids = invoices.filter((inv) => activeTab === 'all' || inv.status === activeTab).map((i) => i.id)
+    setSelectedIds((prev) => {
+      const allSel = ids.length > 0 && ids.every((id) => prev.has(id))
+      const next = new Set(prev)
+      if (allSel) ids.forEach((id) => next.delete(id))
+      else ids.forEach((id) => next.add(id))
+      return next
+    })
+  }
+
+  function changeTab(tab: TabKey) {
+    setActiveTab(tab)
+    setSelectedIds(new Set())
+  }
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -370,9 +495,43 @@ export default function AdminInvoicesPage() {
     }
     return colors[status] || 'bg-gray-100 text-gray-600'
   }
+  const statusLabel = (status: string) =>
+    ({ draft: '未送信', sent: '送信済み', paid: '入金済み', overdue: '未払い' } as Record<string, string>)[status] || status
+
+  // 派生値
+  const tabInvoices = invoices.filter((inv) => activeTab === 'all' || inv.status === activeTab)
+  const tabCounts = {
+    all: invoices.length,
+    draft: invoices.filter((i) => i.status === 'draft').length,
+    sent: invoices.filter((i) => i.status === 'sent').length,
+    paid: invoices.filter((i) => i.status === 'paid').length,
+  }
+  const unpaidList = invoices.filter((i) => i.status !== 'paid')
+  const paidList = invoices.filter((i) => i.status === 'paid')
+  const unpaidSum = unpaidList.reduce((s, i) => s + i.total_amount, 0)
+  const paidSum = paidList.reduce((s, i) => s + i.total_amount, 0)
+
+  const noEmailNames = invoices
+    .filter((inv) => {
+      const c = inv.company as { email?: string | null } | undefined
+      return !c?.email
+    })
+    .map((inv) => getCompanyView(inv).displayName)
+
+  const selectedCount = selectedIds.size
+  const allTabSelected = tabInvoices.length > 0 && tabInvoices.every((i) => selectedIds.has(i.id))
+  const anyBusy = bulkRunning || bulkStatusRunning || gmailDraftingId !== null || pdfDownloadingId !== null
+  const todayStr = new Date().toLocaleDateString('sv-SE') // YYYY-MM-DD（ローカル）
+
+  const tabs: { key: TabKey; label: string; count: number }[] = [
+    { key: 'all', label: 'すべて', count: tabCounts.all },
+    { key: 'draft', label: '未送信', count: tabCounts.draft },
+    { key: 'sent', label: '送信済み', count: tabCounts.sent },
+    { key: 'paid', label: '入金済み', count: tabCounts.paid },
+  ]
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" style={{ paddingBottom: selectedCount > 0 ? '96px' : undefined }}>
       <h1 className="text-xl font-bold text-gray-900">請求管理</h1>
 
       {message && (
@@ -428,18 +587,24 @@ export default function AdminInvoicesPage() {
             </svg>
             {downloadingCsv ? 'ダウンロード中...' : 'freee CSV'}
           </button>
-          <button
-            onClick={handleBulkGmailDraft}
-            disabled={bulkRunning || gmailDraftingId !== null || bulkTargetCount === 0}
-            className="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-            {bulkRunning ? '作成中...' : `全社まとめてGmail下書き作成${bulkTargetCount > 0 ? `（${bulkTargetCount}社）` : ''}`}
-          </button>
         </div>
       </div>
+
+      {/* 上部サマリー（未入金 / 入金済み） */}
+      {invoices.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white rounded-xl border border-amber-200 shadow-sm p-4">
+            <p className="text-xs font-medium text-amber-700">未入金</p>
+            <p className="text-lg font-bold text-amber-800 mt-1">¥{unpaidSum.toLocaleString('ja-JP')}</p>
+            <p className="text-xs text-gray-400">{unpaidList.length}件</p>
+          </div>
+          <div className="bg-white rounded-xl border border-green-200 shadow-sm p-4">
+            <p className="text-xs font-medium text-green-700">入金済み</p>
+            <p className="text-lg font-bold text-green-800 mt-1">¥{paidSum.toLocaleString('ja-JP')}</p>
+            <p className="text-xs text-gray-400">{paidList.length}件</p>
+          </div>
+        </div>
+      )}
 
       {/* メール未登録の事前警告バナー */}
       {noEmailNames.length > 0 && (
@@ -449,116 +614,160 @@ export default function AdminInvoicesPage() {
         </div>
       )}
 
+      {/* ステータスタブ */}
+      <div className="flex gap-1.5 overflow-x-auto">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => changeTab(t.key)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-colors ${
+              activeTab === t.key ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            {t.label}
+            <span className={`text-xs px-1.5 rounded-full ${activeTab === t.key ? 'bg-white/20' : 'bg-gray-100 text-gray-500'}`}>
+              {t.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* 請求書一覧 */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h2 className="font-bold text-gray-900">{selectedMonth} の請求書</h2>
-        </div>
-
         {isLoading ? (
           <div className="flex justify-center py-8">
             <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : invoices.length === 0 ? (
+        ) : tabInvoices.length === 0 ? (
           <div className="text-center py-8 text-gray-400 text-sm">
-            対象月の請求書がありません
+            {invoices.length === 0 ? '対象月の請求書がありません' : 'このタブの請求書はありません'}
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
-            {invoices.map((invoice) => {
-              const { email, displayName, storeName } = getCompanyView(invoice)
-              const hasEmail = !!email
-              const busy = gmailDraftingId !== null || bulkRunning
-              return (
-                <div key={invoice.id} className="px-4 py-4 flex items-start justify-between gap-3 flex-wrap">
-                  <div className="flex-1 min-w-0">
-                    {/* 会社名（主役） */}
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <p className="text-lg font-semibold text-gray-900 truncate">{displayName}</p>
-                      {storeName && <span className="text-xs text-gray-400">（店舗名: {storeName}）</span>}
-                    </div>
-                    {/* 請求書番号・支払期限（小さくグレー・1行） */}
-                    <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-gray-400">
-                      <span>{invoice.invoice_number}</span>
-                      <span className="text-gray-300">/</span>
-                      <span className="flex items-center gap-1">
-                        支払期限
-                        <input
-                          type="date"
-                          value={invoice.due_date ?? ''}
-                          onChange={(e) => handleUpdateDueDate(invoice.id, e.target.value)}
-                          className="text-xs border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 focus:outline-none focus:ring-1 focus:ring-green-400"
-                        />
-                      </span>
-                    </div>
-                    {/* 状態バッジ */}
-                    <div className="flex items-center gap-2 mt-2 flex-wrap">
-                      {invoice.gmail_draft_created_at ? (
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                          下書き作成済み {formatDraftBadge(invoice.gmail_draft_created_at)}
+          <>
+            {/* このタブをすべて選択 */}
+            <label className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 cursor-pointer bg-gray-50">
+              <input
+                type="checkbox"
+                checked={allTabSelected}
+                onChange={toggleSelectAllTab}
+                className="w-5 h-5 accent-green-600"
+              />
+              <span className="text-xs font-medium text-gray-600">このタブの{tabInvoices.length}社をすべて選択</span>
+            </label>
+
+            <div className="divide-y divide-gray-100">
+              {tabInvoices.map((invoice) => {
+                const { email, displayName, storeName } = getCompanyView(invoice)
+                const hasEmail = !!email
+                const isOverdue = !!invoice.due_date && invoice.status !== 'paid' && invoice.due_date < todayStr
+                const checked = selectedIds.has(invoice.id)
+                return (
+                  <div key={invoice.id} className="flex items-start gap-1 px-2 py-3">
+                    {/* チェックボックス（タップ領域44px以上） */}
+                    <label className="flex items-center justify-center min-w-[44px] min-h-[44px] cursor-pointer flex-shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleSelect(invoice.id)}
+                        className="w-5 h-5 accent-green-600"
+                      />
+                    </label>
+
+                    <div className="flex-1 min-w-0 pr-2">
+                      {/* 1段目: 会社名（左） / 金額（右・大） */}
+                      <div className="flex items-baseline justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="text-base font-semibold text-gray-900">{displayName}</span>
+                          {storeName && <span className="ml-1 text-xs text-gray-400">（店舗名: {storeName}）</span>}
+                        </div>
+                        <span className="font-bold text-gray-900 text-lg flex-shrink-0">{formatCurrency(invoice.total_amount)}</span>
+                      </div>
+
+                      {/* 2段目: 請求書番号・支払期限（超過は赤字） */}
+                      <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400 flex-wrap">
+                        <span>{invoice.invoice_number}</span>
+                        <span className="text-gray-300">/</span>
+                        <span className="flex items-center gap-1">
+                          <span className={isOverdue ? 'text-red-600 font-bold' : ''}>支払期限</span>
+                          <input
+                            type="date"
+                            value={invoice.due_date ?? ''}
+                            onChange={(e) => handleUpdateDueDate(invoice.id, e.target.value)}
+                            className={`text-xs border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-green-400 ${
+                              isOverdue ? 'border-red-300 text-red-600' : 'border-gray-200 text-gray-600'
+                            }`}
+                          />
+                          {isOverdue && <span className="text-red-600 font-bold">超過</span>}
                         </span>
-                      ) : (
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-                          未作成
+                      </div>
+
+                      {/* バッジ行 */}
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${getStatusColor(invoice.status)}`}>
+                          {statusLabel(invoice.status)}
                         </span>
-                      )}
+                        {activeTab !== 'paid' &&
+                          (invoice.gmail_draft_created_at ? (
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                              下書き作成済み {formatDraftBadge(invoice.gmail_draft_created_at)}
+                            </span>
+                          ) : (
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">未作成</span>
+                          ))}
+                        {!hasEmail && (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">メール未登録</span>
+                        )}
+                        {invoice.paid_at && (
+                          <span className="text-xs text-gray-400">入金 {formatPaidBadge(invoice.paid_at)}</span>
+                        )}
+                      </div>
+
+                      {/* 行アクション */}
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <button
+                          onClick={() => openInvoicePrint(invoice.id)}
+                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                        >
+                          請求書を開く
+                        </button>
+                        <button
+                          onClick={() => handleDownloadPdf(invoice)}
+                          disabled={pdfDownloadingId === invoice.id}
+                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50 transition-colors"
+                        >
+                          {pdfDownloadingId === invoice.id ? 'PDF作成中...' : 'PDF保存'}
+                        </button>
+                        {hasEmail && !invoice.gmail_draft_created_at && (
+                          <button
+                            onClick={() => handleCreateGmailDraft(invoice)}
+                            disabled={anyBusy}
+                            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 disabled:opacity-50 transition-colors"
+                          >
+                            {gmailDraftingId === invoice.id ? '作成中...' : 'Gmail下書き作成'}
+                          </button>
+                        )}
+                        {/* 訂正用ステータスプルダウン */}
+                        <select
+                          value={invoice.status}
+                          onChange={(e) => handleUpdateStatus(invoice.id, e.target.value)}
+                          className={`text-xs font-bold px-2 py-1 rounded-full border-none cursor-pointer ${getStatusColor(invoice.status)}`}
+                        >
+                          <option value="draft">未送信</option>
+                          <option value="sent">送信済み</option>
+                          <option value="paid">入金済み</option>
+                          <option value="overdue">未払い</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
-
-                  <div className="text-right flex-shrink-0">
-                    <p className="font-bold text-green-700 text-lg">{formatCurrency(invoice.total_amount)}</p>
-                    <p className="text-xs text-gray-400">税額: {formatCurrency(invoice.tax_amount)}</p>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <select
-                      value={invoice.status}
-                      onChange={(e) => handleUpdateStatus(invoice.id, e.target.value)}
-                      className={`text-xs font-bold px-2 py-1 rounded-full border-none cursor-pointer ${getStatusColor(invoice.status)}`}
-                    >
-                      <option value="draft">下書き</option>
-                      <option value="sent">送付済み</option>
-                      <option value="paid">入金確認済み</option>
-                      <option value="overdue">未払い</option>
-                    </select>
-                    {invoice.status === 'draft' && (
-                      <button
-                        onClick={() => handleUpdateStatus(invoice.id, 'sent')}
-                        className="text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
-                      >
-                        送信済みにする
-                      </button>
-                    )}
-                  </div>
-
-                  {/* 操作ボタン（請求書を開く・Gmail下書き） */}
-                  <div className="flex items-center gap-2 w-full justify-end">
-                    <button
-                      onClick={() => openInvoicePrint(invoice.id)}
-                      className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
-                    >
-                      請求書を開く
-                    </button>
-                    {hasEmail ? (
-                      <button
-                        onClick={() => handleCreateGmailDraft(invoice)}
-                        disabled={busy}
-                        className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 disabled:opacity-50 transition-colors"
-                      >
-                        {gmailDraftingId === invoice.id ? '作成中...' : 'Gmail下書きを作成'}
-                      </button>
-                    ) : (
-                      <span className="text-xs text-gray-300">メール未登録</span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          </>
         )}
       </div>
 
-      {/* 合計サマリー */}
+      {/* 合計サマリー（既存・月合計） */}
       {invoices.length > 0 && (
         <div className="bg-green-50 rounded-xl border border-green-200 p-4">
           <div className="flex justify-between text-sm">
@@ -576,6 +785,48 @@ export default function AdminInvoicesPage() {
                   .reduce((sum, inv) => sum + inv.total_amount, 0)
               )}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* 一括アクションバー（選択1件以上で固定表示） */}
+      {selectedCount > 0 && (
+        <div
+          className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-lg"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        >
+          <div className="px-4 py-3 flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-bold text-gray-900">{selectedCount}件選択</span>
+            <div className="flex items-center gap-2 flex-wrap ml-auto">
+              <button
+                onClick={handleBulkGmailDraft}
+                disabled={anyBusy}
+                className="text-sm font-bold px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition-colors"
+              >
+                {bulkRunning ? '作成中...' : '下書き作成'}
+              </button>
+              <button
+                onClick={() => handleBulkStatus('sent')}
+                disabled={anyBusy}
+                className="text-sm font-bold px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 transition-colors"
+              >
+                {bulkStatusRunning ? '更新中...' : '送信済み'}
+              </button>
+              <button
+                onClick={() => handleBulkStatus('paid')}
+                disabled={anyBusy}
+                className="text-sm font-bold px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-colors"
+              >
+                {bulkStatusRunning ? '更新中...' : '入金済み'}
+              </button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                disabled={anyBusy}
+                className="text-sm font-medium px-3 py-2 rounded-lg text-gray-500 hover:text-gray-700 disabled:opacity-50"
+              >
+                選択解除
+              </button>
+            </div>
           </div>
         </div>
       )}
