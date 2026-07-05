@@ -20,6 +20,9 @@ interface CustomerTableProps {
   generatingCodeId?: string | null
   approvingId?: string | null
   onChangePriceRank?: (customer: Company, newRank: string) => Promise<void> | void
+  // 検索を親（ページ最上部）で制御する場合に渡す。渡すと内部の検索入力は非表示になる。
+  search?: string
+  onSearchChange?: (v: string) => void
 }
 
 export default function CustomerTable({
@@ -32,12 +35,17 @@ export default function CustomerTable({
   generatingCodeId,
   approvingId,
   onChangePriceRank,
+  search: searchProp,
+  onSearchChange,
 }: CustomerTableProps) {
-  const [search, setSearch] = useState('')
+  const controlledSearch = onSearchChange !== undefined
+  const [internalSearch, setInternalSearch] = useState('')
+  const search = controlledSearch ? (searchProp ?? '') : internalSearch
   const [sortField, setSortField] = useState<keyof Company>('created_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [unlinkedFirst, setUnlinkedFirst] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
   const filtered = customers
     .filter((c) => {
@@ -89,32 +97,129 @@ export default function CustomerTable({
     return <span className="text-green-600 ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
   }
 
+  // 行の「次のアクション」を1つだけ決める。承認待ち（pending）を最優先し、
+  // 以降はステージ（未着手→コード生成 / 稼働中・連携済み(承認済)→編集）で判定する。
+  function primaryAction(company: Company): { label: string; onClick: () => void; disabled?: boolean; cls: string } {
+    const isPending = company.approval_status === 'pending'
+    if (isPending && onApprove) {
+      const busy = approvingId === company.id
+      return {
+        label: busy ? '承認中...' : '承認',
+        onClick: () => onApprove(company),
+        disabled: busy,
+        cls: 'bg-amber-500 hover:bg-amber-600 text-white',
+      }
+    }
+    if (company.stage === '未着手' && !company.registration_code && onGenerateCode) {
+      const busy = generatingCodeId === company.id
+      return {
+        label: busy ? '生成中...' : 'コード生成',
+        onClick: () => onGenerateCode(company),
+        disabled: busy,
+        cls: 'bg-green-600 hover:bg-green-700 text-white',
+      }
+    }
+    // 連携済み(承認済)・稼働中・コード生成済みの未着手 → 編集
+    return { label: '編集', onClick: () => onEdit(company), cls: 'bg-gray-100 hover:bg-gray-200 text-gray-700' }
+  }
+
+  // 1つの主アクション + 「…」メニュー（残りの操作）
+  function renderRowActions(company: Company, mobile: boolean) {
+    const pa = primaryAction(company)
+    const isEditPrimary = pa.label === '編集'
+    const hasCode = !!company.registration_code
+    return (
+      <div className={`flex items-center gap-2 ${mobile ? 'w-full' : 'justify-center'}`}>
+        <button
+          onClick={pa.onClick}
+          disabled={pa.disabled}
+          className={`min-h-[44px] px-4 rounded-lg text-sm font-bold disabled:opacity-50 transition-colors ${mobile ? 'flex-1' : ''} ${pa.cls}`}
+        >
+          {pa.label}
+        </button>
+        <div className="relative">
+          <button
+            onClick={() => setOpenMenuId((id) => (id === company.id ? null : company.id))}
+            className="min-h-[44px] min-w-[44px] px-3 rounded-lg border border-gray-200 text-gray-600 font-bold"
+            aria-label="その他の操作"
+          >
+            …
+          </button>
+          {openMenuId === company.id && (
+            <div className="absolute right-0 z-20 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden min-w-[160px]">
+              {!isEditPrimary && (
+                <button
+                  onClick={() => { setOpenMenuId(null); onEdit(company) }}
+                  className="block w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+                >
+                  編集
+                </button>
+              )}
+              <button
+                onClick={() => { setOpenMenuId(null); onLinkLine(company) }}
+                className="block w-full text-left px-4 py-3 text-sm text-blue-600 hover:bg-blue-50 whitespace-nowrap"
+              >
+                LINE紐づけ
+              </button>
+              {company.approval_status === 'pending' && onApprove && pa.label !== '承認' && (
+                <button
+                  onClick={() => { setOpenMenuId(null); onApprove(company) }}
+                  className="block w-full text-left px-4 py-3 text-sm text-amber-700 hover:bg-amber-50 whitespace-nowrap"
+                >
+                  承認する
+                </button>
+              )}
+              {!hasCode && onGenerateCode && pa.label !== 'コード生成' && (
+                <button
+                  onClick={() => { setOpenMenuId(null); onGenerateCode(company) }}
+                  className="block w-full text-left px-4 py-3 text-sm text-green-700 hover:bg-green-50 whitespace-nowrap"
+                >
+                  コード生成
+                </button>
+              )}
+              {hasCode && (
+                <button
+                  onClick={() => { setOpenMenuId(null); handleCopyCode(company) }}
+                  className="block w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+                >
+                  {copiedId === company.id ? 'コピー済 ✓' : `登録コードをコピー（${company.registration_code}）`}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-3">
-      {/* 検索 + ソートオプション */}
+      {/* 検索（親制御時は非表示） + ソートオプション */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-48">
-          <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+        {!controlledSearch && (
+          <div className="relative flex-1 min-w-48">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setInternalSearch(e.target.value)}
+              placeholder="店名・担当者名・電話番号で検索"
+              className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
             />
-          </svg>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="店名・担当者名・電話番号で検索"
-            className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-          />
-        </div>
+          </div>
+        )}
         <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -265,44 +370,12 @@ export default function CustomerTable({
                           {copiedId === company.id ? 'コピー済 ✓' : 'コピー'}
                         </button>
                       </div>
-                    ) : onGenerateCode ? (
-                      <button
-                        onClick={() => onGenerateCode(company)}
-                        disabled={generatingCodeId === company.id}
-                        className="text-xs text-green-700 hover:text-green-900 font-medium disabled:opacity-50"
-                      >
-                        {generatingCodeId === company.id ? '生成中...' : 'コード生成'}
-                      </button>
                     ) : (
                       <span className="text-xs text-gray-300">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-center">
-                    <div className="flex flex-col items-center gap-1.5">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => onEdit(company)}
-                          className="text-green-600 hover:text-green-800 font-medium text-xs"
-                        >
-                          編集
-                        </button>
-                        <button
-                          onClick={() => onLinkLine(company)}
-                          className="text-blue-600 hover:text-blue-800 font-medium text-xs"
-                        >
-                          LINE紐づけ
-                        </button>
-                      </div>
-                      {isPending && onApprove && (
-                        <button
-                          onClick={() => onApprove(company)}
-                          disabled={approvingId === company.id}
-                          className="text-xs font-bold bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white px-3 py-1 rounded-full transition-colors"
-                        >
-                          {approvingId === company.id ? '承認中...' : '承認する'}
-                        </button>
-                      )}
-                    </div>
+                  <td className="px-4 py-3">
+                    {renderRowActions(company, false)}
                   </td>
                 </tr>
               )
@@ -432,59 +505,23 @@ export default function CustomerTable({
                 })}
               </div>
 
-              {/* 登録コード */}
-              <div>
-                {company.registration_code ? (
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded tracking-wider">
-                      {company.registration_code}
-                    </span>
-                    <button
-                      onClick={() => handleCopyCode(company)}
-                      className="text-xs text-blue-600 hover:text-blue-800"
-                    >
-                      {copiedId === company.id ? 'コピー済 ✓' : 'コピー'}
-                    </button>
-                  </div>
-                ) : onGenerateCode ? (
+              {/* 登録コード（生成は主アクション/…メニューから） */}
+              {company.registration_code && (
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded tracking-wider">
+                    {company.registration_code}
+                  </span>
                   <button
-                    onClick={() => onGenerateCode(company)}
-                    disabled={generatingCodeId === company.id}
-                    className="text-xs text-green-700 hover:text-green-900 font-medium disabled:opacity-50"
+                    onClick={() => handleCopyCode(company)}
+                    className="text-xs text-blue-600 hover:text-blue-800"
                   >
-                    {generatingCodeId === company.id ? '生成中...' : 'コード生成'}
-                  </button>
-                ) : (
-                  <span className="text-xs text-gray-300">—</span>
-                )}
-              </div>
-
-              {/* 操作ボタン */}
-              <div className="space-y-1.5">
-                {isPending && onApprove && (
-                  <button
-                    onClick={() => onApprove(company)}
-                    disabled={approvingId === company.id}
-                    className="w-full text-sm font-bold bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white px-3 py-2 rounded-lg transition-colors"
-                  >
-                    {approvingId === company.id ? '承認中...' : '承認する'}
-                  </button>
-                )}
-                <div className="flex gap-4">
-                  <button
-                    onClick={() => onEdit(company)}
-                    className="text-green-600 hover:text-green-800 font-medium text-sm"
-                  >
-                    編集
-                  </button>
-                  <button
-                    onClick={() => onLinkLine(company)}
-                    className="text-blue-600 hover:text-blue-800 font-medium text-sm"
-                  >
-                    LINE紐づけ
+                    {copiedId === company.id ? 'コピー済 ✓' : 'コピー'}
                   </button>
                 </div>
-              </div>
+              )}
+
+              {/* 操作（1つの主アクション + …メニュー） */}
+              {renderRowActions(company, true)}
             </div>
           )
         })}

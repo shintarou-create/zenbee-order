@@ -20,12 +20,6 @@ const LINE_FILTER_OPTIONS = [
   { value: 'unlinked', label: '未紐づけ' },
 ] as const
 
-const APPROVAL_FILTER_OPTIONS = [
-  { value: 'all', label: 'すべて' },
-  { value: 'pending', label: '承認待ち' },
-  { value: 'approved', label: '承認済み' },
-] as const
-
 const ADDRESS_FILTER_OPTIONS = [
   { value: 'all', label: 'すべて' },
   { value: 'has', label: '住所あり' },
@@ -33,13 +27,6 @@ const ADDRESS_FILTER_OPTIONS = [
 ] as const
 
 type Stage = '稼働中' | '連携済み' | '未着手'
-
-const STAGE_FILTER_OPTIONS: { value: 'all' | Stage; label: string }[] = [
-  { value: 'all', label: 'すべて' },
-  { value: '稼働中', label: '稼働中' },
-  { value: '連携済み', label: '連携済み' },
-  { value: '未着手', label: '未着手' },
-]
 
 const LINE_USER_ID_RE = /^U[0-9a-f]{32}$/
 
@@ -118,8 +105,10 @@ export default function AdminCustomersPage() {
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [lineFilter, setLineFilter] = useState<'all' | 'linked' | 'unlinked'>('all')
   const [addressFilter, setAddressFilter] = useState<'all' | 'has' | 'missing'>('all')
-  const [approvalFilter, setApprovalFilter] = useState<'all' | 'pending' | 'approved'>('all')
-  const [stageFilter, setStageFilter] = useState<'all' | Stage>('all')
+  // ステージタブ（承認待ち / 未着手 / 連携済み / 稼働中 / すべて）
+  const [stageTab, setStageTab] = useState<'pending' | Stage | 'all'>('pending')
+  const [search, setSearch] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
   const [formData, setFormData] = useState<Partial<Company>>(initialFormData)
@@ -147,6 +136,17 @@ export default function AdminCustomersPage() {
   useEffect(() => {
     fetchCompanies()
     fetchProducts()
+    // URL 互換: ?stage=... 優先、旧 ?approval=pending は承認待ちタブへ
+    const params = new URLSearchParams(window.location.search)
+    const stageParam = params.get('stage')
+    const approvalParam = params.get('approval')
+    if (stageParam && ['pending', '未着手', '連携済み', '稼働中', 'all'].includes(stageParam)) {
+      setStageTab(stageParam as 'pending' | Stage | 'all')
+    } else if (approvalParam === 'pending') {
+      setStageTab('pending')
+    } else if (approvalParam === 'approved') {
+      setStageTab('all')
+    }
   }, [])
 
   async function fetchProducts() {
@@ -221,13 +221,38 @@ export default function AdminCustomersPage() {
     }
   }
 
-  const stageCounts: Record<Stage, number> = {
-    '稼働中': companies.filter((c) => c.stage === '稼働中').length,
-    '連携済み': companies.filter((c) => c.stage === '連携済み').length,
-    '未着手': companies.filter((c) => c.stage === '未着手').length,
+  // 検索一致（店名・担当者名・電話番号・メール）。件数と一覧の基準を揃える。
+  function matchesSearch(c: Company): boolean {
+    const q = search.trim().toLowerCase()
+    if (!q) return true
+    return (
+      c.company_name.toLowerCase().includes(q) ||
+      (c.representative_name || '').toLowerCase().includes(q) ||
+      (c.phone || '').includes(q) ||
+      (c.email || '').toLowerCase().includes(q)
+    )
   }
 
+  // タブ判定（承認待ちは approval_status、他はステージ）
+  function matchesTab(c: Company, tab: 'pending' | Stage | 'all'): boolean {
+    if (tab === 'all') return true
+    if (tab === 'pending') return c.approval_status === 'pending'
+    return c.stage === tab
+  }
+
+  // タブ件数バッジ（検索を反映）
+  const searchBase = companies.filter(matchesSearch)
+  const tabCounts: Record<'pending' | Stage | 'all', number> = {
+    pending: searchBase.filter((c) => c.approval_status === 'pending').length,
+    '未着手': searchBase.filter((c) => c.stage === '未着手').length,
+    '連携済み': searchBase.filter((c) => c.stage === '連携済み').length,
+    '稼働中': searchBase.filter((c) => c.stage === '稼働中').length,
+    all: searchBase.length,
+  }
+
+  // 検索は CustomerTable 側で適用するため、ここではタブ＋絞り込みのみ。
   const filteredCompanies = companies.filter((c) => {
+    if (!matchesTab(c, stageTab)) return false
     if (priceRankFilter !== 'all' && c.price_rank !== priceRankFilter) return false
     if (activeFilter === 'active' && !c.is_active) return false
     if (activeFilter === 'inactive' && c.is_active) return false
@@ -235,11 +260,23 @@ export default function AdminCustomersPage() {
     if (lineFilter === 'unlinked' && c.line_users && c.line_users.length > 0) return false
     if (addressFilter === 'has' && !c.postal_code && !c.address) return false
     if (addressFilter === 'missing' && (c.postal_code || c.address)) return false
-    if (approvalFilter === 'pending' && c.approval_status !== 'pending') return false
-    if (approvalFilter === 'approved' && c.approval_status === 'pending') return false
-    if (stageFilter !== 'all' && c.stage !== stageFilter) return false
     return true
   })
+
+  // 絞り込み（価格帯/有効/LINE/住所）の適用中件数
+  const activeFilterCount =
+    (priceRankFilter !== 'all' ? 1 : 0) +
+    (activeFilter !== 'all' ? 1 : 0) +
+    (lineFilter !== 'all' ? 1 : 0) +
+    (addressFilter !== 'all' ? 1 : 0)
+
+  const CUSTOMER_TABS: { value: 'pending' | Stage | 'all'; label: string }[] = [
+    { value: 'pending', label: '承認待ち' },
+    { value: '未着手', label: '未着手' },
+    { value: '連携済み', label: '連携済み' },
+    { value: '稼働中', label: '稼働中' },
+    { value: 'all', label: 'すべて' },
+  ]
 
   function handleEdit(company: Company) {
     setEditingCompany(company)
@@ -607,128 +644,120 @@ export default function AdminCustomersPage() {
         </div>
       )}
 
-      {/* ステージサマリー */}
-      <div className="flex items-center gap-2 flex-wrap text-sm px-1">
-        <span className="font-semibold text-emerald-700">稼働中 {stageCounts['稼働中']}</span>
-        <span className="text-gray-300">／</span>
-        <span className="font-semibold text-blue-700">連携済み {stageCounts['連携済み']}</span>
-        <span className="text-gray-300">／</span>
-        <span className="font-semibold text-gray-500">未着手 {stageCounts['未着手']}</span>
+      {/* 検索ボックス（最上部） */}
+      <div className="relative">
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="店名・担当者名・電話番号で検索"
+          className="w-full pl-9 pr-9 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600"
+            aria-label="検索をクリア"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
-      {/* フィルター */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3">
-        {/* 価格帯 */}
-        <div className="flex flex-wrap gap-2">
-          {PRICE_RANKS.map((r) => (
-            <button
-              key={r.value}
-              onClick={() => setPriceRankFilter(r.value)}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                priceRankFilter === r.value
-                  ? 'bg-green-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+      {/* ステージタブ（横スクロールチップ・件数バッジ） */}
+      <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-1">
+        {CUSTOMER_TABS.map((t) => (
+          <button
+            key={t.value}
+            onClick={() => setStageTab(t.value)}
+            className={`flex items-center gap-1.5 px-3 min-h-[44px] rounded-full text-sm font-bold whitespace-nowrap transition-colors ${
+              stageTab === t.value ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            {t.label}
+            <span className={`text-xs px-1.5 rounded-full ${stageTab === t.value ? 'bg-white/20' : 'bg-gray-100 text-gray-500'}`}>
+              {tabCounts[t.value]}
+            </span>
+          </button>
+        ))}
+      </div>
 
-        {/* 有効 / 無効 */}
-        <div className="flex gap-2">
-          {(['all', 'active', 'inactive'] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setActiveFilter(f)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                activeFilter === f
-                  ? 'bg-gray-700 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {f === 'all' ? 'すべて' : f === 'active' ? '有効のみ' : '無効のみ'}
-            </button>
-          ))}
-        </div>
-
-        {/* LINE 紐づけ */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-500 font-medium w-14">LINE</span>
-          {LINE_FILTER_OPTIONS.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setLineFilter(f.value)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                lineFilter === f.value
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        {/* 住所 */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-500 font-medium w-14">住所</span>
-          {ADDRESS_FILTER_OPTIONS.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setAddressFilter(f.value)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                addressFilter === f.value
-                  ? 'bg-yellow-500 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        {/* 承認状態 */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-500 font-medium w-14">承認</span>
-          {APPROVAL_FILTER_OPTIONS.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setApprovalFilter(f.value)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                approvalFilter === f.value
-                  ? 'bg-amber-500 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        {/* 取引ステージ */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-500 font-medium w-14">ステージ</span>
-          {STAGE_FILTER_OPTIONS.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setStageFilter(f.value)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                stageFilter === f.value
-                  ? f.value === '稼働中'
-                    ? 'bg-emerald-600 text-white'
-                    : f.value === '連携済み'
-                    ? 'bg-blue-600 text-white'
-                    : f.value === '未着手'
-                    ? 'bg-gray-500 text-white'
-                    : 'bg-gray-700 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+      {/* 絞り込み（折りたたみ・デフォルト閉） */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+        <button
+          onClick={() => setFiltersOpen((v) => !v)}
+          className="w-full px-4 py-3 min-h-[44px] flex items-center justify-between text-sm font-medium text-gray-700"
+        >
+          <span>絞り込み{activeFilterCount > 0 ? `（${activeFilterCount}）` : ''}</span>
+          <svg className={`w-5 h-5 flex-shrink-0 transition-transform ${filtersOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        {filtersOpen && (
+          <div className="px-4 pb-4 space-y-3 border-t border-gray-100 pt-3">
+            {/* 価格帯 */}
+            <div className="flex flex-wrap gap-2">
+              {PRICE_RANKS.map((r) => (
+                <button
+                  key={r.value}
+                  onClick={() => setPriceRankFilter(r.value)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    priceRankFilter === r.value ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            {/* 有効 / 無効 */}
+            <div className="flex gap-2">
+              {(['all', 'active', 'inactive'] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setActiveFilter(f)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    activeFilter === f ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {f === 'all' ? 'すべて' : f === 'active' ? '有効のみ' : '無効のみ'}
+                </button>
+              ))}
+            </div>
+            {/* LINE 紐づけ */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-gray-500 font-medium w-14">LINE</span>
+              {LINE_FILTER_OPTIONS.map((f) => (
+                <button
+                  key={f.value}
+                  onClick={() => setLineFilter(f.value)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    lineFilter === f.value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            {/* 住所 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-gray-500 font-medium w-14">住所</span>
+              {ADDRESS_FILTER_OPTIONS.map((f) => (
+                <button
+                  key={f.value}
+                  onClick={() => setAddressFilter(f.value)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    addressFilter === f.value ? 'bg-yellow-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 顧客テーブル */}
@@ -748,6 +777,8 @@ export default function AdminCustomersPage() {
             approvingId={approvingId}
             generatingCodeId={generatingCodeId}
             onChangePriceRank={handleChangePriceRank}
+            search={search}
+            onSearchChange={setSearch}
           />
         )}
       </div>
