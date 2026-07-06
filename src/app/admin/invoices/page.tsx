@@ -297,26 +297,44 @@ export default function AdminInvoicesPage() {
     setGmailDraftingId(null)
   }
 
-  // 一括：選択中のうち メール登録あり かつ 未作成 を1社ずつ直列で処理（並列禁止）。
+  // 一括：選択中のうち メール登録あり を1社ずつ直列で処理（並列禁止）。
+  // 下書き作成済みが含まれる場合は内訳を confirm で提示し、OK なら再作成する。
+  // メール未登録は従来どおり対象外（除外＋警告）。
   async function handleBulkGmailDraft() {
     const sel = invoices.filter((inv) => selectedIds.has(inv.id))
-    const targets = sel.filter((inv) => {
+    const hasEmail = (inv: Invoice) => {
       const c = inv.company as { email?: string | null } | undefined
-      return !!c?.email && !inv.gmail_draft_created_at
-    })
-    const skipN = sel.length - targets.length
+      return !!c?.email
+    }
+    // メール登録あり = 作成対象（未作成・作成済みの両方）。メール未登録は対象外。
+    const targets = sel.filter(hasEmail)
+    const noEmailN = sel.length - targets.length
+    const alreadyCreatedN = targets.filter((inv) => inv.gmail_draft_created_at).length
+
     if (targets.length === 0) {
-      setMessage({ type: 'error', text: '対象がありません（メール登録あり かつ 未作成のみ作成できます）' })
+      setMessage({ type: 'error', text: '対象がありません（メール登録ありの取引先のみ作成できます）' })
       setTimeout(() => setMessage(null), 5000)
       return
     }
-    if (
-      !window.confirm(
-        `${targets.length}社分のGmail下書きを作成します。よろしいですか？` +
-          (skipN > 0 ? `\n（対象${targets.length}件・スキップ${skipN}件：作成済みまたはメール未登録）` : '')
+
+    if (alreadyCreatedN > 0) {
+      // 作成済みが混ざる場合：再作成の内訳を提示
+      const confirmText =
+        `選択中 ${targets.length}件のうち ${alreadyCreatedN}件は下書き作成済みです。\n` +
+        `再作成すると新しい下書きが追加されます（Gmailに残っている古い下書きは自動削除されません。不要なら手動で削除してください）。\n` +
+        (noEmailN > 0 ? `メール未登録の ${noEmailN}件 は対象外です。\n` : '') +
+        `続行しますか？`
+      if (!window.confirm(confirmText)) return
+    } else {
+      // 全て未作成：従来どおりの確認フロー
+      if (
+        !window.confirm(
+          `${targets.length}社分のGmail下書きを作成します。よろしいですか？` +
+            (noEmailN > 0 ? `\n（対象${targets.length}件・スキップ${noEmailN}件：メール未登録）` : '')
+        )
       )
-    )
-      return
+        return
+    }
 
     setBulkRunning(true)
     const failures: { name: string; error: string }[] = []
