@@ -6,7 +6,7 @@ import type { Invoice, Order } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
 
-type TabKey = 'all' | 'draft' | 'sent' | 'paid'
+type TabKey = 'all' | 'draft' | 'sent'
 
 export default function AdminInvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -364,27 +364,23 @@ export default function AdminInvoicesPage() {
     }
   }
 
-  // 一括：ステータス更新（送信済み / 入金済み）。選択中の全idを送り、サーバー側で条件再検証。
-  async function handleBulkStatus(status: 'sent' | 'paid') {
+  // 一括：送信済みにする。選択中の全idを送り、サーバー側で条件再検証（未送信のみ更新）。
+  // 入金工程は freee 側で完結する運用のため、当画面からは撤去済み。
+  async function handleBulkStatus(status: 'sent') {
     const sel = invoices.filter((inv) => selectedIds.has(inv.id))
     if (sel.length === 0) return
-    const isTarget = status === 'sent' ? (i: Invoice) => i.status === 'draft' : (i: Invoice) => i.status !== 'paid'
-    const targets = sel.filter(isTarget)
+    const targets = sel.filter((i) => i.status === 'draft')
     const skipN = sel.length - targets.length
-    const label = status === 'sent' ? '送信済み' : '入金済み'
-    const skipReason = status === 'sent' ? '既に送信済み/入金済みのため' : '既に入金済みのため'
+    const skipReason = '既に送信済みのため'
 
     if (targets.length === 0) {
-      setMessage({
-        type: 'error',
-        text: status === 'sent' ? '対象がありません（未送信のみ送信済みにできます）' : '対象がありません（入金済み以外が対象です）',
-      })
+      setMessage({ type: 'error', text: '対象がありません（未送信のみ送信済みにできます）' })
       setTimeout(() => setMessage(null), 5000)
       return
     }
     if (
       !window.confirm(
-        `${targets.length}件を${label}にします。よろしいですか？` +
+        `${targets.length}件を送信済みにします。よろしいですか？` +
           (skipN > 0 ? `\n（対象${targets.length}件・スキップ${skipN}件：${skipReason}）` : '')
       )
     )
@@ -473,12 +469,6 @@ export default function AdminInvoicesPage() {
     return `${jst.getMonth() + 1}/${jst.getDate()} ${hh}:${mi}`
   }
 
-  // ISO日時 → 日本時間「M/D」
-  function formatPaidBadge(ts: string): string {
-    const jst = new Date(new Date(ts).toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }))
-    return `${jst.getMonth() + 1}/${jst.getDate()}`
-  }
-
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -508,7 +498,7 @@ export default function AdminInvoicesPage() {
     const colors: Record<string, string> = {
       draft: 'bg-gray-100 text-gray-600',
       sent: 'bg-blue-100 text-blue-700',
-      paid: 'bg-green-100 text-green-700',
+      paid: 'bg-green-100 text-green-700', // 既存の入金済みデータ表示用（新規設定は不可）
       overdue: 'bg-red-100 text-red-700',
     }
     return colors[status] || 'bg-gray-100 text-gray-600'
@@ -522,12 +512,9 @@ export default function AdminInvoicesPage() {
     all: invoices.length,
     draft: invoices.filter((i) => i.status === 'draft').length,
     sent: invoices.filter((i) => i.status === 'sent').length,
-    paid: invoices.filter((i) => i.status === 'paid').length,
   }
-  const unpaidList = invoices.filter((i) => i.status !== 'paid')
-  const paidList = invoices.filter((i) => i.status === 'paid')
-  const unpaidSum = unpaidList.reduce((s, i) => s + i.total_amount, 0)
-  const paidSum = paidList.reduce((s, i) => s + i.total_amount, 0)
+  // 請求合計（選択中の請求月・全件）
+  const totalSum = invoices.reduce((s, i) => s + i.total_amount, 0)
 
   const noEmailNames = invoices
     .filter((inv) => {
@@ -545,7 +532,6 @@ export default function AdminInvoicesPage() {
     { key: 'all', label: 'すべて', count: tabCounts.all },
     { key: 'draft', label: '未送信', count: tabCounts.draft },
     { key: 'sent', label: '送信済み', count: tabCounts.sent },
-    { key: 'paid', label: '入金済み', count: tabCounts.paid },
   ]
 
   return (
@@ -608,24 +594,12 @@ export default function AdminInvoicesPage() {
         </div>
       </div>
 
-      {/* 上部サマリー（未入金 / 入金済み） */}
+      {/* 上部サマリー（請求合計 1カード） */}
       {invoices.length > 0 && (
-        <div>
-          <p className="text-xs text-gray-400 mb-1.5">
-            {selectedMonth} 合計 ¥{(unpaidSum + paidSum).toLocaleString('ja-JP')}（{invoices.length}件）
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white rounded-xl border border-amber-200 shadow-sm p-4">
-              <p className="text-xs font-medium text-amber-700">未入金</p>
-              <p className="text-lg font-bold text-amber-800 mt-1">¥{unpaidSum.toLocaleString('ja-JP')}</p>
-              <p className="text-xs text-gray-400">{unpaidList.length}件</p>
-            </div>
-            <div className="bg-white rounded-xl border border-green-200 shadow-sm p-4">
-              <p className="text-xs font-medium text-green-700">入金済み</p>
-              <p className="text-lg font-bold text-green-800 mt-1">¥{paidSum.toLocaleString('ja-JP')}</p>
-              <p className="text-xs text-gray-400">{paidList.length}件</p>
-            </div>
-          </div>
+        <div className="bg-white rounded-xl border border-green-200 shadow-sm p-4">
+          <p className="text-xs font-medium text-green-700">{selectedMonth} 請求合計</p>
+          <p className="text-2xl font-bold text-green-800 mt-1">{formatCurrency(totalSum)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{invoices.length}件</p>
         </div>
       )}
 
@@ -729,19 +703,15 @@ export default function AdminInvoicesPage() {
                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${getStatusColor(invoice.status)}`}>
                           {statusLabel(invoice.status)}
                         </span>
-                        {activeTab !== 'paid' &&
-                          (invoice.gmail_draft_created_at ? (
-                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                              下書き作成済み {formatDraftBadge(invoice.gmail_draft_created_at)}
-                            </span>
-                          ) : (
-                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">未作成</span>
-                          ))}
+                        {invoice.gmail_draft_created_at ? (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                            下書き作成済み {formatDraftBadge(invoice.gmail_draft_created_at)}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">未作成</span>
+                        )}
                         {!hasEmail && (
                           <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">メール未登録</span>
-                        )}
-                        {invoice.paid_at && (
-                          <span className="text-xs text-gray-400">入金 {formatPaidBadge(invoice.paid_at)}</span>
                         )}
                       </div>
 
@@ -769,7 +739,8 @@ export default function AdminInvoicesPage() {
                             {gmailDraftingId === invoice.id ? '作成中...' : 'Gmail下書き作成'}
                           </button>
                         )}
-                        {/* 訂正用ステータスプルダウン */}
+                        {/* 訂正用ステータスプルダウン（工程は未送信⇔送信済み。入金工程は freee 側で完結のため撤去）。
+                            既存の入金済み/未払いデータは表示崩れ防止のため、その行に限り「（過去の状態）」として表示する。 */}
                         <select
                           value={invoice.status}
                           onChange={(e) => handleUpdateStatus(invoice.id, e.target.value)}
@@ -777,8 +748,9 @@ export default function AdminInvoicesPage() {
                         >
                           <option value="draft">未送信</option>
                           <option value="sent">送信済み</option>
-                          <option value="paid">入金済み</option>
-                          <option value="overdue">未払い</option>
+                          {(invoice.status === 'paid' || invoice.status === 'overdue') && (
+                            <option value={invoice.status}>{statusLabel(invoice.status)}（過去の状態）</option>
+                          )}
                         </select>
                       </div>
                     </div>
@@ -812,13 +784,6 @@ export default function AdminInvoicesPage() {
                 className="text-sm font-bold px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 transition-colors"
               >
                 {bulkStatusRunning ? '更新中...' : '送信済み'}
-              </button>
-              <button
-                onClick={() => handleBulkStatus('paid')}
-                disabled={anyBusy}
-                className="text-sm font-bold px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-colors"
-              >
-                {bulkStatusRunning ? '更新中...' : '入金済み'}
               </button>
               <button
                 onClick={() => setSelectedIds(new Set())}
