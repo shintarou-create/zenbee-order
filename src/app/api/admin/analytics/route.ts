@@ -44,6 +44,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: '年の指定が不正です' }, { status: 400 })
     }
 
+    // 任意パラメータ month（1〜12）。指定時は byProduct/byCompany/byCategory を
+    // その月の注文に限定する（monthly は常に年間分を返す）。
+    const monthParam = searchParams.get('month')
+    const month = monthParam ? parseInt(monthParam, 10) : null
+    if (month !== null && (isNaN(month) || month < 1 || month > 12)) {
+      return NextResponse.json({ error: '月の指定が不正です' }, { status: 400 })
+    }
+
     const supabase = createServiceClient()
 
     // 集計対象月数（当年なら今月まで、過去年なら12月まで）
@@ -56,11 +64,12 @@ export async function GET(req: NextRequest) {
     const lastYearStart = `${lastYear}-01-01T00:00:00.000Z`
     const lastYearEnd = `${lastYear}-12-31T23:59:59.999Z`
 
-    // --- 月別集計 ---
+    // 当年の注文を1回だけ取得し、月別・商品別・取引先別すべてをここから導出する。
+    // 月の判定は new Date(created_at).getMonth() で統一（今月カードの算出と一致させる）。
     const [thisYearOrders, lastYearOrders] = await Promise.all([
       supabase
         .from('orders')
-        .select('created_at, total_amount')
+        .select('id, created_at, company_id, total_amount')
         .neq('status', 'cancelled')
         .gte('created_at', thisYearStart)
         .lte('created_at', thisYearEnd),
@@ -72,18 +81,20 @@ export async function GET(req: NextRequest) {
         .lte('created_at', lastYearEnd),
     ])
 
+    type OrderRow = { id: string; created_at: string; company_id: string | null; total_amount: number | null }
+    const thisYearRows = (thisYearOrders.data ?? []) as OrderRow[]
+
+    // --- 月別集計（常に年間分） ---
     const thisYearByMonth: Record<number, number> = {}
-    for (const o of thisYearOrders.data ?? []) {
+    for (const o of thisYearRows) {
       const m = new Date(o.created_at).getMonth() + 1
       thisYearByMonth[m] = (thisYearByMonth[m] ?? 0) + (o.total_amount ?? 0)
     }
-
     const lastYearByMonth: Record<number, number> = {}
     for (const o of lastYearOrders.data ?? []) {
       const m = new Date(o.created_at).getMonth() + 1
       lastYearByMonth[m] = (lastYearByMonth[m] ?? 0) + (o.total_amount ?? 0)
     }
-
     const monthly: MonthlyData[] = []
     for (let m = 1; m <= maxMonth; m++) {
       const ly = lastYearByMonth[m]
@@ -94,26 +105,20 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // --- 商品別集計 ---
-    // thisYear の orders ID を取得してから order_items を引く
-    const thisYearOrderIds = (thisYearOrders.data ?? []).map((o) => o as unknown as { id?: string })
-    // order_items を year 範囲の orders に絞る（orders の id が必要）
-    const { data: ordersFull } = await supabase
-      .from('orders')
-      .select('id')
-      .neq('status', 'cancelled')
-      .gte('created_at', thisYearStart)
-      .lte('created_at', thisYearEnd)
+    // --- 集計対象の注文（month 指定時はその月に限定） ---
+    const aggOrders = month
+      ? thisYearRows.filter((o) => new Date(o.created_at).getMonth() + 1 === month)
+      : thisYearRows
+    const aggOrderIds = aggOrders.map((o) => o.id)
 
-    const orderIdsFull = (ordersFull ?? []).map((o) => o.id)
-
+    // --- 商品別・カテゴリー別集計 ---
     const byProduct: ProductData[] = []
     const byCategory: CategoryData[] = []
-    if (orderIdsFull.length > 0) {
+    if (aggOrderIds.length > 0) {
       const { data: items } = await supabase
         .from('order_items')
         .select('product_name, subtotal, quantity, product_id')
-        .in('order_id', orderIdsFull)
+        .in('order_id', aggOrderIds)
 
       const productMap: Record<string, { total: number; quantity: number }> = {}
       for (const item of items ?? []) {
@@ -172,16 +177,9 @@ export async function GET(req: NextRequest) {
       byCategory.push(...sortedByCategory)
     }
 
-    // --- 取引先別集計 ---
-    const { data: ordersFull2 } = await supabase
-      .from('orders')
-      .select('company_id, total_amount')
-      .neq('status', 'cancelled')
-      .gte('created_at', thisYearStart)
-      .lte('created_at', thisYearEnd)
-
+    // --- 取引先別集計（aggOrders から直接） ---
     const companyMap: Record<string, { total: number; orderCount: number }> = {}
-    for (const o of ordersFull2 ?? []) {
+    for (const o of aggOrders) {
       const cid = o.company_id
       if (!cid) continue
       if (!companyMap[cid]) companyMap[cid] = { total: 0, orderCount: 0 }
@@ -210,9 +208,6 @@ export async function GET(req: NextRequest) {
         .slice(0, 20)
       byCompany.push(...sorted)
     }
-
-    // ordersFull2 は別途取得しているので thisYearOrderIds は未使用変数になるため lint を回避
-    void thisYearOrderIds
 
     const response: AnalyticsResponse = { monthly, byProduct, byCompany, byCategory }
     return NextResponse.json({ data: response })
