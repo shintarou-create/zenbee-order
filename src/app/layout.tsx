@@ -1,5 +1,16 @@
 import './globals.css'
+import type { Metadata } from 'next'
 import { Noto_Sans_JP, Noto_Serif_JP } from 'next/font/google'
+
+export const metadata: Metadata = {
+  title: '善兵衛農園 発注システム',
+  description: '善兵衛農園 BtoB発注システム',
+  // iPhone「ホーム画面に追加」で善兵衛農園ロゴを表示（180×180・白背景）
+  icons: {
+    icon: '/apple-touch-icon.png',
+    apple: '/apple-touch-icon.png',
+  },
+}
 
 const notoSansJP = Noto_Sans_JP({
   subsets: ['latin'],
@@ -24,8 +35,6 @@ export default function RootLayout({
     <html lang="ja" className={`${notoSansJP.variable} ${notoSerifJP.variable}`}>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-        <title>善兵衛農園 発注システム</title>
-        <meta name="description" content="善兵衛農園 BtoB発注システム" />
       </head>
       <body className="bg-kinari text-gray-900 antialiased">
         <div className="min-h-screen">
