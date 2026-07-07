@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
+import QuantityStepper from '@/components/admin/QuantityStepper'
 
 type PricingTier = {
   id: string
@@ -385,14 +386,7 @@ export default function AdminOrderNewPage() {
                   </option>
                 ))}
               </select>
-              <input
-                type="number"
-                value={addQuantity}
-                onChange={(e) => setAddQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                min={1}
-                max={9999}
-                className="w-24 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-              />
+              <QuantityStepper value={addQuantity} onChange={setAddQuantity} min={1} max={9999} />
             </div>
 
             {hasTiers && (
@@ -456,13 +450,11 @@ export default function AdminOrderNewPage() {
                         <p className="text-xs text-gray-500">{item.tierLabel}</p>
                       )}
                     </div>
-                    <input
-                      type="number"
+                    <QuantityStepper
                       value={item.quantity}
-                      onChange={(e) => handleQuantityChange(item.key, Math.max(1, parseInt(e.target.value) || 1))}
+                      onChange={(q) => handleQuantityChange(item.key, q)}
                       min={1}
                       max={9999}
-                      className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-green-400"
                     />
                     <span className="text-xs text-gray-500 shrink-0">{item.unit}</span>
                     <button

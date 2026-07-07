@@ -8,6 +8,8 @@ import { adminFetch } from '@/lib/admin-fetch'
 import type { Order, OrderItem, OrderStatus, OrderShippingLine, Company, PriceRank } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
 import { formatDeliveryTimeSlot } from '@/lib/yamato-csv'
+import QuantityStepper from '@/components/admin/QuantityStepper'
+import AmountInput from '@/components/admin/AmountInput'
 
 interface EditableOrderItem {
   product_id: string | null
@@ -649,14 +651,12 @@ export default function AdminOrderDetailPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <input
-                              type="number"
+                          <div className="flex items-center justify-end gap-1 flex-wrap">
+                            <QuantityStepper
                               value={item.quantity}
+                              onChange={(q) => handleItemQuantityChange(idx, q)}
                               min={1}
                               max={9999}
-                              onChange={(e) => handleItemQuantityChange(idx, parseInt(e.target.value, 10) || 1)}
-                              className="w-16 text-right border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-400"
                             />
                             <input
                               type="text"
@@ -668,11 +668,11 @@ export default function AdminOrderDetailPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <input
-                            type="number"
+                          <AmountInput
                             value={item.unit_price}
+                            onChange={(v) => handleCustomItemFieldChange(idx, 'unit_price', String(v))}
                             min={0}
-                            onChange={(e) => handleCustomItemFieldChange(idx, 'unit_price', e.target.value)}
+                            max={100_000_000}
                             className="w-24 text-right border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
                           />
                         </td>
@@ -700,16 +700,12 @@ export default function AdminOrderDetailPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <input
-                            type="number"
+                        <div className="flex items-center justify-end gap-1 flex-wrap">
+                          <QuantityStepper
                             value={item.quantity}
+                            onChange={(q) => handleItemQuantityChange(idx, q)}
                             min={1}
                             max={9999}
-                            onChange={(e) =>
-                              handleItemQuantityChange(idx, parseInt(e.target.value, 10) || 1)
-                            }
-                            className="w-16 text-right border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
                           />
                           <span className="text-gray-500 whitespace-nowrap">
                             {hasTier ? `ケース（${realBottles}本）` : item.unit}
@@ -801,14 +797,7 @@ export default function AdminOrderDetailPage() {
                     ))}
                 </select>
               )}
-              <input
-                type="number"
-                value={addQuantity}
-                min={1}
-                max={9999}
-                onChange={(e) => setAddQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                className="w-20 border border-gray-200 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400"
-              />
+              <QuantityStepper value={addQuantity} onChange={setAddQuantity} min={1} max={9999} />
               <button
                 type="button"
                 onClick={handleAddProduct}
@@ -897,16 +886,15 @@ export default function AdminOrderDetailPage() {
                   placeholder="ラベル（例：常温送料）"
                   className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-green-400"
                 />
-                <input
-                  type="number"
+                <AmountInput
                   value={line.cost}
-                  min={0}
-                  max={1000000}
-                  onChange={(e) => {
+                  onChange={(v) => {
                     const next = [...shippingLines]
-                    next[idx] = { ...next[idx], cost: Math.max(0, parseInt(e.target.value, 10) || 0) }
+                    next[idx] = { ...next[idx], cost: v }
                     setShippingLines(next)
                   }}
+                  min={0}
+                  max={1000000}
                   className="w-28 border border-gray-200 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-400"
                 />
                 <span className="text-sm text-gray-500">円</span>
