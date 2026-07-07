@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { fetchAllRows, fetchInChunksByIds } from '@/lib/supabase-batch'
+
+// .in() のIDリスト分割サイズ（URL長対策）
+const ID_CHUNK_SIZE = 200
 
 export interface MonthlyData {
   month: number
@@ -64,25 +68,31 @@ export async function GET(req: NextRequest) {
     const lastYearStart = `${lastYear}-01-01T00:00:00.000Z`
     const lastYearEnd = `${lastYear}-12-31T23:59:59.999Z`
 
-    // 当年の注文を1回だけ取得し、月別・商品別・取引先別すべてをここから導出する。
-    // 月の判定は new Date(created_at).getMonth() で統一（今月カードの算出と一致させる）。
-    const [thisYearOrders, lastYearOrders] = await Promise.all([
-      supabase
-        .from('orders')
-        .select('id, created_at, company_id, total_amount')
-        .neq('status', 'cancelled')
-        .gte('created_at', thisYearStart)
-        .lte('created_at', thisYearEnd),
-      supabase
-        .from('orders')
-        .select('created_at, total_amount')
-        .neq('status', 'cancelled')
-        .gte('created_at', lastYearStart)
-        .lte('created_at', lastYearEnd),
-    ])
-
     type OrderRow = { id: string; created_at: string; company_id: string | null; total_amount: number | null }
-    const thisYearRows = (thisYearOrders.data ?? []) as OrderRow[]
+    type LastYearRow = { created_at: string; total_amount: number | null }
+
+    // 当年の注文を全件（1000行ずつバッチ）取得し、月別・商品別・取引先別すべてをここから導出する。
+    // 月の判定は new Date(created_at).getMonth() で統一（今月カードの算出と一致させる）。
+    const [thisYearRows, lastYearRows] = await Promise.all([
+      fetchAllRows<OrderRow>((from, to) =>
+        supabase
+          .from('orders')
+          .select('id, created_at, company_id, total_amount')
+          .neq('status', 'cancelled')
+          .gte('created_at', thisYearStart)
+          .lte('created_at', thisYearEnd)
+          .range(from, to),
+      ),
+      fetchAllRows<LastYearRow>((from, to) =>
+        supabase
+          .from('orders')
+          .select('created_at, total_amount')
+          .neq('status', 'cancelled')
+          .gte('created_at', lastYearStart)
+          .lte('created_at', lastYearEnd)
+          .range(from, to),
+      ),
+    ])
 
     // --- 月別集計（常に年間分） ---
     const thisYearByMonth: Record<number, number> = {}
@@ -91,7 +101,7 @@ export async function GET(req: NextRequest) {
       thisYearByMonth[m] = (thisYearByMonth[m] ?? 0) + (o.total_amount ?? 0)
     }
     const lastYearByMonth: Record<number, number> = {}
-    for (const o of lastYearOrders.data ?? []) {
+    for (const o of lastYearRows) {
       const m = new Date(o.created_at).getMonth() + 1
       lastYearByMonth[m] = (lastYearByMonth[m] ?? 0) + (o.total_amount ?? 0)
     }
@@ -115,13 +125,18 @@ export async function GET(req: NextRequest) {
     const byProduct: ProductData[] = []
     const byCategory: CategoryData[] = []
     if (aggOrderIds.length > 0) {
-      const { data: items } = await supabase
-        .from('order_items')
-        .select('product_name, subtotal, quantity, product_id')
-        .in('order_id', aggOrderIds)
+      type ItemRow = { product_name: string; subtotal: number | null; quantity: number | null; product_id: string | null }
+      // aggOrderIds を 200件ずつに分割し、各チャンクを1000行ずつ全件取得して結合する。
+      const items = await fetchInChunksByIds<ItemRow>(aggOrderIds, ID_CHUNK_SIZE, (chunkIds, from, to) =>
+        supabase
+          .from('order_items')
+          .select('product_name, subtotal, quantity, product_id')
+          .in('order_id', chunkIds)
+          .range(from, to),
+      )
 
       const productMap: Record<string, { total: number; quantity: number }> = {}
-      for (const item of items ?? []) {
+      for (const item of items) {
         const key = item.product_name
         if (!productMap[key]) productMap[key] = { total: 0, quantity: 0 }
         productMap[key].total += item.subtotal ?? 0
@@ -136,20 +151,19 @@ export async function GET(req: NextRequest) {
       // カテゴリー別集計
       const productIds = Array.from(
         new Set(
-          (items ?? [])
-            .map((i) => (i as unknown as { product_id?: string | null }).product_id)
+          items
+            .map((i) => i.product_id)
             .filter((pid): pid is string => !!pid)
         )
       )
 
       const productIdToCategoryId = new Map<string, string | null>()
       if (productIds.length > 0) {
-        const { data: prods } = await supabase
-          .from('products')
-          .select('id, category_id')
-          .in('id', productIds)
-        for (const p of prods ?? []) {
-          const prod = p as unknown as { id: string; category_id?: string | null }
+        type ProdRow = { id: string; category_id: string | null }
+        const prods = await fetchInChunksByIds<ProdRow>(productIds, ID_CHUNK_SIZE, (chunkIds, from, to) =>
+          supabase.from('products').select('id, category_id').in('id', chunkIds).range(from, to),
+        )
+        for (const prod of prods) {
           productIdToCategoryId.set(prod.id, prod.category_id ?? null)
         }
       }
@@ -162,8 +176,7 @@ export async function GET(req: NextRequest) {
       }
 
       const catMap: Record<string, { total: number; quantity: number }> = {}
-      for (const item of items ?? []) {
-        const it = item as unknown as { product_id?: string | null; subtotal?: number | null; quantity?: number | null }
+      for (const it of items) {
         const catId = it.product_id ? (productIdToCategoryId.get(it.product_id) ?? null) : null
         const catName = catId ? (categoryIdToName.get(catId) ?? 'その他') : 'その他'
         if (!catMap[catName]) catMap[catName] = { total: 0, quantity: 0 }
@@ -190,13 +203,13 @@ export async function GET(req: NextRequest) {
     const companyIds = Object.keys(companyMap)
     const byCompany: CompanyData[] = []
     if (companyIds.length > 0) {
-      const { data: companies } = await supabase
-        .from('companies')
-        .select('id, company_name')
-        .in('id', companyIds)
+      type CompanyRow = { id: string; company_name: string }
+      const companies = await fetchInChunksByIds<CompanyRow>(companyIds, ID_CHUNK_SIZE, (chunkIds, from, to) =>
+        supabase.from('companies').select('id, company_name').in('id', chunkIds).range(from, to),
+      )
 
       const nameMap: Record<string, string> = {}
-      for (const c of companies ?? []) nameMap[c.id] = c.company_name
+      for (const c of companies) nameMap[c.id] = c.company_name
 
       const sorted = companyIds
         .map((cid) => ({
