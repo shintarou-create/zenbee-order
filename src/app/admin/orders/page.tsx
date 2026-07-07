@@ -523,6 +523,13 @@ function AdminOrdersContent() {
         )}
       </div>
 
+      {/* 完了タブの補足（工程の意味） */}
+      {!isLoading && activeTab === 'done' && (
+        <p className="text-xs text-gray-400 px-1">
+          「完了」は請求書を発行した注文です。請求書を発行した注文はここに移動します。
+        </p>
+      )}
+
       {/* もっと見るボタン */}
       {!isLoading && hasMore && (
         <div className="flex justify-center">

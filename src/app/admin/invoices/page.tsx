@@ -105,6 +105,8 @@ export default function AdminInvoicesPage() {
 
       // 請求書を作成
       let created = 0
+      // 今回新規作成した請求書に紐づく注文ID（ループ後に一括で done に更新する）
+      const completedOrderIds: string[] = []
       for (const [billingCompanyId, compOrders] of Object.entries(companyOrders)) {
         // 既に請求書があるか確認
         const { data: existing } = await supabase
@@ -155,10 +157,38 @@ export default function AdminInvoicesPage() {
         )
         if (itemsError) throw itemsError
 
+        // このグループの注文は請求書発行済み → 後で done にする
+        completedOrderIds.push(...compOrders.map((o) => o.id))
         created++
       }
 
-      setMessage({ type: 'success', text: `${created}件の請求書を生成しました` })
+      // 新規作成した請求書に紐づく注文を一括で「完了(done)」に更新する。
+      // 出荷済=未請求 / 完了=請求書発行済み、という工程の再定義に対応。
+      // .update() はゼロ行マッチや RLS で沈黙失敗するため error を必ず確認する。
+      let completeFailed = false
+      if (completedOrderIds.length > 0) {
+        const { error: completeError } = await supabase
+          .from('orders')
+          .update({ status: 'done' })
+          .in('id', completedOrderIds)
+        if (completeError) {
+          console.error('注文の完了更新エラー:', completeError)
+          completeFailed = true
+        }
+      }
+
+      if (completeFailed) {
+        // 請求書生成自体は成功として扱い、ロールバックはしない。
+        setMessage({
+          type: 'error',
+          text: `${created}件の請求書を生成しましたが、対象注文の完了更新に失敗しました（注文管理で手動で完了にしてください）`,
+        })
+      } else {
+        setMessage({
+          type: 'success',
+          text: `${created}件の請求書を生成し、対象の注文${completedOrderIds.length}件を完了にしました`,
+        })
+      }
       await fetchInvoices()
     } catch (err) {
       console.error('請求書生成エラー:', err)
