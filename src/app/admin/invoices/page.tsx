@@ -41,7 +41,7 @@ export default function AdminInvoicesPage() {
         .from('invoices')
         .select(`
           *,
-          company:companies (company_name, email, has_separate_billing, billing_name),
+          company:companies (company_name, email, has_separate_billing, billing_name, invoice_delivery_method),
           invoice_items (id, order_id, amount)
         `)
         .eq('billing_month', selectedMonth)
@@ -297,22 +297,30 @@ export default function AdminInvoicesPage() {
     setGmailDraftingId(null)
   }
 
-  // 一括：選択中のうち メール登録あり を1社ずつ直列で処理（並列禁止）。
-  // 下書き作成済みが含まれる場合は内訳を confirm で提示し、OK なら再作成する。
-  // メール未登録は従来どおり対象外（除外＋警告）。
+  // 一括：選択中のうち「メール送付 かつ メール登録あり」を1社ずつ直列で処理（並列禁止）。
+  // 郵送・その他（メール以外の送付）、およびメール未登録はスキップし、内訳を confirm に提示する。
+  // 下書き作成済みが含まれる場合は再作成の内訳も提示し、OK なら再作成する。
   async function handleBulkGmailDraft() {
     const sel = invoices.filter((inv) => selectedIds.has(inv.id))
-    const hasEmail = (inv: Invoice) => {
-      const c = inv.company as { email?: string | null } | undefined
-      return !!c?.email
-    }
-    // メール登録あり = 作成対象（未作成・作成済みの両方）。メール未登録は対象外。
-    const targets = sel.filter(hasEmail)
-    const noEmailN = sel.length - targets.length
+    // 作成対象 = メール送付 かつ メールあり（未作成・作成済みの両方）。
+    const targets = sel.filter((inv) => {
+      const { email, deliveryMethod } = getCompanyView(inv)
+      return deliveryMethod === 'email' && !!email
+    })
+    // スキップ内訳: 郵送・その他（送付方法がメール以外）／メール未登録（メール送付だがメール無し）
+    const nonEmailMethodN = sel.filter((inv) => getCompanyView(inv).deliveryMethod !== 'email').length
+    const noEmailN = sel.filter((inv) => {
+      const { email, deliveryMethod } = getCompanyView(inv)
+      return deliveryMethod === 'email' && !email
+    }).length
+    const skipParts: string[] = []
+    if (nonEmailMethodN > 0) skipParts.push(`郵送・メール以外の送付のため${nonEmailMethodN}件`)
+    if (noEmailN > 0) skipParts.push(`メール未登録のため${noEmailN}件`)
+    const skipText = skipParts.length > 0 ? `${skipParts.join('、')}をスキップします。` : ''
     const alreadyCreatedN = targets.filter((inv) => inv.gmail_draft_created_at).length
 
     if (targets.length === 0) {
-      setMessage({ type: 'error', text: '対象がありません（メール登録ありの取引先のみ作成できます）' })
+      setMessage({ type: 'error', text: '対象がありません（メール送付でメール登録ありの取引先のみ作成できます）' })
       setTimeout(() => setMessage(null), 5000)
       return
     }
@@ -322,15 +330,15 @@ export default function AdminInvoicesPage() {
       const confirmText =
         `選択中 ${targets.length}件のうち ${alreadyCreatedN}件は下書き作成済みです。\n` +
         `再作成すると新しい下書きが追加されます（Gmailに残っている古い下書きは自動削除されません。不要なら手動で削除してください）。\n` +
-        (noEmailN > 0 ? `メール未登録の ${noEmailN}件 は対象外です。\n` : '') +
+        (skipText ? `${skipText}\n` : '') +
         `続行しますか？`
       if (!window.confirm(confirmText)) return
     } else {
-      // 全て未作成：従来どおりの確認フロー
+      // 全て未作成：確認フロー
       if (
         !window.confirm(
           `${targets.length}社分のGmail下書きを作成します。よろしいですか？` +
-            (noEmailN > 0 ? `\n（対象${targets.length}件・スキップ${noEmailN}件：メール未登録）` : '')
+            (skipText ? `\n（${skipText}）` : '')
         )
       )
         return
@@ -453,12 +461,19 @@ export default function AdminInvoicesPage() {
   // company_name を「店舗名」として添える。
   function getCompanyView(invoice: Invoice) {
     const c = invoice.company as
-      | { company_name?: string; email?: string | null; has_separate_billing?: boolean | null; billing_name?: string | null }
+      | {
+          company_name?: string
+          email?: string | null
+          has_separate_billing?: boolean | null
+          billing_name?: string | null
+          invoice_delivery_method?: 'email' | 'postal' | 'other' | null
+        }
       | undefined
     const useBilling = !!(c?.has_separate_billing && c?.billing_name)
     const displayName = useBilling ? c!.billing_name! : c?.company_name ?? '（会社名未設定）'
     const storeName = useBilling ? c?.company_name ?? '' : ''
-    return { email: c?.email ?? null, displayName, storeName }
+    const deliveryMethod = c?.invoice_delivery_method ?? 'email'
+    return { email: c?.email ?? null, displayName, storeName, deliveryMethod }
   }
 
   // ISO日時 → 日本時間「M/D HH:mm」
@@ -516,10 +531,11 @@ export default function AdminInvoicesPage() {
   // 請求合計（選択中の請求月・全件）
   const totalSum = invoices.reduce((s, i) => s + i.total_amount, 0)
 
+  // メール送付の取引先でメール未登録の請求のみ警告対象（郵送・その他は対象外）
   const noEmailNames = invoices
     .filter((inv) => {
-      const c = inv.company as { email?: string | null } | undefined
-      return !c?.email
+      const { email, deliveryMethod } = getCompanyView(inv)
+      return deliveryMethod === 'email' && !email
     })
     .map((inv) => getCompanyView(inv).displayName)
 
@@ -654,8 +670,10 @@ export default function AdminInvoicesPage() {
 
             <div className="divide-y divide-gray-100">
               {tabInvoices.map((invoice) => {
-                const { email, displayName, storeName } = getCompanyView(invoice)
+                const { email, displayName, storeName, deliveryMethod } = getCompanyView(invoice)
                 const hasEmail = !!email
+                const isEmailMethod = deliveryMethod === 'email'
+                const canGmail = isEmailMethod && hasEmail
                 const isOverdue = !!invoice.due_date && invoice.status !== 'paid' && invoice.due_date < todayStr
                 const checked = selectedIds.has(invoice.id)
                 return (
@@ -703,14 +721,20 @@ export default function AdminInvoicesPage() {
                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${getStatusColor(invoice.status)}`}>
                           {statusLabel(invoice.status)}
                         </span>
-                        {invoice.gmail_draft_created_at ? (
-                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                            下書き作成済み {formatDraftBadge(invoice.gmail_draft_created_at)}
-                          </span>
+                        {isEmailMethod ? (
+                          invoice.gmail_draft_created_at ? (
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                              下書き作成済み {formatDraftBadge(invoice.gmail_draft_created_at)}
+                            </span>
+                          ) : (
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">未作成</span>
+                          )
+                        ) : deliveryMethod === 'postal' ? (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">郵送</span>
                         ) : (
-                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">未作成</span>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">メール以外の送付</span>
                         )}
-                        {!hasEmail && (
+                        {isEmailMethod && !hasEmail && (
                           <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">メール未登録</span>
                         )}
                       </div>
@@ -730,7 +754,7 @@ export default function AdminInvoicesPage() {
                         >
                           {pdfDownloadingId === invoice.id ? 'PDF作成中...' : 'PDF保存'}
                         </button>
-                        {hasEmail && !invoice.gmail_draft_created_at && (
+                        {canGmail && !invoice.gmail_draft_created_at && (
                           <button
                             onClick={() => handleCreateGmailDraft(invoice)}
                             disabled={anyBusy}

@@ -46,6 +46,14 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: '請求書が見つかりません' }, { status: 404 })
     }
 
+    // 送付方法ガード: メール以外（郵送・その他）は Gmail 下書きを作成しない。
+    if (detail.billing.deliveryMethod !== 'email') {
+      return NextResponse.json(
+        { error: 'この取引先は郵送・メール以外の送付設定のためGmail下書きは作成できません' },
+        { status: 400 }
+      )
+    }
+
     const email = detail.billing.email
     if (!email) {
       return NextResponse.json({ error: '取引先のメールアドレスが未登録です' }, { status: 400 })

@@ -6,6 +6,14 @@
 export type PriceRank = 'standard' | 'premium' | 'vip'
 export type DeliveryMethod = 'yamato' | 'direct_delivery' | 'pickup'
 
+// 請求書の送付方法（取引先ごと）
+export type InvoiceDeliveryMethod = 'email' | 'postal' | 'other'
+export const INVOICE_DELIVERY_METHOD_LABELS: Record<InvoiceDeliveryMethod, string> = {
+  email: 'メール送信',
+  postal: '郵送',
+  other: 'その他',
+}
+
 // ============================================================
 // Category
 // ============================================================
@@ -68,6 +76,9 @@ export interface Company {
   billing_building: string | null
   // 親会社（請求まとめ先）。NULL=自社単位で請求。自己参照FK・ON DELETE SET NULL。
   parent_company_id: string | null
+  // 請求書の送付方法。'email'=Gmail下書き対象 / 'postal'=郵送 / 'other'=その他（note にメモ）
+  invoice_delivery_method: InvoiceDeliveryMethod
+  invoice_delivery_note: string | null
   created_at: string
   updated_at: string
   // Joined fields

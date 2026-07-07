@@ -26,6 +26,7 @@ export type InvoiceDetail = {
     name: string
     company_name: string
     email: string | null
+    deliveryMethod: 'email' | 'postal' | 'other'
     postal_code: string | null
     prefecture: string | null
     city: string | null
@@ -96,7 +97,8 @@ export async function buildInvoiceDetail(
         billing_city,
         billing_address,
         billing_building,
-        email
+        email,
+        invoice_delivery_method
       ),
       invoice_items (
         order:orders (
@@ -135,6 +137,7 @@ export async function buildInvoiceDetail(
     billing_address?: string | null
     billing_building?: string | null
     email?: string | null
+    invoice_delivery_method?: 'email' | 'postal' | 'other' | null
   } | null
 
   const useBilling = company?.has_separate_billing === true
@@ -222,6 +225,7 @@ export async function buildInvoiceDetail(
       name: billingName,
       company_name: company?.company_name ?? '',
       email: company?.email ?? null,
+      deliveryMethod: company?.invoice_delivery_method ?? 'email',
       ...billingAddress,
     },
     lineItems,

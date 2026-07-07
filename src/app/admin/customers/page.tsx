@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
 import CustomerTable from '@/components/admin/CustomerTable'
-import type { Company, PriceRank, DeliveryMethod, CompanyOverride } from '@/types'
+import type { Company, PriceRank, DeliveryMethod, InvoiceDeliveryMethod, CompanyOverride } from '@/types'
 
 const PRICE_RANKS: { value: string; label: string }[] = [
   { value: 'all', label: 'すべて' },
@@ -96,6 +96,8 @@ const initialFormData: Partial<Company> = {
   billing_address: '',
   billing_building: '',
   parent_company_id: null,
+  invoice_delivery_method: 'email',
+  invoice_delivery_note: null,
 }
 
 export default function AdminCustomersPage() {
@@ -370,6 +372,10 @@ export default function AdminCustomersPage() {
           : null,
         // 親会社（請求まとめ先）。空選択時は null。
         parent_company_id: formData.parent_company_id || null,
+        // 請求書の送付方法。note は「その他」のときのみ保存、それ以外は null。
+        invoice_delivery_method: formData.invoice_delivery_method || 'email',
+        invoice_delivery_note:
+          formData.invoice_delivery_method === 'other' ? (formData.invoice_delivery_note || null) : null,
       }
 
       if (editingCompany) {
@@ -924,6 +930,33 @@ export default function AdminCustomersPage() {
                 />
                 <p className="text-xs text-gray-400 mt-1">
                   請求書のメール送信などに使用します。
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">請求書の送り方</label>
+                <select
+                  value={formData.invoice_delivery_method || 'email'}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, invoice_delivery_method: e.target.value as InvoiceDeliveryMethod }))
+                  }
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  <option value="email">メール送信</option>
+                  <option value="postal">郵送</option>
+                  <option value="other">その他</option>
+                </select>
+                {formData.invoice_delivery_method === 'other' && (
+                  <input
+                    type="text"
+                    value={formData.invoice_delivery_note || ''}
+                    onChange={(e) => setFormData((p) => ({ ...p, invoice_delivery_note: e.target.value }))}
+                    placeholder="例：手渡し、FAX、LINEで送付 など"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mt-2 focus:outline-none focus:ring-2 focus:ring-green-400"
+                  />
+                )}
+                <p className="text-xs text-gray-400 mt-1">
+                  郵送・その他の取引先は請求管理のGmail下書き対象から外れます。
                 </p>
               </div>
 
