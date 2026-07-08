@@ -29,3 +29,43 @@ export async function verifyAdmin(req: Request): Promise<AdminRole | null> {
 
   return (data?.role as AdminRole) ?? null
 }
+
+// 認証済み管理者の識別情報（メモログの記入者などに使う）。
+// 未認証なら null。開発環境ではダミーの識別情報を返す。
+export async function getAdminIdentity(
+  req: Request
+): Promise<{ lineUserId: string | null; name: string; role: AdminRole } | null> {
+  if (process.env.NODE_ENV === 'development') {
+    return { lineUserId: null, name: '管理者（開発）', role: 'superadmin' }
+  }
+
+  const authHeader = req.headers.get('authorization')
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  if (!token) return null
+
+  let lineUserId: string
+  try {
+    const res = await fetch('https://api.line.me/v2/profile', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return null
+    const profile = (await res.json()) as { userId: string }
+    lineUserId = profile.userId
+  } catch {
+    return null
+  }
+
+  const supabase = createServiceClient()
+  const { data } = await supabase
+    .from('admin_users')
+    .select('name, role')
+    .eq('line_user_id', lineUserId)
+    .single()
+
+  if (!data) return null
+  return {
+    lineUserId,
+    name: (data.name as string) || '管理者',
+    role: data.role as AdminRole,
+  }
+}

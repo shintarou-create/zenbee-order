@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
 import CustomerTable from '@/components/admin/CustomerTable'
-import type { Company, PriceRank, DeliveryMethod, InvoiceDeliveryMethod, CompanyOverride } from '@/types'
+import type { Company, PriceRank, DeliveryMethod, InvoiceDeliveryMethod, CompanyOverride, CompanyMemoLog } from '@/types'
 
 const PRICE_RANKS: { value: string; label: string }[] = [
   { value: 'all', label: 'すべて' },
@@ -46,6 +46,14 @@ const OVERRIDE_CATEGORIES = [
   '枇杷',
   'その他',
 ]
+
+// ISO日時 → 日本時間「YYYY/M/D HH:mm」
+function formatMemoDate(iso: string): string {
+  const jst = new Date(new Date(iso).toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }))
+  const hh = String(jst.getHours()).padStart(2, '0')
+  const mi = String(jst.getMinutes()).padStart(2, '0')
+  return `${jst.getFullYear()}/${jst.getMonth() + 1}/${jst.getDate()} ${hh}:${mi}`
+}
 
 type ProductForOverride = {
   id: string
@@ -98,6 +106,7 @@ const initialFormData: Partial<Company> = {
   parent_company_id: null,
   invoice_delivery_method: 'email',
   invoice_delivery_note: null,
+  internal_memo: '',
 }
 
 export default function AdminCustomersPage() {
@@ -134,6 +143,12 @@ export default function AdminCustomersPage() {
   const [linkDisplayName, setLinkDisplayName] = useState('')
   const [linking, setLinking] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
+
+  // 取引先メモログ（時系列）
+  const [memoLogs, setMemoLogs] = useState<CompanyMemoLog[]>([])
+  const [memoLogsLoading, setMemoLogsLoading] = useState(false)
+  const [newMemoBody, setNewMemoBody] = useState('')
+  const [addingMemo, setAddingMemo] = useState(false)
 
   useEffect(() => {
     fetchCompanies()
@@ -182,6 +197,69 @@ export default function AdminCustomersPage() {
       setOverrides([])
     } finally {
       setOverridesLoading(false)
+    }
+  }
+
+  async function fetchMemoLogs(companyId: string) {
+    setMemoLogsLoading(true)
+    try {
+      const res = await adminFetch(`/api/admin/companies/${companyId}/memo-logs`)
+      const json = (await res.json()) as { data?: CompanyMemoLog[]; error?: string }
+      setMemoLogs(res.ok ? (json.data ?? []) : [])
+    } catch (err) {
+      console.error('メモログ取得エラー:', err)
+      setMemoLogs([])
+    } finally {
+      setMemoLogsLoading(false)
+    }
+  }
+
+  async function handleAddMemoLog() {
+    if (!editingCompany) return
+    const text = newMemoBody.trim()
+    if (!text) return
+    setAddingMemo(true)
+    try {
+      const res = await adminFetch(`/api/admin/companies/${editingCompany.id}/memo-logs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: text }),
+      })
+      const json = (await res.json()) as { data?: CompanyMemoLog; error?: string }
+      if (!res.ok || !json.data) {
+        setMessage({ type: 'error', text: json.error || 'メモの追加に失敗しました' })
+        setTimeout(() => setMessage(null), 3000)
+        return
+      }
+      setMemoLogs((prev) => [json.data as CompanyMemoLog, ...prev])
+      setNewMemoBody('')
+    } catch (err) {
+      console.error('メモログ追加エラー:', err)
+      setMessage({ type: 'error', text: '通信エラーが発生しました' })
+      setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setAddingMemo(false)
+    }
+  }
+
+  async function handleDeleteMemoLog(logId: string) {
+    if (!editingCompany) return
+    if (!window.confirm('このメモを削除します。よろしいですか？')) return
+    try {
+      const res = await adminFetch(`/api/admin/companies/${editingCompany.id}/memo-logs/${logId}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string }
+        setMessage({ type: 'error', text: json.error || 'メモの削除に失敗しました' })
+        setTimeout(() => setMessage(null), 3000)
+        return
+      }
+      setMemoLogs((prev) => prev.filter((m) => m.id !== logId))
+    } catch (err) {
+      console.error('メモログ削除エラー:', err)
+      setMessage({ type: 'error', text: '通信エラーが発生しました' })
+      setTimeout(() => setMessage(null), 3000)
     }
   }
 
@@ -288,6 +366,10 @@ export default function AdminCustomersPage() {
     setEditingOverrideId(null)
     setOverrideError(null)
     fetchOverrides(company.id)
+    // メモログ（既存取引先のみ）
+    setMemoLogs([])
+    setNewMemoBody('')
+    fetchMemoLogs(company.id)
     setShowModal(true)
   }
 
@@ -298,6 +380,8 @@ export default function AdminCustomersPage() {
     setOverrideForm(initialOverrideForm)
     setEditingOverrideId(null)
     setOverrideError(null)
+    setMemoLogs([])
+    setNewMemoBody('')
     setShowModal(true)
   }
 
@@ -376,6 +460,8 @@ export default function AdminCustomersPage() {
         invoice_delivery_method: formData.invoice_delivery_method || 'email',
         invoice_delivery_note:
           formData.invoice_delivery_method === 'other' ? (formData.invoice_delivery_note || null) : null,
+        // 社内専用の常設メモ
+        internal_memo: formData.internal_memo?.trim() || null,
       }
 
       if (editingCompany) {
@@ -1099,6 +1185,20 @@ export default function AdminCustomersPage() {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  取引メモ（規格の好み・注意点）
+                </label>
+                <textarea
+                  value={formData.internal_memo || ''}
+                  onChange={(e) => setFormData((p) => ({ ...p, internal_memo: e.target.value }))}
+                  rows={3}
+                  placeholder="例：Lサイズ中心・小玉不可、青みがかったものを好む など"
+                  className="w-full border border-amber-200 bg-amber-50/40 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                />
+                <p className="text-xs text-gray-400 mt-1">社内専用。注文詳細・手動入力の上部に表示されます（顧客には非表示）。</p>
+              </div>
+
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -1111,6 +1211,63 @@ export default function AdminCustomersPage() {
                   有効（発注可能）
                 </label>
               </div>
+
+              {/* メモログ（時系列・既存取引先のみ） */}
+              {editingCompany && (
+                <div className="border-t border-gray-100 pt-3 space-y-2">
+                  <h3 className="text-sm font-bold text-gray-900">メモログ（記録）</h3>
+
+                  {/* 追記フォーム */}
+                  <div className="flex flex-col gap-2">
+                    <textarea
+                      value={newMemoBody}
+                      onChange={(e) => setNewMemoBody(e.target.value)}
+                      rows={2}
+                      maxLength={500}
+                      placeholder="例：6/10 バレンシア20kg発送。次回は少し小玉希望とのこと。"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleAddMemoLog}
+                        disabled={addingMemo || !newMemoBody.trim()}
+                        className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 min-h-[40px] rounded-lg text-sm disabled:opacity-50 transition-colors"
+                      >
+                        {addingMemo ? '追加中...' : 'メモを追加'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 一覧 */}
+                  {memoLogsLoading ? (
+                    <p className="text-xs text-gray-400 py-2">読み込み中…</p>
+                  ) : memoLogs.length === 0 ? (
+                    <p className="text-xs text-gray-400 py-2">まだメモはありません。</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {memoLogs.map((log) => (
+                        <div key={log.id} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-gray-400">
+                              {formatMemoDate(log.created_at)}
+                              {log.author_name ? `・${log.author_name}` : ''}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMemoLog(log.id)}
+                              className="text-xs text-red-400 hover:text-red-600 flex-shrink-0"
+                            >
+                              削除
+                            </button>
+                          </div>
+                          <p className="text-sm text-gray-800 mt-0.5 whitespace-pre-wrap break-words">{log.body}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 個別単価・送料特例（既存取引先のみ） */}
               {editingCompany && (

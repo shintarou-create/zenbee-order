@@ -62,6 +62,8 @@ export interface Company {
   // 発送方法（direct_delivery / pickup は送料一律¥0）
   delivery_method: DeliveryMethod
   notes: string | null
+  // 社内専用の常設メモ（規格の好み・注意点など。顧客側には表示しない）
+  internal_memo: string | null
   is_active: boolean
   // 初回オンボーディング
   registration_code?: string | null
@@ -308,6 +310,16 @@ export interface AdminUser {
   line_user_id: string
   name: string
   role: AdminRole
+}
+
+// 取引先メモログ（時系列・社内専用）
+export interface CompanyMemoLog {
+  id: string
+  company_id: string
+  author_line_user_id: string | null
+  author_name: string
+  body: string
+  created_at: string
 }
 
 // ============================================================

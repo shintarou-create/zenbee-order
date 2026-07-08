@@ -34,6 +34,7 @@ type CompanyRow = {
   id: string
   company_name: string
   price_rank: string
+  internal_memo: string | null
 }
 
 type OrderItem = {
@@ -108,7 +109,7 @@ export default function AdminOrderNewPage() {
           .order('display_order', { ascending: true }),
         supabase
           .from('companies')
-          .select('id, company_name, price_rank')
+          .select('id, company_name, price_rank, internal_memo')
           .eq('is_active', true)
           .eq('approval_status', 'approved')
           .order('company_name', { ascending: true }),
@@ -366,6 +367,18 @@ export default function AdminOrderNewPage() {
               </p>
             </div>
           )}
+
+          {/* 取引メモ（社内専用・選択した取引先に常設メモがある場合のみ） */}
+          {(() => {
+            const selected = companyMode === 'existing' ? companies.find((c) => c.id === companyId) : null
+            if (!selected?.internal_memo?.trim()) return null
+            return (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <span className="flex-shrink-0" aria-hidden>📝</span>
+                <p className="text-sm text-amber-900 whitespace-pre-wrap break-words">{selected.internal_memo}</p>
+              </div>
+            )
+          })()}
         </section>
 
         {/* 商品 */}

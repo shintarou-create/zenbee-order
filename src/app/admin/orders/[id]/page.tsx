@@ -611,6 +611,14 @@ export default function AdminOrderDetailPage() {
               {company.phone && <p className="text-gray-600">TEL: {company.phone}</p>}
               {company.email && <p className="text-gray-600">{company.email}</p>}
             </div>
+
+            {/* 取引メモ（社内専用・常設メモがある場合のみ・読み取り専用） */}
+            {company.internal_memo && company.internal_memo.trim() && (
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <span className="flex-shrink-0" aria-hidden>📝</span>
+                <p className="text-sm text-amber-900 whitespace-pre-wrap break-words">{company.internal_memo}</p>
+              </div>
+            )}
           </div>
         )}
       </div>
