@@ -10,6 +10,7 @@ import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } 
 import { formatDeliveryTimeSlot } from '@/lib/yamato-csv'
 import QuantityStepper from '@/components/admin/QuantityStepper'
 import AmountInput from '@/components/admin/AmountInput'
+import { formatQuantity, formatUnitWithTotal, shouldShowTierBadge } from '@/lib/quantity-format'
 
 interface EditableOrderItem {
   product_id: string | null
@@ -687,13 +688,11 @@ export default function AdminOrderDetailPage() {
                       </tr>
                     )
                   }
-                  const hasTier = !!item.tier_quantity
-                  const realBottles = hasTier ? item.quantity * item.tier_quantity! : null
                   return (
                     <tr key={idx}>
                       <td className="px-4 py-3 text-gray-900">
                         {item.product_name}
-                        {item.tier_label && (
+                        {item.tier_label && shouldShowTierBadge(item.tier_quantity) && (
                           <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
                             {item.tier_label}
                           </span>
@@ -708,7 +707,7 @@ export default function AdminOrderDetailPage() {
                             max={9999}
                           />
                           <span className="text-gray-500 whitespace-nowrap">
-                            {hasTier ? `ケース（${realBottles}本）` : item.unit}
+                            {formatUnitWithTotal({ quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit })}
                           </span>
                         </div>
                       </td>
@@ -744,22 +743,18 @@ export default function AdminOrderDetailPage() {
                       </tr>
                     )
                   }
-                  const hasTier = !!item.tier_quantity
-                  const realBottles = hasTier ? item.quantity * item.tier_quantity! : null
                   return (
                     <tr key={item.id}>
                       <td className="px-4 py-3 text-gray-900">
                         {item.product_name}
-                        {item.tier_label && (
+                        {item.tier_label && shouldShowTierBadge(item.tier_quantity) && (
                           <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
                             {item.tier_label}
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {hasTier
-                          ? `${item.quantity}ケース（${realBottles}本）`
-                          : `${item.quantity}${item.unit}`}
+                        {formatQuantity({ quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit })}
                       </td>
                       <td className="px-4 py-3 text-right">{formatCurrency(item.unit_price)}</td>
                       <td className="px-4 py-3 text-right font-medium">{formatCurrency(item.subtotal)}</td>

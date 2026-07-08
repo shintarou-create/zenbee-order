@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { verifyAdmin } from '@/lib/admin-auth'
+import { formatOrderItemLabel } from '@/lib/quantity-format'
 import { generateOrderNumber } from '@/lib/utils'
 import { notifyOrderCreated } from '@/lib/line-messaging'
 import { calculateShipping } from '@/lib/shipping'
@@ -365,10 +366,7 @@ export async function POST(req: NextRequest) {
       const productSummary = orderItemsData
         .map((item) => {
           if (item.is_custom) return `・【自由記入】${item.product_name}（金額未確定）`
-          if (item.tier_label && item.tier_quantity) {
-            return `・${item.product_name} [${item.tier_label}] × ${item.quantity}ケース（${item.quantity * item.tier_quantity}本）`
-          }
-          return `・${item.product_name} ${item.quantity}${item.unit}`
+          return `・${formatOrderItemLabel({ product_name: item.product_name, quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit })}`
         })
         .join('\n')
 

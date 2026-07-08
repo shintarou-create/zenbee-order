@@ -1,6 +1,7 @@
 'use client'
 
 import type { CartItem as CartItemType } from '@/types'
+import { formatQuantity, formatCartUnit, isCaseTier, shouldShowTierBadge } from '@/lib/quantity-format'
 
 interface CartItemProps {
   item: CartItemType
@@ -59,8 +60,6 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
     onUpdateQuantity(item.productId, parseFloat(clamped.toFixed(3)))
   }
 
-  const hasTier = !!item.tierQuantity
-  const totalBottles = hasTier ? item.quantity * (item.tierQuantity ?? 1) : null
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
@@ -74,7 +73,7 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-bold text-gray-900 text-base">{item.productName}</h3>
-            {item.tierLabel && (
+            {item.tierLabel && shouldShowTierBadge(item.tierQuantity) && (
               <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
                 {item.tierLabel}
               </span>
@@ -85,9 +84,9 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
               </span>
             )}
           </div>
-          {hasTier && totalBottles !== null && (
+          {isCaseTier(item.tierQuantity) && (
             <p className="text-xs text-gray-500 mt-0.5">
-              {item.quantity}ケース（計{totalBottles}本）
+              {formatQuantity({ quantity: item.quantity, tier_quantity: item.tierQuantity, unit: item.unit })}
             </p>
           )}
         </div>
@@ -122,7 +121,7 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
               className={`w-16 text-center font-bold border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-fukamidori transition-colors ${item.quantity === 0 ? 'text-gray-300 border-gray-200 bg-gray-50' : 'border-gray-200'}`}
             />
             <span className={`text-sm transition-colors ${item.quantity === 0 ? 'text-gray-300' : 'text-gray-500'}`}>
-              {hasTier ? 'ケース' : item.unit}
+              {formatCartUnit({ tier_quantity: item.tierQuantity, unit: item.unit })}
             </span>
           </div>
           <button

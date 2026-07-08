@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
 import QuantityStepper from '@/components/admin/QuantityStepper'
+import { formatUnitWithTotal, shouldShowTierBadge } from '@/lib/quantity-format'
 
 type PricingTier = {
   id: string
@@ -446,7 +447,7 @@ export default function AdminOrderNewPage() {
                   <div key={item.key} className="flex items-center gap-2 p-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">{item.productName}</p>
-                      {item.tierLabel && (
+                      {item.tierLabel && shouldShowTierBadge(item.tierQuantity) && (
                         <p className="text-xs text-gray-500">{item.tierLabel}</p>
                       )}
                     </div>
@@ -456,7 +457,9 @@ export default function AdminOrderNewPage() {
                       min={1}
                       max={9999}
                     />
-                    <span className="text-xs text-gray-500 shrink-0">{item.unit}</span>
+                    <span className="text-xs text-gray-500 shrink-0">
+                      {formatUnitWithTotal({ quantity: item.quantity, tier_quantity: item.tierQuantity, unit: item.unit })}
+                    </span>
                     <button
                       type="button"
                       onClick={() => handleRemoveItem(item.key)}

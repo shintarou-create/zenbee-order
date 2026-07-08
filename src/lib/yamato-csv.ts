@@ -1,4 +1,5 @@
 import iconv from 'iconv-lite'
+import { formatYamatoItemName } from '@/lib/quantity-format'
 
 // ────────────────────────────────────────────────────────────
 // JST 日付ユーティリティ
@@ -247,8 +248,8 @@ function buildItemNameFromProducts(items: OrderItemForCsv[]): string {
 
   const labels = ordered.map(({ key, name, isJuice, tierQty, unit }) => {
     const qty = qtyByKey.get(key) || 0
-    // ジュース：「商品名 24本入×1」形式（tier_quantity がある場合）
-    if (isJuice && tierQty) return `${name} ${tierQty}本入×${qty}`
+    // ジュース：バラ「商品名×5」/ 箱「商品名 6本入×5」（quantity-format に集約）
+    if (isJuice && tierQty) return formatYamatoItemName({ name, quantity: qty, tier_quantity: tierQty })
     // 柑橘・その他：「商品名 10kg」形式
     return qty > 0 ? `${name} ${qty}${unit}` : name
   })

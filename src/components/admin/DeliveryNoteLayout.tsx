@@ -1,5 +1,6 @@
 import type { Order } from '@/types'
 import { formatCurrency } from '@/lib/utils'
+import { formatQuantity, shouldShowTierBadge } from '@/lib/quantity-format'
 
 function toJpDate(dateStr: string): string {
   const s = dateStr.split('T')[0]
@@ -115,23 +116,18 @@ export default function DeliveryNoteLayout({ order }: Props) {
         </thead>
         <tbody>
           {items.map((item) => {
-            const hasTier = !!item.tier_quantity
-            const realBottles = hasTier ? item.quantity * item.tier_quantity! : null
             return (
               <tr key={item.id} style={{ borderBottom: '1px solid #ccc' }}>
                 <td style={{ padding: '14px 6px' }}>
                   {item.product_name}
-                  {item.tier_label && (
+                  {item.tier_label && shouldShowTierBadge(item.tier_quantity) && (
                     <span style={{ marginLeft: '6px', fontSize: '10px', color: '#888', background: '#f3f4f6', borderRadius: '3px', padding: '1px 4px' }}>
                       {item.tier_label}
                     </span>
                   )}
                 </td>
                 <td style={{ padding: '14px 6px', textAlign: 'right' }}>
-                  {hasTier
-                    ? `${item.quantity}ケース（${realBottles}本）`
-                    : `${item.quantity}${item.unit}`
-                  }
+                  {formatQuantity({ quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit })}
                 </td>
                 <td style={{ padding: '14px 6px', textAlign: 'right' }}>{formatCurrency(item.unit_price)}</td>
                 <td style={{ padding: '14px 6px', textAlign: 'right', color: '#444' }}>8%※</td>

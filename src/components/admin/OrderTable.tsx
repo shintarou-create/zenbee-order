@@ -5,6 +5,7 @@ import Link from 'next/link'
 import type { Order } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor, formatDateWithDay } from '@/lib/utils'
 import { formatDeliveryTimeSlot } from '@/lib/yamato-csv'
+import { formatOrderItemLabel } from '@/lib/quantity-format'
 
 type SortKey = 'created_at' | 'delivery_date'
 type SortDir = 'asc' | 'desc'
@@ -22,12 +23,6 @@ interface OrderTableProps {
   detailLinkSuffix?: string
   // 納品日でグループ化し、各グループに見出し＋グループ全選択チェックを表示する
   groupByDeliveryDate?: boolean
-}
-
-function formatItemLabel(item: { product_name: string; quantity: number; unit?: string | null; tier_quantity?: number | null }): string {
-  if (item.tier_quantity) return `${item.product_name} ${item.tier_quantity}本入×${item.quantity}`
-  if (item.unit) return `${item.product_name} ${item.quantity}${item.unit}`
-  return item.product_name
 }
 
 function getDisplayStatusLabel(order: Order): string {
@@ -275,7 +270,7 @@ export default function OrderTable({
             <div className="space-y-0.5">
               {items.slice(0, 3).map((item, i) => (
                 <p key={i} className="text-xs text-gray-600 leading-snug">
-                  {formatItemLabel(item)}
+                  {formatOrderItemLabel(item)}
                 </p>
               ))}
               {items.length > 3 && (
@@ -396,7 +391,7 @@ export default function OrderTable({
           <div className="pt-2 border-t border-gray-100 space-y-0.5">
             {items.slice(0, 3).map((item, i) => (
               <p key={i} className="text-xs text-gray-600 leading-snug">
-                {formatItemLabel(item)}
+                {formatOrderItemLabel(item)}
               </p>
             ))}
             {items.length > 3 && (

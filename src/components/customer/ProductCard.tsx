@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Product, CartItem, CoolType, ProductPricingTier } from '@/types'
 import { isProductPreorder, formatShipStartDate } from '@/lib/utils'
+import { formatCartLine, formatCartUnit, formatCaseBreakdown } from '@/lib/quantity-format'
 import ProductDetailModal from './ProductDetailModal'
 
 interface ProductCardProps {
@@ -133,10 +134,6 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
     }
   }
 
-  const tierTotalBottles = hasTiers && selectedTier && quantity >= 1
-    ? selectedTier.quantity * quantity
-    : null
-
   const isPending = hasTiers ? (selectedTier !== null && quantity >= 1) : quantity >= 1
 
   return (
@@ -194,9 +191,13 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
 
         {cartItem && (
           <div className="mb-2 text-xs text-fukamidori bg-kinari rounded-lg px-2 py-1">
-            {cartItem.tierLabel
-              ? `カート: ${cartItem.tierLabel} × ${cartItem.quantity}ケース（${(cartItem.tierQuantity ?? 1) * cartItem.quantity}本）`
-              : `カート: ${cartItem.quantity}${cartItem.unit}`}
+            カート: {formatCartLine({
+              product_name: cartItem.productName ?? product.name,
+              tier_label: cartItem.tierLabel,
+              quantity: cartItem.quantity,
+              tier_quantity: cartItem.tierQuantity,
+              unit: cartItem.unit,
+            })}
           </div>
         )}
 
@@ -269,7 +270,9 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
                   }`}
                 />
                 <span className={`text-sm transition-colors ${quantity === 0 || isShipLocked ? 'text-gray-300' : 'text-gray-500'}`}>
-                  {hasTiers ? 'ケース' : product.unit}
+                  {selectedTier
+                    ? formatCartUnit({ tier_quantity: selectedTier.quantity, unit: product.unit })
+                    : hasTiers ? 'ケース' : product.unit}
                 </span>
               </div>
               <button
@@ -286,11 +289,11 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
               <p className="mt-1 text-xs text-red-500 font-medium">お届け時期が異なるため、選択中の商品と一緒に選べません。お届け時期ごとに分けてご注文ください。</p>
             )}
 
-            {/* 段階ありの本数表示 */}
-            {hasTiers && selectedTier && tierTotalBottles !== null && (
+            {/* 段階ありの補助行（箱のみ表示。バラは自明のため非表示） */}
+            {hasTiers && selectedTier && quantity >= 1 && formatCaseBreakdown({ tier_quantity: selectedTier.quantity, quantity }) && (
               <div className="mb-2 bg-white border-t border-kincha rounded-lg px-3 py-2 text-sm">
                 <div className="text-gray-600">
-                  {selectedTier.quantity}本入 × {quantity}ケース = <strong>{tierTotalBottles}本</strong>
+                  {formatCaseBreakdown({ tier_quantity: selectedTier.quantity, quantity })}
                 </div>
               </div>
             )}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { generateFreeeCSV } from '@/lib/freee-csv'
+import { shouldShowTierBadge } from '@/lib/quantity-format'
 import type { FreeeInvoiceData, FreeeLineItem } from '@/lib/freee-csv'
 
 function getTargetYearMonth(from: string, to: string): string {
@@ -157,7 +158,8 @@ export async function POST(req: NextRequest) {
         const realQty = oi.tier_quantity ? oi.quantity * oi.tier_quantity : oi.quantity
         const unitPrice = oi.unit_price || oi.subtotal
         const quantity = oi.unit_price ? realQty : 1
-        const desc = oi.tier_label
+        // tier_label は箱(ケース)のみ併記。バラ(tier_quantity===1)は付けない。
+        const desc = oi.tier_label && shouldShowTierBadge(oi.tier_quantity)
           ? `${md}納品 ${itemName}（${oi.tier_label}）`
           : `${md}納品 ${itemName}`
         entry.items.push({ description: desc, unitPrice, quantity, unit: itemUnit, taxRate: '8' })
