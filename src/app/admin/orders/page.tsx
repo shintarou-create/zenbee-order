@@ -8,7 +8,7 @@ import { adminFetch } from '@/lib/admin-fetch'
 import OrderTable from '@/components/admin/OrderTable'
 import PendingProductsSummary from '@/components/admin/PendingProductsSummary'
 import type { Order } from '@/types'
-import { formatCurrency, formatDateForInput, getNextBusinessDay } from '@/lib/utils'
+import { formatCurrency, formatDateForInput } from '@/lib/utils'
 
 const PAGE_SIZE = 50
 
@@ -132,7 +132,8 @@ function AdminOrdersContent() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
-  const [shipDate, setShipDate] = useState(formatDateForInput(getNextBusinessDay(new Date())))
+  // ヤマトCSVの発送日。初期値=今日。選択操作では自動上書きせず、変えたいときだけ手動変更する。
+  const [shipDate, setShipDate] = useState(formatDateForInput(new Date()))
   const [csvExporting, setCsvExporting] = useState(false)
   const [markingShipped, setMarkingShipped] = useState(false)
   const [markingConfirmed, setMarkingConfirmed] = useState(false)
@@ -150,14 +151,6 @@ function AdminOrdersContent() {
     fetchCounts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, dateFrom, dateTo, search])
-
-  // 選択中の注文の最も早い delivery_date を shipDate に自動セット
-  useEffect(() => {
-    if (selectedIds.length === 0) return
-    const selectedOrders = orders.filter((o) => selectedIds.includes(o.id))
-    const dates = selectedOrders.map((o) => o.delivery_date).filter(Boolean).sort() as string[]
-    if (dates.length > 0) setShipDate(dates[0])
-  }, [selectedIds, orders]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // タブ・日付・検索フィルタをクエリに適用（返り値は変更後のクエリ）
   function applyTabAndFilters<T extends { gte: (...a: unknown[]) => T; lte: (...a: unknown[]) => T; ilike: (...a: unknown[]) => T; eq: (...a: unknown[]) => T; neq: (...a: unknown[]) => T; or: (...a: unknown[]) => T }>(q: T, tab: TabKey): T {
