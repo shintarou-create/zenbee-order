@@ -194,7 +194,11 @@ function AdminOrdersContent() {
       const newData = (data || []) as Order[]
       if (isReset) {
         setOrders(newData)
-        setSelectedIds([])
+        // 選択は注文IDベースで保持（再取得後も存在する行のチェックを残す）。
+        // タブ変更やステータス変更後は呼び出し側で事前に選択クリア済みのため、
+        // その場合は新データに残る選択IDが無く実質クリアされる。
+        const idSet = new Set(newData.map((o) => o.id))
+        setSelectedIds((prev) => prev.filter((id) => idSet.has(id)))
       } else {
         setOrders((prev) => [...prev, ...newData])
       }
@@ -329,7 +333,8 @@ function AdminOrdersContent() {
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
       showMsg('success', `${selectedIds.length}件のヤマトCSVを出力しました（伝票印刷済みにマーク）`)
-      setSelectedIds([])
+      // 選択は維持（同じ注文セットで続けて納品書印刷などを行う運用のため）。
+      // refresh() で 伝票済 バッジを反映しつつ、選択はIDベースで保持される。
       await refresh()
     } catch (err) {
       console.error('CSV出力エラー:', err)
