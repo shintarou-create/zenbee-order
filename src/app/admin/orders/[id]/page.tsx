@@ -11,6 +11,7 @@ import { formatDeliveryTimeSlot } from '@/lib/yamato-csv'
 import QuantityStepper from '@/components/admin/QuantityStepper'
 import AmountInput from '@/components/admin/AmountInput'
 import { formatQuantity, formatUnitWithTotal, shouldShowTierBadge } from '@/lib/quantity-format'
+import { sortProductsByUsage } from '@/lib/product-sort'
 
 interface EditableOrderItem {
   product_id: string | null
@@ -29,6 +30,7 @@ interface ProductForSelector {
   id: string
   name: string
   unit: string
+  display_order?: number | null
   product_pricing_tiers: Array<{ id: string; tier_label: string; quantity: number; unit_price: number; is_active: boolean }>
   product_prices: Array<{ price_rank: string; price_per_unit: number }>
 }
@@ -155,10 +157,21 @@ export default function AdminOrderDetailPage() {
       const supabase = createClient()
       const { data } = await supabase
         .from('products')
-        .select('id, name, unit, product_pricing_tiers(id, tier_label, quantity, unit_price, is_active), product_prices(price_rank, price_per_unit)')
+        .select('id, name, unit, display_order, product_pricing_tiers(id, tier_label, quantity, unit_price, is_active), product_prices(price_rank, price_per_unit)')
         .eq('is_active', true)
         .order('display_order', { ascending: true })
-      setAvailableProducts((data ?? []) as ProductForSelector[])
+      // 「よく使う商品」順の並び替え用に使用実績を取得。失敗しても {} で display_order 順にフォールバック。
+      let usageStats: Record<string, number> = {}
+      try {
+        const res = await adminFetch('/api/admin/products/usage-stats')
+        if (res.ok) {
+          const json = (await res.json()) as { data?: Record<string, number> }
+          usageStats = json.data ?? {}
+        }
+      } catch (err) {
+        console.error('使用実績の取得に失敗（display_order順にフォールバック）:', err)
+      }
+      setAvailableProducts(sortProductsByUsage((data ?? []) as ProductForSelector[], usageStats))
     }
 
     fetchProducts()

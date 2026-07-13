@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
 import QuantityStepper from '@/components/admin/QuantityStepper'
 import { formatUnitWithTotal, shouldShowTierBadge } from '@/lib/quantity-format'
+import { sortProductsByUsage } from '@/lib/product-sort'
 
 type PricingTier = {
   id: string
@@ -26,6 +27,7 @@ type ProductRow = {
   cool_type: number
   step_qty: number
   min_order_qty: number
+  display_order: number | null
   product_prices: { price_rank: string; price_per_unit: number }[]
   pricing_tiers: PricingTier[]
 }
@@ -101,7 +103,7 @@ export default function AdminOrderNewPage() {
         supabase
           .from('products')
           .select(`
-            id, name, unit, stock_status, ship_start_date, cool_type, step_qty, min_order_qty,
+            id, name, unit, stock_status, ship_start_date, cool_type, step_qty, min_order_qty, display_order,
             product_prices (price_rank, price_per_unit),
             pricing_tiers:product_pricing_tiers (id, tier_label, quantity, unit_price, display_order, is_active)
           `)
@@ -114,7 +116,20 @@ export default function AdminOrderNewPage() {
           .eq('approval_status', 'approved')
           .order('company_name', { ascending: true }),
       ])
-      if (productsRes.data) setProducts(productsRes.data as unknown as ProductRow[])
+      // 「よく使う商品」順の並び替え用に使用実績を取得。失敗しても {} で display_order 順にフォールバック。
+      let usageStats: Record<string, number> = {}
+      try {
+        const res = await adminFetch('/api/admin/products/usage-stats')
+        if (res.ok) {
+          const json = (await res.json()) as { data?: Record<string, number> }
+          usageStats = json.data ?? {}
+        }
+      } catch (err) {
+        console.error('使用実績の取得に失敗（display_order順にフォールバック）:', err)
+      }
+      if (productsRes.data) {
+        setProducts(sortProductsByUsage(productsRes.data as unknown as ProductRow[], usageStats))
+      }
       if (companiesRes.data) setCompanies(companiesRes.data as CompanyRow[])
       setLoadingData(false)
     }
