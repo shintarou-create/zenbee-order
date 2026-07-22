@@ -5,7 +5,6 @@ import { formatOrderItemLabel } from '@/lib/quantity-format'
 import { generateOrderNumber } from '@/lib/utils'
 import { notifyOrderCreated } from '@/lib/line-messaging'
 import { calculateShipping } from '@/lib/shipping'
-import { hasMixedShipStart } from '@/lib/delivery-rules'
 import {
   aggregateCases,
   getActiveOverrides,
@@ -136,11 +135,6 @@ export async function POST(req: NextRequest) {
       }
       products = fetched as typeof products
     }
-
-    if (hasMixedShipStart(products.map((p) => ({ shipStartDate: p.ship_start_date })))) {
-      return NextResponse.json({ error: 'お届け開始時期が異なる商品は同時に注文できません' }, { status: 400 })
-    }
-
 
     // パス0: 取引先別の個別単価・送料特例（company_overrides）を取得
     let overrides: CompanyOverride[] = []
