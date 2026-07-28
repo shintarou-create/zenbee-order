@@ -8,6 +8,7 @@ import CustomerHeader from '@/components/customer/CustomerHeader'
 import { useLiff } from '@/hooks/useLiff'
 import type { Order } from '@/types'
 import { formatDate, getCustomerOrderStatusLabel, getCustomerOrderStatusColor } from '@/lib/utils'
+import { formatQuantity } from '@/lib/quantity-format'
 
 function OrdersContent() {
   const searchParams = useSearchParams()
@@ -122,24 +123,36 @@ function OrdersContent() {
                 className="block bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-kincha transition-colors"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-bold text-gray-900 text-sm">{order.order_number}</p>
-                    <p className="text-gray-500 text-xs mt-0.5">{formatDate(order.created_at)}</p>
-                  </div>
+                  <p className="text-gray-400 text-xs">
+                    {formatDate(order.created_at)}　{order.order_number}
+                  </p>
                   <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${getCustomerOrderStatusColor(order.status, order.details_confirmed)}`}>
                     {getCustomerOrderStatusLabel(order.status, order.details_confirmed)}
                   </span>
                 </div>
 
                 {order.order_items && order.order_items.length > 0 && (
-                  <div className="mt-2 text-sm text-gray-600">
-                    {order.order_items.length}品目
+                  <div className="mt-2 space-y-0.5">
+                    {order.order_items.slice(0, 3).map((item) => (
+                      <p key={item.id} className="text-sm text-gray-900 font-medium">
+                        {item.product_name}
+                        <span className="text-gray-600 font-normal">
+                          {' '}
+                          {formatQuantity({ quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit })}
+                        </span>
+                      </p>
+                    ))}
+                    {order.order_items.length > 3 && (
+                      <p className="text-xs text-gray-500">
+                        他 {order.order_items.length - 3}品目
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {order.delivery_date && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    お届け予定: {formatDate(order.delivery_date)}
+                  <p className="text-xs text-gray-600 mt-2">
+                    お届け予定日: {formatDate(order.delivery_date)}
                   </p>
                 )}
               </Link>
