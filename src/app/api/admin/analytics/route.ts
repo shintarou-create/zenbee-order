@@ -58,9 +58,6 @@ export async function GET(req: NextRequest) {
 
     const supabase = createServiceClient()
 
-    // 集計対象月数（当年なら今月まで、過去年なら12月まで）
-    const maxMonth = year === currentYear ? now.getMonth() + 1 : 12
-
     // thisYear と lastYear の範囲
     // 請求書は納品日（delivery_date）の月＝請求月で運用しているため、売上分析も
     // delivery_date を集計基準にする。delivery_date は時刻を持たない date 型なので、
@@ -118,6 +115,20 @@ export async function GET(req: NextRequest) {
       const m = monthOf(o.delivery_date)
       lastYearByMonth[m] = (lastYearByMonth[m] ?? 0) + (o.total_amount ?? 0)
     }
+
+    // 集計対象月数（monthly配列を何月まで作るか）。
+    // 未来納品も計上する方針のため、単純な「今月まで」だと当年に存在する
+    // 未来納品月（例: 8月納品予定）が monthly から欠落してしまう。
+    // → 当年は「今月」と「当年データ上の最終納品月」の大きい方まで表示する
+    //   （データが無い、今月より先の月は出さない）。過去年は従来どおり12月まで。
+    // 検証観点:
+    //   ・当年に8月納品予定があれば maxMonth>=8 になり monthly に8月分が含まれる。
+    //   ・データも今月も届かない先の月（例: データ最終月・今月ともに8月なら9月以降）は含まれない。
+    //   ・過去年を選んだ場合は従来どおり1〜12月すべて出る。
+    const latestDataMonth = Math.max(0, ...Object.keys(thisYearByMonth).map((k) => parseInt(k, 10)))
+    const maxMonth =
+      year === currentYear ? Math.min(12, Math.max(now.getMonth() + 1, latestDataMonth)) : 12
+
     const monthly: MonthlyData[] = []
     for (let m = 1; m <= maxMonth; m++) {
       const ly = lastYearByMonth[m]
