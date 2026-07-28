@@ -62,47 +62,60 @@ export async function GET(req: NextRequest) {
     const maxMonth = year === currentYear ? now.getMonth() + 1 : 12
 
     // thisYear と lastYear の範囲
-    const thisYearStart = `${year}-01-01T00:00:00.000Z`
-    const thisYearEnd = `${year}-12-31T23:59:59.999Z`
+    // 請求書は納品日（delivery_date）の月＝請求月で運用しているため、売上分析も
+    // delivery_date を集計基準にする。delivery_date は時刻を持たない date 型なので、
+    // 境界も時刻なしの 'YYYY-MM-DD' 文字列で比較する（ISO日時文字列だとタイムゾーン
+    // ずれの原因になるため使わない）。
+    const thisYearStart = `${year}-01-01`
+    const thisYearEnd = `${year}-12-31`
     const lastYear = year - 1
-    const lastYearStart = `${lastYear}-01-01T00:00:00.000Z`
-    const lastYearEnd = `${lastYear}-12-31T23:59:59.999Z`
+    const lastYearStart = `${lastYear}-01-01`
+    const lastYearEnd = `${lastYear}-12-31`
 
-    type OrderRow = { id: string; created_at: string; company_id: string | null; total_amount: number | null }
-    type LastYearRow = { created_at: string; total_amount: number | null }
+    type OrderRow = { id: string; delivery_date: string | null; company_id: string | null; total_amount: number | null }
+    type LastYearRow = { delivery_date: string | null; total_amount: number | null }
 
     // 当年の注文を全件（1000行ずつバッチ）取得し、月別・商品別・取引先別すべてをここから導出する。
-    // 月の判定は new Date(created_at).getMonth() で統一（今月カードの算出と一致させる）。
+    // 月の判定は delivery_date（'YYYY-MM-DD'）の文字列slice方式で統一する。
+    // new Date(delivery_date).getMonth() はタイムゾーンによって前日にずれる危険があるため使わない。
     const [thisYearRows, lastYearRows] = await Promise.all([
       fetchAllRows<OrderRow>((from, to) =>
         supabase
           .from('orders')
-          .select('id, created_at, company_id, total_amount')
+          .select('id, delivery_date, company_id, total_amount')
           .neq('status', 'cancelled')
-          .gte('created_at', thisYearStart)
-          .lte('created_at', thisYearEnd)
+          .gte('delivery_date', thisYearStart)
+          .lte('delivery_date', thisYearEnd)
           .range(from, to),
       ),
       fetchAllRows<LastYearRow>((from, to) =>
         supabase
           .from('orders')
-          .select('created_at, total_amount')
+          .select('delivery_date, total_amount')
           .neq('status', 'cancelled')
-          .gte('created_at', lastYearStart)
-          .lte('created_at', lastYearEnd)
+          .gte('delivery_date', lastYearStart)
+          .lte('delivery_date', lastYearEnd)
           .range(from, to),
       ),
     ])
 
+    // 'YYYY-MM-DD' の delivery_date から月(1-12)を文字列sliceで取り出す。
+    // new Date().getMonth() を使わないことでタイムゾーンずれを避ける。
+    const monthOf = (deliveryDate: string): number => parseInt(deliveryDate.slice(5, 7), 10)
+
     // --- 月別集計（常に年間分） ---
+    // 検証観点: 注文月≠納品月の21件（237,362円）は納品月に計上される。
+    // 未来納品10件（88,000円）も除外せず、その delivery_date の月（maxMonth以内なら）に計上する。
     const thisYearByMonth: Record<number, number> = {}
     for (const o of thisYearRows) {
-      const m = new Date(o.created_at).getMonth() + 1
+      if (!o.delivery_date) continue // 実データではNULL 0件だが念のためスキップ
+      const m = monthOf(o.delivery_date)
       thisYearByMonth[m] = (thisYearByMonth[m] ?? 0) + (o.total_amount ?? 0)
     }
     const lastYearByMonth: Record<number, number> = {}
     for (const o of lastYearRows) {
-      const m = new Date(o.created_at).getMonth() + 1
+      if (!o.delivery_date) continue
+      const m = monthOf(o.delivery_date)
       lastYearByMonth[m] = (lastYearByMonth[m] ?? 0) + (o.total_amount ?? 0)
     }
     const monthly: MonthlyData[] = []
@@ -117,7 +130,7 @@ export async function GET(req: NextRequest) {
 
     // --- 集計対象の注文（month 指定時はその月に限定） ---
     const aggOrders = month
-      ? thisYearRows.filter((o) => new Date(o.created_at).getMonth() + 1 === month)
+      ? thisYearRows.filter((o) => o.delivery_date && monthOf(o.delivery_date) === month)
       : thisYearRows
     const aggOrderIds = aggOrders.map((o) => o.id)
 
