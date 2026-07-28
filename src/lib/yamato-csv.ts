@@ -282,25 +282,69 @@ function getAmbientHandling(cats: Set<string>): [string, string] {
 // ────────────────────────────────────────────────────────────
 
 function calcAmbientBoxes(items: OrderItemForCsv[]): number {
+  // quantity は常に実本数（ケース数ではない）。tier_quantity は表示用の内容量表記に
+  // 使われるフィールドで、箱数計算には無関係。以前は tier_quantity != null のとき
+  // quantity をケース数として扱っていたため、720ml 3本のような注文で
+  // 「3本=3ケース=3箱」と誤計算し、柑橘1箱と合わせて4小口になるバグがあった。
+  // → tier_quantity 分岐は廃止し、ジュースは常に ceil(quantity / step_qty) でケース換算する。
+  //
+  // さらに実運用では 720mlジュースは青果（柑橘/その他kg品）の箱に同梱できるため、
+  // 青果のkg量に応じた同梱上限までは箱数に加算しない。180ml・2Lパック等の
+  // 非720mlジュースは同梱対象外で、従来どおり ceil(quantity / step_qty) を加算する。
+
   let kgTotal = 0
-  let juiceCases = 0
+  let juice720Bottles = 0
+  let juice720StepQty = 24
+  let otherJuiceCases = 0
+
   for (const item of items) {
     const cat = item.product.category
     if ((cat === '柑橘' || cat === 'その他') && item.product.unit === 'kg') {
       kgTotal += item.quantity
     } else if (cat.startsWith('ジュース')) {
-      if (item.tier_quantity != null) {
-        // 新仕様: quantity = ケース数（tier_quantityは箱数計算不要、ケース単位で既にカウント済み）
-        juiceCases += item.quantity
+      if (cat.includes('720')) {
+        // 720ml: 全720ml商品の実本数を合算し、後段で同梱上限を1回だけ適用する。
+        // ここでの step_qty フォールバックは 24（|| 1 だと720mlで誤爆するため、
+        // このジュース専用ロジックだけローカルで 24 を使う）。
+        juice720Bottles += item.quantity
+        juice720StepQty = item.product.step_qty || 24
       } else {
-        // 旧仕様: quantity = 実本数、step_qty = ケースあたり本数
+        // 180ml・2Lパック等：同梱ルール対象外。従来どおりケース換算のみ。
         const stepQty = item.product.step_qty || 1
-        juiceCases += Math.ceil(item.quantity / stepQty)
+        otherJuiceCases += Math.ceil(item.quantity / stepQty)
       }
     }
   }
+
+  // 青果の箱数（現行と同じ）
   const kgBoxes = kgTotal > 0 ? (kgTotal <= 10 ? 1 : Math.ceil(kgTotal / 10)) : 0
-  return Math.max(1, kgBoxes + juiceCases)
+
+  // 720mlの同梱上限（本数）。kgTotal==0（同梱先の青果箱がない）場合は同梱なし。
+  let cap: number
+  if (kgTotal === 0) {
+    cap = 0
+  } else if (kgTotal <= 4) {
+    cap = 5
+  } else if (kgTotal <= 7) {
+    cap = 3
+  } else if (kgTotal <= 9) {
+    cap = 1
+  } else {
+    cap = 0
+  }
+
+  // 上限を超えた分だけ 720ml を別箱（24本=1箱換算）にする。
+  const juice720ExtraBottles = Math.max(0, juice720Bottles - cap)
+  const juice720ExtraBoxes =
+    juice720ExtraBottles > 0 ? Math.ceil(juice720ExtraBottles / juice720StepQty) : 0
+
+  // ── 検算 ──────────────────────────────────────────────
+  // ・柑橘2kg + 720ml3本            → kgBoxes=1, cap=5(0<2<=4), extra=0            → total=1
+  // ・柑橘なし + 720ml3本           → kgTotal=0, cap=0, extra=3, extraBoxes=1      → total=1
+  // ・柑橘9kg + 720ml3本            → kgBoxes=1, cap=1(7<9<=9), extra=2, +1箱      → total=2
+  // ・柑橘12kg + 720ml30本          → kgBoxes=2, cap=0(kgTotal>9), extra=30, +2箱  → total=4
+  // ・柑橘2kg + 180ml30本(step=30)  → kgBoxes=1, 720mlなし, other=ceil(30/30)=1    → total=2
+  return Math.max(1, kgBoxes + otherJuiceCases + juice720ExtraBoxes)
 }
 
 function calcCoolBoxes(items: OrderItemForCsv[]): number {
