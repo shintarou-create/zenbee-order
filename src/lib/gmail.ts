@@ -81,7 +81,13 @@ export async function createGmailDraft(
 
   // RFC 2045: base64本文は76文字ごとにCRLF改行する必要がある。1行のままだと
   // 添付が壊れて「ファイルが開けない」原因になる。
-  const wrapBase64 = (b64: string): string => b64.match(/.{1,76}/g)?.join('\r\n') ?? b64
+  // 事前に base64 アルファベット（A-Za-z0-9+/=）以外の文字を除去してからラップする。
+  // Buffer#toString('base64') 自体は不正な文字を出力しないはずだが、万一どこかの
+  // 段階で余計な文字が混入しても本文base64の末尾にゴミバイトとして残らないよう防御する。
+  const wrapBase64 = (b64: string): string => {
+    const clean = b64.replace(/[^A-Za-z0-9+/=]/g, '')
+    return clean.match(/.{1,76}/g)?.join('\r\n') ?? clean
+  }
   const attachmentBase64 = wrapBase64(input.attachment.content.toString('base64'))
   const bodyBase64 = wrapBase64(Buffer.from(input.bodyText, 'utf-8').toString('base64'))
 
