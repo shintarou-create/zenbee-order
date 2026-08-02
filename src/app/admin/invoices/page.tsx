@@ -37,6 +37,8 @@ export default function AdminInvoicesPage() {
   const [gmailDraftingId, setGmailDraftingId] = useState<string | null>(null)
   const [pdfDownloadingId, setPdfDownloadingId] = useState<string | null>(null)
   const [bulkRunning, setBulkRunning] = useState(false)
+  // 一括Gmail下書き作成時のみ使用。ONで各下書き本文冒頭に再送用のお詫び文を追加する。
+  const [includeResendNote, setIncludeResendNote] = useState(false)
   const [bulkStatusRunning, setBulkStatusRunning] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('all')
@@ -443,10 +445,16 @@ export default function AdminInvoicesPage() {
 
   // 1社分のGmail下書きを作成する共通処理。成功可否とエラー文言を返す。
   // 成功時はローカルstateの gmail_draft_created_at を即時反映（バッジが緑になる）。
-  async function createGmailDraftFor(invoice: Invoice): Promise<{ ok: boolean; error?: string }> {
+  // opts.includeResendNote は一括再送時のみ true を渡す（単体作成では未指定＝false）。
+  async function createGmailDraftFor(
+    invoice: Invoice,
+    opts?: { includeResendNote?: boolean }
+  ): Promise<{ ok: boolean; error?: string }> {
     try {
       const res = await adminFetch(`/api/admin/invoices/${invoice.id}/gmail-draft`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ includeResendNote: opts?.includeResendNote === true }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -538,7 +546,7 @@ export default function AdminInvoicesPage() {
           type: 'success',
           text: `Gmail下書きを作成中… ${i + 1} / ${targets.length} 社（初回は準備に30秒ほどかかります）`,
         })
-        const r = await createGmailDraftFor(targets[i])
+        const r = await createGmailDraftFor(targets[i], { includeResendNote })
         if (r.ok) success++
         else failures.push({ name: getCompanyView(targets[i]).displayName, error: r.error || '不明なエラー' })
       }
@@ -993,6 +1001,16 @@ export default function AdminInvoicesPage() {
           <div className="px-4 py-3 flex items-center gap-2 flex-wrap">
             <span className="text-sm font-bold text-gray-900">{selectedCount}件選択</span>
             <div className="flex items-center gap-2 flex-wrap ml-auto">
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeResendNote}
+                  onChange={(e) => setIncludeResendNote(e.target.checked)}
+                  disabled={anyBusy}
+                  className="w-4 h-4 accent-red-600"
+                />
+                再送用のお詫び文を追加する
+              </label>
               <button
                 onClick={handleBulkGmailDraft}
                 disabled={anyBusy}

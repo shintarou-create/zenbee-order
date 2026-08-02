@@ -28,12 +28,16 @@ function jpDate(d: string | null): string {
   return `${y}年${m}月${dd}日`
 }
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     // Gmail連携が未設定なら 503（クラッシュさせない）
     if (!hasGmailConfig()) {
       return NextResponse.json({ error: 'Gmail連携が未設定です' }, { status: 503 })
     }
+
+    // 任意フラグ: 再送用のお詫び文を本文冒頭に追加するか（一括再送時のみ使用）
+    const body = await req.json().catch(() => ({}))
+    const includeResendNote = (body as { includeResendNote?: unknown })?.includeResendNote === true
 
     const invoiceId = params.id
     if (!invoiceId) {
@@ -75,10 +79,19 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
     const filename = `請求書_${companyForFile}_${detail.invoice.billing_month}.pdf`
 
+    // 再送用のお詫び文（includeResendNote が true の場合のみ、宛名の直後に挿入）
+    const resendNote = includeResendNote
+      ? `先ほどお送りした請求書PDFが、システムの不具合により正しく開けない状態となっておりました。
+大変申し訳ございません。改めて、こちらのメールに正しい請求書PDFを添付しております。
+お手数をおかけし恐縮ですが、本メールの請求書をご確認いただけますと幸いです。
+
+`
+      : ''
+
     const subject = `【善兵衛農園】${monthLabel}分 請求書のご送付`
     const bodyText = `${addressee} 御中
 
-いつもお世話になっております。株式会社善兵衛でございます。
+${resendNote}いつもお世話になっております。株式会社善兵衛でございます。
 ${monthLabel}分のご請求書を添付にてお送りいたします。
 ※このメールに請求書PDF（${filename}）を添付しております。本メール下部の添付ファイルをご確認ください。
 
