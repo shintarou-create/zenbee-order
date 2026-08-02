@@ -73,11 +73,14 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     const addressee = detail.billing.name
     const companyForFile = detail.billing.company_name || detail.billing.name
 
+    const filename = `請求書_${companyForFile}_${detail.invoice.billing_month}.pdf`
+
     const subject = `【善兵衛農園】${monthLabel}分 請求書のご送付`
     const bodyText = `${addressee} 御中
 
 いつもお世話になっております。株式会社善兵衛でございます。
 ${monthLabel}分のご請求書を添付にてお送りいたします。
+※このメールに請求書PDF（${filename}）を添付しております。本メール下部の添付ファイルをご確認ください。
 
 請求書番号: ${detail.invoice.invoice_number}
 ご請求金額: ¥${detail.summary.grandTotal.toLocaleString('ja-JP')}（税込）
@@ -93,8 +96,6 @@ ${monthLabel}分のご請求書を添付にてお送りいたします。
 代表取締役 井上信太郎
 登録番号 T6170001016584
 ──────────────`
-
-    const filename = `請求書_${companyForFile}_${detail.invoice.billing_month}.pdf`
 
     // Gmail アクセストークン取得（refresh_token → access_token）
     let accessToken: string
