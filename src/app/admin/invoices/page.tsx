@@ -2,11 +2,32 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { Invoice, Order } from '@/types'
+import type { Invoice, Order, Company } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
 
 type TabKey = 'all' | 'draft' | 'sent'
+
+// 請求管理から編集できる顧客情報フォーム項目（顧客管理の編集フォームと同じフルセット）
+const initialCompanyFormData: Partial<Company> = {
+  company_name: '',
+  representative_name: '',
+  postal_code: '',
+  prefecture: '',
+  city: '',
+  address: '',
+  building: '',
+  phone: '',
+  email: '',
+  notes: '',
+  has_separate_billing: false,
+  billing_name: '',
+  billing_postal_code: '',
+  billing_prefecture: '',
+  billing_city: '',
+  billing_address: '',
+  billing_building: '',
+}
 
 export default function AdminInvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -20,6 +41,17 @@ export default function AdminInvoicesPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('all')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // 顧客情報の編集（請求先会社 = invoice.company_id）
+  const [showCompanyModal, setShowCompanyModal] = useState(false)
+  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null)
+  const [companyFormData, setCompanyFormData] = useState<Partial<Company>>(initialCompanyFormData)
+  const [companyLoading, setCompanyLoading] = useState(false)
+  const [companySaving, setCompanySaving] = useState(false)
+
+  // 請求書の削除（確認モーダル）
+  const [deletingInvoice, setDeletingInvoice] = useState<Invoice | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   // 月選択（デフォルト: 先月）
   const now = new Date()
@@ -239,6 +271,129 @@ export default function AdminInvoicesPage() {
       )
     } catch (err) {
       console.error('支払期限更新エラー:', err)
+    }
+  }
+
+  // 顧客情報編集モーダルを開く。編集対象は「その請求書の請求先会社」=invoice.company_id
+  // （請求書生成時に親会社まとめの場合は親会社IDが入っているため、既存のグルーピングと整合する）。
+  async function handleEditCompany(invoice: Invoice) {
+    setEditingCompanyId(invoice.company_id)
+    setCompanyFormData(initialCompanyFormData)
+    setShowCompanyModal(true)
+    setCompanyLoading(true)
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', invoice.company_id)
+        .single()
+      if (error) throw error
+      setCompanyFormData(data as Partial<Company>)
+    } catch (err) {
+      console.error('顧客情報取得エラー:', err)
+      setMessage({ type: 'error', text: '顧客情報の取得に失敗しました' })
+      setTimeout(() => setMessage(null), 5000)
+      setShowCompanyModal(false)
+    } finally {
+      setCompanyLoading(false)
+    }
+  }
+
+  // 郵便番号→住所自動補完（zipcloud）。顧客管理画面と同じロジック。
+  async function handleCompanyPostalLookup(rawZip: string, prefix: '' | 'billing_') {
+    const digits = rawZip
+      .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+      .replace(/[^0-9]/g, '')
+    if (digits.length !== 7) return
+    try {
+      const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${digits}`)
+      const json = (await res.json()) as {
+        status: number
+        results: { address1: string; address2: string; address3: string }[] | null
+      }
+      if (json.status !== 200 || !json.results) return
+      const { address1, address2, address3 } = json.results[0]
+      if (prefix === 'billing_') {
+        setCompanyFormData((p) => ({ ...p, billing_prefecture: address1, billing_city: address2, billing_address: address3 }))
+      } else {
+        setCompanyFormData((p) => ({ ...p, prefecture: address1, city: address2, address: address3 }))
+      }
+    } catch (err) {
+      console.error('郵便番号検索エラー:', err)
+    }
+  }
+
+  // 顧客情報を保存（companies を直接 .update()。顧客管理の handleSave と同じパターンのため、
+  // 顧客管理側にも自動反映される）。保存後は請求一覧を再フェッチして最新化する。
+  async function handleSaveCompany() {
+    if (!editingCompanyId || !companyFormData.company_name?.trim()) return
+    setCompanySaving(true)
+    try {
+      const supabase = createClient()
+      const companyData = {
+        company_name: companyFormData.company_name,
+        representative_name: companyFormData.representative_name || null,
+        postal_code: companyFormData.postal_code || null,
+        prefecture: companyFormData.prefecture || null,
+        city: companyFormData.city || null,
+        address: companyFormData.address || null,
+        building: companyFormData.building || null,
+        phone: companyFormData.phone || null,
+        email: companyFormData.email || null,
+        notes: companyFormData.notes || null,
+        has_separate_billing: companyFormData.has_separate_billing ?? false,
+        billing_name: companyFormData.has_separate_billing ? (companyFormData.billing_name || null) : null,
+        billing_postal_code: companyFormData.has_separate_billing
+          ? (companyFormData.billing_postal_code || null)
+          : null,
+        billing_prefecture: companyFormData.has_separate_billing
+          ? (companyFormData.billing_prefecture || null)
+          : null,
+        billing_city: companyFormData.has_separate_billing ? (companyFormData.billing_city || null) : null,
+        billing_address: companyFormData.has_separate_billing ? (companyFormData.billing_address || null) : null,
+        billing_building: companyFormData.has_separate_billing
+          ? (companyFormData.billing_building || null)
+          : null,
+      }
+
+      const { error } = await supabase.from('companies').update(companyData).eq('id', editingCompanyId)
+      if (error) throw error
+
+      setMessage({ type: 'success', text: '顧客情報を更新しました' })
+      setShowCompanyModal(false)
+      await fetchInvoices()
+    } catch (err) {
+      console.error('顧客情報保存エラー:', err)
+      setMessage({ type: 'error', text: '顧客情報の保存に失敗しました' })
+    } finally {
+      setCompanySaving(false)
+      setTimeout(() => setMessage(null), 4000)
+    }
+  }
+
+  // 請求書を削除する。紐づく注文は「出荷済（未請求）」に戻る（サーバー側で処理）。
+  async function handleDeleteInvoice() {
+    if (!deletingInvoice) return
+    setDeleting(true)
+    try {
+      const res = await adminFetch(`/api/admin/invoices/${deletingInvoice.id}`, { method: 'DELETE' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMessage({ type: 'error', text: json.error || '請求書の削除に失敗しました' })
+        setTimeout(() => setMessage(null), 8000)
+        return
+      }
+      setMessage({ type: 'success', text: '請求書を削除しました。対象の注文は出荷済（未請求）に戻りました。' })
+      setTimeout(() => setMessage(null), 6000)
+      setDeletingInvoice(null)
+      await fetchInvoices()
+    } catch (err) {
+      console.error('請求書削除エラー:', err)
+      setMessage({ type: 'error', text: '通信エラーが発生しました' })
+      setTimeout(() => setMessage(null), 8000)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -793,6 +948,12 @@ export default function AdminInvoicesPage() {
                             {gmailDraftingId === invoice.id ? '作成中...' : 'Gmail下書き作成'}
                           </button>
                         )}
+                        <button
+                          onClick={() => handleEditCompany(invoice)}
+                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                        >
+                          顧客情報を編集
+                        </button>
                         {/* 訂正用ステータスプルダウン（工程は未送信⇔送信済み。入金工程は freee 側で完結のため撤去）。
                             既存の入金済み/未払いデータは表示崩れ防止のため、その行に限り「（過去の状態）」として表示する。 */}
                         <select
@@ -806,6 +967,13 @@ export default function AdminInvoicesPage() {
                             <option value={invoice.status}>{statusLabel(invoice.status)}（過去の状態）</option>
                           )}
                         </select>
+                        {/* 削除は誤操作防止のため控えめな配置（末尾・地味な文字リンク）＋確認モーダル必須 */}
+                        <button
+                          onClick={() => setDeletingInvoice(invoice)}
+                          className="ml-auto text-xs text-gray-400 hover:text-red-600 transition-colors"
+                        >
+                          削除
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -845,6 +1013,266 @@ export default function AdminInvoicesPage() {
                 className="text-sm font-medium px-3 py-2 rounded-lg text-gray-500 hover:text-gray-700 disabled:opacity-50"
               >
                 選択解除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 顧客情報 編集モーダル（編集対象＝その請求書の請求先会社。companies を直接更新するため顧客管理側にも反映される） */}
+      {showCompanyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowCompanyModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">顧客情報を編集</h2>
+              <button onClick={() => setShowCompanyModal(false)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {companyLoading ? (
+              <div className="flex justify-center py-12">
+                <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+                <div className="p-4 space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      店名 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={companyFormData.company_name || ''}
+                      onChange={(e) => setCompanyFormData((p) => ({ ...p, company_name: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">担当者名</label>
+                    <input
+                      type="text"
+                      value={companyFormData.representative_name || ''}
+                      onChange={(e) => setCompanyFormData((p) => ({ ...p, representative_name: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">郵便番号</label>
+                      <input
+                        type="text"
+                        value={companyFormData.postal_code || ''}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setCompanyFormData((p) => ({ ...p, postal_code: v }))
+                          handleCompanyPostalLookup(v, '')
+                        }}
+                        placeholder="000-0000"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">都道府県</label>
+                      <input
+                        type="text"
+                        value={companyFormData.prefecture || ''}
+                        onChange={(e) => setCompanyFormData((p) => ({ ...p, prefecture: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">市区町村</label>
+                    <input
+                      type="text"
+                      value={companyFormData.city || ''}
+                      onChange={(e) => setCompanyFormData((p) => ({ ...p, city: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">住所</label>
+                    <input
+                      type="text"
+                      value={companyFormData.address || ''}
+                      onChange={(e) => setCompanyFormData((p) => ({ ...p, address: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">建物名・部屋番号</label>
+                    <input
+                      type="text"
+                      value={companyFormData.building || ''}
+                      onChange={(e) => setCompanyFormData((p) => ({ ...p, building: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">電話番号</label>
+                      <input
+                        type="tel"
+                        value={companyFormData.phone || ''}
+                        onChange={(e) => setCompanyFormData((p) => ({ ...p, phone: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">メールアドレス</label>
+                      <input
+                        type="email"
+                        value={companyFormData.email || ''}
+                        onChange={(e) => setCompanyFormData((p) => ({ ...p, email: e.target.value }))}
+                        placeholder="example@example.com"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 請求先トグル */}
+                  <div className="border-t border-gray-100 pt-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <input
+                        type="checkbox"
+                        id="inv_has_separate_billing"
+                        checked={companyFormData.has_separate_billing ?? false}
+                        onChange={(e) => setCompanyFormData((p) => ({ ...p, has_separate_billing: e.target.checked }))}
+                        className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                      />
+                      <label htmlFor="inv_has_separate_billing" className="text-sm font-medium text-gray-700">
+                        請求先が納品先と異なる
+                      </label>
+                    </div>
+
+                    {companyFormData.has_separate_billing && (
+                      <div className="ml-6 space-y-2 border-l-2 border-green-200 pl-3">
+                        <input
+                          type="text"
+                          value={companyFormData.billing_name || ''}
+                          onChange={(e) => setCompanyFormData((p) => ({ ...p, billing_name: e.target.value }))}
+                          placeholder="請求先名"
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={companyFormData.billing_postal_code || ''}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setCompanyFormData((p) => ({ ...p, billing_postal_code: v }))
+                              handleCompanyPostalLookup(v, 'billing_')
+                            }}
+                            placeholder="郵便番号"
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                          />
+                          <input
+                            type="text"
+                            value={companyFormData.billing_prefecture || ''}
+                            onChange={(e) => setCompanyFormData((p) => ({ ...p, billing_prefecture: e.target.value }))}
+                            placeholder="都道府県"
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          value={companyFormData.billing_city || ''}
+                          onChange={(e) => setCompanyFormData((p) => ({ ...p, billing_city: e.target.value }))}
+                          placeholder="市区町村"
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                        />
+                        <input
+                          type="text"
+                          value={companyFormData.billing_address || ''}
+                          onChange={(e) => setCompanyFormData((p) => ({ ...p, billing_address: e.target.value }))}
+                          placeholder="住所"
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                        />
+                        <input
+                          type="text"
+                          value={companyFormData.billing_building || ''}
+                          onChange={(e) => setCompanyFormData((p) => ({ ...p, billing_building: e.target.value }))}
+                          placeholder="建物名"
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">メモ</label>
+                    <textarea
+                      value={companyFormData.notes || ''}
+                      onChange={(e) => setCompanyFormData((p) => ({ ...p, notes: e.target.value }))}
+                      rows={2}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-4 border-t border-gray-100 flex gap-3">
+                  <button
+                    onClick={handleSaveCompany}
+                    disabled={companySaving || !companyFormData.company_name?.trim()}
+                    className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
+                  >
+                    {companySaving ? '保存中...' : '保存'}
+                  </button>
+                  <button
+                    onClick={() => setShowCompanyModal(false)}
+                    className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium px-6 py-2 rounded-lg text-sm transition-colors"
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 請求書削除の確認モーダル */}
+      {deletingInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => !deleting && setDeletingInvoice(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="p-4 border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900">請求書を削除しますか？</h2>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="bg-gray-50 rounded-lg px-3 py-2 text-sm">
+                <p className="font-bold text-gray-900">{getCompanyView(deletingInvoice).displayName}</p>
+                <p className="text-gray-500 text-xs mt-0.5">{deletingInvoice.invoice_number}</p>
+                <p className="text-gray-900 font-bold mt-1">{formatCurrency(deletingInvoice.total_amount)}</p>
+              </div>
+              <p className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">
+                この請求書を削除します。紐づく注文は「出荷済（未請求）」に戻ります。元に戻せません。
+              </p>
+            </div>
+            <div className="p-4 border-t border-gray-100 flex gap-3">
+              <button
+                onClick={handleDeleteInvoice}
+                disabled={deleting}
+                className="bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
+              >
+                {deleting ? '削除中...' : '削除する'}
+              </button>
+              <button
+                onClick={() => setDeletingInvoice(null)}
+                disabled={deleting}
+                className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
+              >
+                キャンセル
               </button>
             </div>
           </div>
