@@ -67,7 +67,12 @@ export async function createGmailDraft(
   accessToken: string,
 ): Promise<{ draftId: string }> {
   const boundary = 'zenbee_boundary_' + Buffer.from(input.subject).toString('hex').slice(0, 16)
-  const attachmentBase64 = input.attachment.content.toString('base64')
+
+  // RFC 2045: base64本文は76文字ごとにCRLF改行する必要がある。1行のままだと
+  // 添付が壊れて「ファイルが開けない」原因になる。
+  const wrapBase64 = (b64: string): string => b64.match(/.{1,76}/g)?.join('\r\n') ?? b64
+  const attachmentBase64 = wrapBase64(input.attachment.content.toString('base64'))
+  const bodyBase64 = wrapBase64(Buffer.from(input.bodyText, 'utf-8').toString('base64'))
 
   // MIME multipart/mixed（本文 + PDF添付）を組み立てる
   const mime = [
@@ -80,10 +85,13 @@ export async function createGmailDraft(
     'Content-Type: text/plain; charset="UTF-8"',
     'Content-Transfer-Encoding: base64',
     '',
-    Buffer.from(input.bodyText, 'utf-8').toString('base64'),
+    bodyBase64,
     '',
     `--${boundary}`,
-    `Content-Type: ${input.attachment.mimeType}; name="${encodeHeaderWord(input.attachment.filename)}"`,
+    // ファイル名は Content-Disposition の filename*= 側だけで指定する。
+    // name= に encoded-word を入れるのはパラメータ値として不正（受信側で
+    // 添付ファイル名がエンコード文字列のまま見える原因になっていた）。
+    `Content-Type: ${input.attachment.mimeType}`,
     'Content-Transfer-Encoding: base64',
     `Content-Disposition: attachment; filename*=${encodeFilenameStar(input.attachment.filename)}`,
     '',
