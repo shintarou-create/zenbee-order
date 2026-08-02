@@ -50,6 +50,17 @@ function encodeFilenameStar(name: string): string {
   return `UTF-8''${encodeURIComponent(name)}`
 }
 
+// filename*= のみだと一部クライアント（Mail.app等）が添付名を扱えず空プレースホルダを
+// 出すことがあるため、素の filename= 用にASCII安全なフォールバック名を作る。
+// 日本語部分は取り除き、残ったASCII部分（日付など）を "invoice_" で補う。
+function asciiFallbackFilename(name: string): string {
+  const ext = name.match(/\.[a-zA-Z0-9]+$/)?.[0] ?? ''
+  const stemRaw = name.slice(0, name.length - ext.length)
+  const asciiOnly = stemRaw.replace(/[^\x20-\x7e]/g, '')
+  const stem = asciiOnly.replace(/[^A-Za-z0-9._-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '')
+  return `invoice_${stem || 'attachment'}${ext}`
+}
+
 export type GmailDraftInput = {
   to: string
   subject: string
@@ -88,20 +99,23 @@ export async function createGmailDraft(
     bodyBase64,
     '',
     `--${boundary}`,
-    // ファイル名は Content-Disposition の filename*= 側だけで指定する。
-    // name= に encoded-word を入れるのはパラメータ値として不正（受信側で
-    // 添付ファイル名がエンコード文字列のまま見える原因になっていた）。
+    // ファイル名は filename*=（RFC 5987・日本語フルネーム）に加え、素の filename=
+    // にもASCII安全なフォールバック名を併記する（Mail.app等、filename*= のみだと
+    // 添付名を扱えないクライアント向け）。name= に encoded-word を入れるのは
+    // パラメータ値として不正なので使わない。
     `Content-Type: ${input.attachment.mimeType}`,
     'Content-Transfer-Encoding: base64',
-    `Content-Disposition: attachment; filename*=${encodeFilenameStar(input.attachment.filename)}`,
+    `Content-Disposition: attachment; filename="${asciiFallbackFilename(input.attachment.filename)}"; filename*=${encodeFilenameStar(input.attachment.filename)}`,
     '',
     attachmentBase64,
     '',
     `--${boundary}--`,
-    '',
   ].join('\r\n')
 
-  const raw = toBase64Url(Buffer.from(mime, 'utf-8'))
+  // 閉じ境界の後ろは CRLF を1つだけ残す（末尾に空要素を足して join すると
+  // 余分な空行ができ、一部クライアント（Mail.app）が中身のない添付パートとして
+  // 描画してしまう＝署名下に「?」四角が出る原因だった）。
+  const raw = toBase64Url(Buffer.from(mime + '\r\n', 'utf-8'))
 
   const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
     method: 'POST',
