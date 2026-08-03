@@ -137,8 +137,25 @@ export default function AdminInvoicesPage() {
         companyOrders[billingCompanyId].push(order as Order)
       }
 
+      // 採番: その月の既存請求書番号から末尾の連番部分の最大値を取得し、そこから続ける。
+      // created（今回新規作成できた件数の集計用）とは別カウンタで管理する。
+      // これをやらないと、一括生成のあとに1社だけ追加で生成した場合など created が 0 から
+      // 始まり直し、既存の invoice_number と重複して UNIQUE制約違反でINSERTが失敗する。
+      const { data: existingInvoices } = await supabase
+        .from('invoices')
+        .select('invoice_number')
+        .eq('billing_month', selectedMonth)
+
+      const existingSeqNumbers = (existingInvoices || []).map((inv) => {
+        const m = /-(\d{3,})$/.exec(inv.invoice_number)
+        return m ? parseInt(m[1], 10) : 0
+      })
+      let nextSeq = existingSeqNumbers.length > 0 ? Math.max(...existingSeqNumbers) + 1 : 1
+
       // 請求書を作成
       let created = 0
+      // INSERT失敗した会社（無言でスキップせず、結果メッセージに含めてユーザーに見せる）
+      const failures: { companyName: string; error: string }[] = []
       // 今回新規作成した請求書に紐づく注文ID（ループ後に一括で done に更新する）
       const completedOrderIds: string[] = []
       for (const [billingCompanyId, compOrders] of Object.entries(companyOrders)) {
@@ -156,8 +173,8 @@ export default function AdminInvoicesPage() {
         const taxRate = 0.08
         const taxAmount = Math.floor(totalAmount - totalAmount / (1 + taxRate))
 
-        // 請求番号生成
-        const invoiceNumber = `INV-${selectedMonth.replace('-', '')}-${String(created + 1).padStart(3, '0')}`
+        // 請求番号生成（月内の既存最大連番+1から。会社ごとに1件成功するたびインクリメント）
+        const invoiceNumber = `INV-${selectedMonth.replace('-', '')}-${String(nextSeq).padStart(3, '0')}`
 
         // 支払期限: billing_month の翌月末日（例: 2026-06 → 2026-07-31）。
         // new Date(year, month + 1, 0) = 翌月(month+1, 1-indexed)の0日目 = 翌月末日。
@@ -179,7 +196,18 @@ export default function AdminInvoicesPage() {
           .select()
           .single()
 
-        if (invoiceError || !invoice) continue
+        if (invoiceError || !invoice) {
+          // 握りつぶさずログ＋結果メッセージ用に記録する。1社の失敗で全体は止めない。
+          console.error(`請求書生成エラー（company_id=${billingCompanyId}, invoice_number=${invoiceNumber}）:`, invoiceError)
+          failures.push({
+            companyName: compOrders[0]?.company?.company_name || billingCompanyId,
+            error: invoiceError?.message || '不明なエラー',
+          })
+          continue
+        }
+
+        // このグループでの採番が成功したので次のグループはこの続きから
+        nextSeq++
 
         // 請求明細を作成
         const { error: itemsError } = await supabase.from('invoice_items').insert(
@@ -211,16 +239,22 @@ export default function AdminInvoicesPage() {
         }
       }
 
+      // 失敗があった場合は握りつぶさず結果メッセージに含める（詳細はコンソールを参照）。
+      const failureText =
+        failures.length > 0
+          ? `${failures.length}件失敗しました（${failures.map((f) => f.companyName).join('、')}）。詳細はコンソールをご確認ください。`
+          : ''
+
       if (completeFailed) {
         // 請求書生成自体は成功として扱い、ロールバックはしない。
         setMessage({
           type: 'error',
-          text: `${created}件の請求書を生成しましたが、対象注文の完了更新に失敗しました（注文管理で手動で完了にしてください）`,
+          text: `${created}件の請求書を生成しましたが、対象注文の完了更新に失敗しました（注文管理で手動で完了にしてください）${failureText ? `。${failureText}` : ''}`,
         })
       } else {
         setMessage({
-          type: 'success',
-          text: `${created}件の請求書を生成し、対象の注文${completedOrderIds.length}件を完了にしました`,
+          type: failures.length > 0 ? 'error' : 'success',
+          text: `${created}件の請求書を生成し、対象の注文${completedOrderIds.length}件を完了にしました${failureText ? `。${failureText}` : ''}`,
         })
       }
       await fetchInvoices()
