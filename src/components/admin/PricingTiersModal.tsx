@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
@@ -71,6 +71,110 @@ function SortableTierRow({
       >
         削除
       </button>
+    </div>
+  )
+}
+
+// 検索用の文字列正規化（全角英数字→半角・全角/半角カナの表記ゆれ・大文字小文字を吸収）。
+// 外部ライブラリを使わず String.prototype.normalize('NFKC') + toLowerCase で対応する。
+function normalizeForSearch(s: string): string {
+  return (s ?? '').normalize('NFKC').toLowerCase()
+}
+
+const COMPANY_COMBOBOX_ALL_LABEL = '全取引先（共通）'
+
+// 「表示する取引先」用の検索付きコンボボックス。companies が多いとプルダウンの
+// スクロールが大変なため、テキスト入力で company_name を部分一致フィルタできるようにする。
+// PricingTiersModal 専用（他画面には影響しない）。
+function CompanyCombobox({
+  companies,
+  value,
+  onChange,
+}: {
+  companies: { id: string; company_name: string }[]
+  value: string
+  onChange: (companyId: string) => void
+}) {
+  const selectedLabel = value
+    ? companies.find((c) => c.id === value)?.company_name ?? ''
+    : COMPANY_COMBOBOX_ALL_LABEL
+
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState(selectedLabel)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // 選択が外部から変わった場合（編集対象のtier切替など）に表示テキストを同期する
+  useEffect(() => {
+    setQuery(selectedLabel)
+  }, [selectedLabel])
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery(selectedLabel) // 未確定の入力文字は選択済みの表示に戻す
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [selectedLabel])
+
+  const normalizedQuery = normalizeForSearch(query)
+  const filteredCompanies = normalizedQuery
+    ? companies.filter((c) => normalizeForSearch(c.company_name).includes(normalizedQuery))
+    : companies
+  const allOptionMatches = !normalizedQuery || normalizeForSearch(COMPANY_COMBOBOX_ALL_LABEL).includes(normalizedQuery)
+
+  function select(companyId: string, label: string) {
+    onChange(companyId)
+    setQuery(label)
+    setOpen(false)
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        type="text"
+        value={query}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          setOpen(true)
+        }}
+        placeholder="取引先名で検索..."
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+      />
+      {open && (
+        <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+          {allOptionMatches && (
+            <button
+              type="button"
+              onClick={() => select('', COMPANY_COMBOBOX_ALL_LABEL)}
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${
+                value === '' ? 'font-bold text-green-700' : 'text-gray-700'
+              }`}
+            >
+              {COMPANY_COMBOBOX_ALL_LABEL}
+            </button>
+          )}
+          {filteredCompanies.length === 0 ? (
+            !allOptionMatches && <p className="px-3 py-2 text-xs text-gray-400">該当する取引先がありません</p>
+          ) : (
+            filteredCompanies.map((c) => (
+              <button
+                type="button"
+                key={c.id}
+                onClick={() => select(c.id, c.company_name)}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${
+                  value === c.id ? 'font-bold text-green-700' : 'text-gray-700'
+                }`}
+              >
+                {c.company_name}
+              </button>
+            ))
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -302,18 +406,11 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">表示する取引先</label>
-                <select
+                <CompanyCombobox
+                  companies={companies}
                   value={form.visible_company_id}
-                  onChange={(e) => setForm((f) => ({ ...f, visible_company_id: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                >
-                  <option value="">全取引先（共通）</option>
-                  {companies.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.company_name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(companyId) => setForm((f) => ({ ...f, visible_company_id: companyId }))}
+                />
                 <p className="text-xs text-gray-400 mt-1">
                   取引先を選ぶと、その会社のLIFF発注画面にのみ表示される専用の段階になります。
                 </p>

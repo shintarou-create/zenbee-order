@@ -293,6 +293,7 @@ function calcAmbientBoxes(items: OrderItemForCsv[]): number {
   // 非720mlジュースは同梱対象外で、従来どおり ceil(quantity / step_qty) を加算する。
 
   let kgTotal = 0
+  let citrusSetBoxes = 0
   let juice720Bottles = 0
   let juice720StepQty = 24
   let otherJuiceCases = 0
@@ -300,7 +301,15 @@ function calcAmbientBoxes(items: OrderItemForCsv[]): number {
   for (const item of items) {
     const cat = item.product.category
     if ((cat === '柑橘' || cat === 'その他') && item.product.unit === 'kg') {
-      kgTotal += item.quantity
+      if (item.tier_quantity != null) {
+        // 「Nkgセット」等のtier経由購入（例: TATSUMI専用の2kg/5kg/10kg/20kgセット）。
+        // quantity は「実kg」ではなく「購入セット数」のため kgTotal には混ぜない。
+        // 1セット=1箱=1小口として扱う（セット箱は既に梱包済みのため他商品の同梱対象にもしない）。
+        citrusSetBoxes += item.quantity
+      } else {
+        // 通常のkg売り（バラ）: quantity = 実kg。
+        kgTotal += item.quantity
+      }
     } else if (cat.startsWith('ジュース')) {
       if (cat.includes('720')) {
         // 720ml: 全720ml商品の実本数を合算し、後段で同梱上限を1回だけ適用する。
@@ -344,7 +353,11 @@ function calcAmbientBoxes(items: OrderItemForCsv[]): number {
   // ・柑橘9kg + 720ml3本            → kgBoxes=1, cap=1(7<9<=9), extra=2, +1箱      → total=2
   // ・柑橘12kg + 720ml30本          → kgBoxes=2, cap=0(kgTotal>9), extra=30, +2箱  → total=4
   // ・柑橘2kg + 180ml30本(step=30)  → kgBoxes=1, 720mlなし, other=ceil(30/30)=1    → total=2
-  return Math.max(1, kgBoxes + otherJuiceCases + juice720ExtraBoxes)
+  // ・柑橘セット(tier_quantity=1)を3セット購入のみ → kgTotal=0, kgBoxes=0,
+  //   citrusSetBoxes=3 → total=3（セット3個=3箱。3kgと誤カウントして1箱になるバグの回避）
+  // ・柑橘2kgバラ + セット2セット → kgTotal=2, kgBoxes=1, citrusSetBoxes=2 → total=3
+  //   （バラの箱数計算とセット箱数は独立に加算され、互いに影響しない）
+  return Math.max(1, kgBoxes + otherJuiceCases + juice720ExtraBoxes + citrusSetBoxes)
 }
 
 function calcCoolBoxes(items: OrderItemForCsv[]): number {
