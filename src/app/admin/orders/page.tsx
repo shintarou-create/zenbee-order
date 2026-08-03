@@ -183,7 +183,7 @@ function AdminOrdersContent() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let query: any = supabase
         .from('orders')
-        .select(`*, ${companyEmbed}, order_items (*), order_shipping (*)`)
+        .select(`*, ${companyEmbed}, order_items (*, product:products (category)), order_shipping (*)`)
         .order('delivery_date', { ascending: true, nullsFirst: false })
         .order('created_at', { ascending: false })
       query = applyTabAndFilters(query, activeTab)

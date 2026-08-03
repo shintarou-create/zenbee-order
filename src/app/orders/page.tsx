@@ -47,7 +47,7 @@ function OrdersContent() {
           .from('orders')
           .select(`
             *,
-            order_items (*)
+            order_items (*, product:products (category))
           `)
           .eq('company_id', lineUser.company_id)
           .neq('status', 'cancelled')
@@ -138,7 +138,7 @@ function OrdersContent() {
                         {item.product_name}
                         <span className="text-gray-600 font-normal">
                           {' '}
-                          {formatQuantity({ quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit })}
+                          {formatQuantity({ quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit, category: item.product?.category })}
                         </span>
                       </p>
                     ))}

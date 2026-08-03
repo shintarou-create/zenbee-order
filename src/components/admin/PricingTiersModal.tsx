@@ -9,6 +9,7 @@ import type { Product, ProductPricingTier } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
 import { createClient } from '@/lib/supabase/client'
+import { isSetCategory } from '@/lib/quantity-format'
 import PriceInput from './PriceInput'
 
 interface PricingTiersModalProps {
@@ -26,11 +27,13 @@ interface TierFormState {
 
 function SortableTierRow({
   tier,
+  isSet,
   companyName,
   onEdit,
   onDelete,
 }: {
   tier: ProductPricingTier
+  isSet: boolean
   companyName?: string
   onEdit: (tier: ProductPricingTier) => void
   onDelete: (id: string) => void
@@ -54,7 +57,9 @@ function SortableTierRow({
       <div className="flex-1 text-sm">
         <span className="font-medium text-gray-800">{tier.tier_label}</span>
         <span className="text-gray-500 ml-2">
-          （{tier.quantity}本 {formatCurrency(tier.unit_price)}/本）
+          {isSet
+            ? `（${formatCurrency(tier.unit_price)}/セット）`
+            : `（${tier.quantity}本 ${formatCurrency(tier.unit_price)}/本）`}
         </span>
         {tier.visible_company_id && (
           <span className="ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
@@ -180,6 +185,8 @@ function CompanyCombobox({
 }
 
 export default function PricingTiersModal({ product, onClose }: PricingTiersModalProps) {
+  // 柑橘/その他kg品（Nkgセット等）は「本」ではなく「セット」で表記する
+  const isSet = isSetCategory(product.category)
   const [tiers, setTiers] = useState<ProductPricingTier[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -360,6 +367,7 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
                     <SortableTierRow
                       key={tier.id}
                       tier={tier}
+                      isSet={isSet}
                       companyName={companies.find((c) => c.id === tier.visible_company_id)?.company_name}
                       onEdit={openEdit}
                       onDelete={handleDelete}
@@ -377,7 +385,9 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
                 {editingTier ? '段階を編集' : '新規段階を追加'}
               </h3>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">ラベル（例: 12本）</label>
+                <label className="block text-xs text-gray-500 mb-1">
+                  {isSet ? 'ラベル（例: 10kgセット）' : 'ラベル（例: 12本）'}
+                </label>
                 <input
                   type="text"
                   value={form.tier_label}
@@ -387,7 +397,7 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">本数</label>
+                  <label className="block text-xs text-gray-500 mb-1">{isSet ? '数量' : '本数'}</label>
                   <input
                     type="number"
                     value={form.quantity}
@@ -397,7 +407,9 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">単価（円/本）</label>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    {isSet ? '単価（円/セット）' : '単価（円/本）'}
+                  </label>
                   <PriceInput
                     value={form.unit_price}
                     onChange={(v) => setForm((f) => ({ ...f, unit_price: v }))}

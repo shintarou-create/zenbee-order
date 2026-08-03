@@ -1,5 +1,5 @@
 import iconv from 'iconv-lite'
-import { formatYamatoItemName } from '@/lib/quantity-format'
+import { formatYamatoItemName, isSetCategory } from '@/lib/quantity-format'
 
 // ────────────────────────────────────────────────────────────
 // JST 日付ユーティリティ
@@ -33,6 +33,7 @@ export interface ProductForCsv {
 export interface OrderItemForCsv {
   quantity: number
   tier_quantity?: number | null
+  tier_label?: string | null
   product: ProductForCsv
 }
 
@@ -228,29 +229,48 @@ function splitAddress(
 // ────────────────────────────────────────────────────────────
 
 function buildItemNameFromProducts(items: OrderItemForCsv[]): string {
-  // ジュースは「name + tier_quantity」をキーに合算、それ以外は name のみキー
-  type Entry = { key: string; name: string; isJuice: boolean; tierQty: number | null; unit: string }
+  // ジュースは「name + tier_quantity」、柑橘/その他のセットtierは「name + tier_label」
+  // をキーに合算する（サイズ違いのセットを取り違えて合算しないため）。それ以外は name のみキー。
+  type Entry = {
+    key: string
+    name: string
+    isJuice: boolean
+    tierQty: number | null
+    unit: string
+    isSet: boolean
+    tierLabel: string | null
+  }
   const ordered: Entry[] = []
   const qtyByKey = new Map<string, number>()
 
   for (const it of items) {
     const n = (it.product.name || '').trim()
     if (!n) continue
-    const isJuice = (it.product.category || '').startsWith('ジュース')
+    const category = it.product.category || ''
+    const isJuice = category.startsWith('ジュース')
+    const isSet = !isJuice && isSetCategory(category) && it.tier_quantity != null
     const tierQty = isJuice && it.tier_quantity ? it.tier_quantity : null
-    const key = isJuice ? `${n}_${tierQty ?? ''}` : n
+    const key = isJuice
+      ? `${n}_${tierQty ?? ''}`
+      : isSet
+        ? `${n}_${it.tier_label ?? ''}`
+        : n
     if (!qtyByKey.has(key)) {
-      ordered.push({ key, name: n, isJuice, tierQty, unit: it.product.unit || '' })
+      ordered.push({ key, name: n, isJuice, tierQty, unit: it.product.unit || '', isSet, tierLabel: it.tier_label ?? null })
       qtyByKey.set(key, 0)
     }
     qtyByKey.set(key, (qtyByKey.get(key) || 0) + (it.quantity || 0))
   }
 
-  const labels = ordered.map(({ key, name, isJuice, tierQty, unit }) => {
+  const labels = ordered.map(({ key, name, isJuice, tierQty, unit, isSet, tierLabel }) => {
     const qty = qtyByKey.get(key) || 0
     // ジュース：バラ「商品名×5」/ 箱「商品名 6本入×5」（quantity-format に集約）
     if (isJuice && tierQty) return formatYamatoItemName({ name, quantity: qty, tier_quantity: tierQty })
-    // 柑橘・その他：「商品名 10kg」形式
+    // 柑橘・その他のセットtier（Nkgセット等）：「商品名 2kgセット×3」形式（ジュースの
+    // 「商品名 6本入×5」と同じ見た目）。quantityは実kgではなくセット数のため、
+    // kg等の単位は使わずtier_labelとセット数で表す。
+    if (isSet) return tierLabel ? `${name} ${tierLabel}×${qty}` : `${name} ×${qty}セット`
+    // 柑橘・その他（tierなし・kgバラ）：「商品名 10kg」形式
     return qty > 0 ? `${name} ${qty}${unit}` : name
   })
 

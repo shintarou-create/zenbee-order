@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Product, CartItem, CoolType, ProductPricingTier } from '@/types'
 import { isProductPreorder, formatShipStartDate } from '@/lib/utils'
-import { formatCartLine, formatCartUnit, formatCaseBreakdown } from '@/lib/quantity-format'
+import { formatCartLine, formatCartUnit, formatCaseBreakdown, isSetCategory } from '@/lib/quantity-format'
 import ProductDetailModal from './ProductDetailModal'
 
 interface ProductCardProps {
@@ -76,6 +76,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
           pricingTierId: selectedTier.id,
           tierLabel: selectedTier.tier_label,
           tierQuantity: selectedTier.quantity,
+          category: product.category,
           shipStartDate: product.ship_start_date,
         })
       } else {
@@ -197,6 +198,7 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
               quantity: cartItem.quantity,
               tier_quantity: cartItem.tierQuantity,
               unit: cartItem.unit,
+              category: cartItem.category ?? product.category,
             })}
           </div>
         )}
@@ -271,8 +273,8 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
                 />
                 <span className={`text-sm transition-colors ${quantity === 0 || isShipLocked ? 'text-gray-300' : 'text-gray-500'}`}>
                   {selectedTier
-                    ? formatCartUnit({ tier_quantity: selectedTier.quantity, unit: product.unit })
-                    : hasTiers ? 'ケース' : product.unit}
+                    ? formatCartUnit({ tier_quantity: selectedTier.quantity, unit: product.unit, category: product.category })
+                    : hasTiers ? (isSetCategory(product.category) ? 'セット' : 'ケース') : product.unit}
                 </span>
               </div>
               <button
@@ -289,11 +291,11 @@ export default function ProductCard({ product, onPendingChange, cartItem, resetK
               <p className="mt-1 text-xs text-red-500 font-medium">お届け時期が異なるため、選択中の商品と一緒に選べません。お届け時期ごとに分けてご注文ください。</p>
             )}
 
-            {/* 段階ありの補助行（箱のみ表示。バラは自明のため非表示） */}
-            {hasTiers && selectedTier && quantity >= 1 && formatCaseBreakdown({ tier_quantity: selectedTier.quantity, quantity }) && (
+            {/* 段階ありの補助行（ジュースの箱のみ表示。バラ・セットは自明のため非表示） */}
+            {hasTiers && selectedTier && quantity >= 1 && formatCaseBreakdown({ tier_quantity: selectedTier.quantity, quantity, category: product.category }) && (
               <div className="mb-2 bg-white border-t border-kincha rounded-lg px-3 py-2 text-sm">
                 <div className="text-gray-600">
-                  {formatCaseBreakdown({ tier_quantity: selectedTier.quantity, quantity })}
+                  {formatCaseBreakdown({ tier_quantity: selectedTier.quantity, quantity, category: product.category })}
                 </div>
               </div>
             )}

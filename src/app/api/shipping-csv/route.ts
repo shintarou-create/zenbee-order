@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
         order_items (
           quantity,
           tier_quantity,
+          tier_label,
           product:products (name, category, unit, step_qty, cool_type)
         ),
         order_shipping (
@@ -71,6 +72,7 @@ export async function POST(req: NextRequest) {
         items: (order.order_items || []).map((item: any) => ({
           quantity: item.quantity,
           tier_quantity: item.tier_quantity ?? null,
+          tier_label: item.tier_label ?? null,
           product: {
             name: item.product?.name || '',
             category: item.product?.category || 'その他',

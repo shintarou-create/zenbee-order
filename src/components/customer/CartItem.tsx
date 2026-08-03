@@ -73,7 +73,7 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-bold text-gray-900 text-base">{item.productName}</h3>
-            {item.tierLabel && shouldShowTierBadge(item.tierQuantity) && (
+            {item.tierLabel && shouldShowTierBadge(item.tierQuantity, item.category) && (
               <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
                 {item.tierLabel}
               </span>
@@ -84,9 +84,9 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
               </span>
             )}
           </div>
-          {isCaseTier(item.tierQuantity) && (
+          {isCaseTier(item.tierQuantity, item.category) && (
             <p className="text-xs text-gray-500 mt-0.5">
-              {formatQuantity({ quantity: item.quantity, tier_quantity: item.tierQuantity, unit: item.unit })}
+              {formatQuantity({ quantity: item.quantity, tier_quantity: item.tierQuantity, unit: item.unit, category: item.category })}
             </p>
           )}
         </div>
@@ -121,7 +121,7 @@ export default function CartItem({ item, onUpdateQuantity, onRemove }: CartItemP
               className={`w-16 text-center font-bold border rounded-lg py-1 text-sm focus:outline-none focus:ring-2 focus:ring-fukamidori transition-colors ${item.quantity === 0 ? 'text-gray-300 border-gray-200 bg-gray-50' : 'border-gray-200'}`}
             />
             <span className={`text-sm transition-colors ${item.quantity === 0 ? 'text-gray-300' : 'text-gray-500'}`}>
-              {formatCartUnit({ tier_quantity: item.tierQuantity, unit: item.unit })}
+              {formatCartUnit({ tier_quantity: item.tierQuantity, unit: item.unit, category: item.category })}
             </span>
           </div>
           <button

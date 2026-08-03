@@ -345,6 +345,8 @@ export interface CartItem {
   pricingTierId?: string | null
   tierLabel?: string | null
   tierQuantity?: number | null
+  // 商品カテゴリ（'柑橘'等）。tier表記の出し分け（本/セット）に使う。
+  category?: string | null
   isCustom?: boolean
   shipStartDate?: string | null
 }

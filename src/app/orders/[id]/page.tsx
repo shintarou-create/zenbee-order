@@ -41,7 +41,7 @@ export default function OrderDetailPage() {
           .select(`
             *,
             company:companies (*),
-            order_items (*),
+            order_items (*, product:products (category)),
             order_shipping (*)
           `)
           .eq('id', orderId)
@@ -154,7 +154,7 @@ export default function OrderDetailPage() {
               <div key={item.id} className="p-4">
                 <p className="font-medium text-gray-900">{item.product_name}</p>
                 <p className="text-sm text-gray-500">
-                  {formatQuantity({ quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit })}
+                  {formatQuantity({ quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit, category: item.product?.category })}
                 </p>
               </div>
             ))}

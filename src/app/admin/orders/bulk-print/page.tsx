@@ -32,7 +32,7 @@ export default function BulkPrintPage() {
     const supabase = createClient()
     supabase
       .from('orders')
-      .select('*, company:companies(*), order_items(*), order_shipping(*)')
+      .select('*, company:companies(*), order_items(*, product:products(category)), order_shipping(*)')
       .in('id', ids)
       .order('delivery_date', { ascending: true, nullsFirst: false })
       .then(({ data, error: err }) => {

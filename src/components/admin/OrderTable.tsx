@@ -270,7 +270,7 @@ export default function OrderTable({
             <div className="space-y-0.5">
               {items.slice(0, 3).map((item, i) => (
                 <p key={i} className="text-xs text-gray-600 leading-snug">
-                  {formatOrderItemLabel(item)}
+                  {formatOrderItemLabel({ ...item, category: item.product?.category })}
                 </p>
               ))}
               {items.length > 3 && (
@@ -391,7 +391,7 @@ export default function OrderTable({
           <div className="pt-2 border-t border-gray-100 space-y-0.5">
             {items.slice(0, 3).map((item, i) => (
               <p key={i} className="text-xs text-gray-600 leading-snug">
-                {formatOrderItemLabel(item)}
+                {formatOrderItemLabel({ ...item, category: item.product?.category })}
               </p>
             ))}
             {items.length > 3 && (

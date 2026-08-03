@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { shouldShowTierBadge } from '@/lib/quantity-format'
+import { shouldShowTierBadge, isSetCategory } from '@/lib/quantity-format'
 
 // 請求書1件の表示用データ集計。請求書HTML印刷ページ・PDF生成の両方から使う共通ロジック。
 // 集計は freee-csv と同一の考え方（商品8%軽減 / 送料10%標準・単価金額は税込）。
@@ -173,13 +173,19 @@ export async function buildInvoiceDetail(
     const md = parts[1] && parts[2] ? `${parseInt(parts[1])}/${parseInt(parts[2])}` : ''
 
     for (const oi of order.order_items || []) {
+      const itemCategory = oi.product?.category ?? null
       const itemName = oi.product?.name ?? oi.product_name ?? ''
-      const itemUnit = oi.product?.unit ?? oi.unit ?? ''
+      // 柑橘/その他kg品のtier購入（Nkgセット等）は quantity が「実kg」ではなく
+      // 「セット数」のため、単位は product.unit（kg）ではなく「セット」で表示する。
+      const itemUnit = isSetCategory(itemCategory) && oi.tier_quantity != null
+        ? 'セット'
+        : oi.product?.unit ?? oi.unit ?? ''
       const realQty = oi.tier_quantity ? oi.quantity * oi.tier_quantity : oi.quantity
       const unitPrice = oi.unit_price || oi.subtotal
       const quantity = oi.unit_price ? realQty : 1
-      // tier_label は箱(ケース)のみ併記。バラ(tier_quantity===1)は付けない。
-      const desc = oi.tier_label && shouldShowTierBadge(oi.tier_quantity)
+      // tier_label はジュースの箱(ケース)のみ併記（バラ=tier_quantity===1は付けない）。
+      // 柑橘等のセットtierは、サイズ違いを区別できるよう常にtier_labelを併記する。
+      const desc = oi.tier_label && shouldShowTierBadge(oi.tier_quantity, itemCategory)
         ? `${md}納品 ${itemName}（${oi.tier_label}）`
         : `${md}納品 ${itemName}`
       lineItems.push({

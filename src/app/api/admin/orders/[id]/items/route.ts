@@ -274,7 +274,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // order_items に created_at は存在しないため ORDER BY は使わない
   const { data: updatedItems, error: fetchError } = await supabase
     .from('order_items')
-    .select('id, order_id, product_id, product_name, quantity, unit, unit_price, subtotal, pricing_tier_id, tier_label, tier_quantity, is_custom')
+    .select('id, order_id, product_id, product_name, quantity, unit, unit_price, subtotal, pricing_tier_id, tier_label, tier_quantity, is_custom, product:products(category)')
     .eq('order_id', orderId)
 
   if (fetchError) {

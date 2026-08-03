@@ -21,7 +21,7 @@ export default function OrderSummary({ items }: OrderSummaryProps) {
           <div key={item.productId} className="flex items-center justify-between text-sm">
             <span className="text-gray-700 flex-1 truncate mr-2">{item.productName}</span>
             <span className="text-gray-500 flex-shrink-0">
-              {formatQuantity({ quantity: item.quantity, tier_quantity: item.tierQuantity, unit: item.unit })}
+              {formatQuantity({ quantity: item.quantity, tier_quantity: item.tierQuantity, unit: item.unit, category: item.category })}
             </span>
           </div>
         ))}

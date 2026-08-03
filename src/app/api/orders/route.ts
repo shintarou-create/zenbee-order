@@ -432,7 +432,8 @@ export async function POST(req: NextRequest) {
           if (item.is_custom) {
             return `・【自由記入】${item.product_name}（金額未確定）`
           }
-          return `・${formatOrderItemLabel({ product_name: item.product_name, quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit })}`
+          const category = products.find((p) => p.id === item.product_id)?.category ?? null
+          return `・${formatOrderItemLabel({ product_name: item.product_name, quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit, category })}`
         })
         .join('\n')
 

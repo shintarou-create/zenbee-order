@@ -24,12 +24,15 @@ interface EditableOrderItem {
   tier_label: string | null
   tier_quantity: number | null
   is_custom: boolean
+  // 商品カテゴリ（'柑橘'等）。tier表記の出し分け（本/セット）に使う。
+  category?: string | null
 }
 
 interface ProductForSelector {
   id: string
   name: string
   unit: string
+  category?: string | null
   display_order?: number | null
   product_pricing_tiers: Array<{ id: string; tier_label: string; quantity: number; unit_price: number; is_active: boolean }>
   product_prices: Array<{ price_rank: string; price_per_unit: number }>
@@ -87,7 +90,7 @@ export default function AdminOrderDetailPage() {
           .select(`
             *,
             company:companies (*),
-            order_items (*),
+            order_items (*, product:products (category)),
             order_shipping (*)
           `)
           .eq('id', orderId)
@@ -122,6 +125,7 @@ export default function AdminOrderDetailPage() {
             tier_label: item.tier_label ?? null,
             tier_quantity: item.tier_quantity ?? null,
             is_custom: item.is_custom ?? false,
+            category: item.product?.category ?? null,
           }))
         )
       } catch (err) {
@@ -157,7 +161,7 @@ export default function AdminOrderDetailPage() {
       const supabase = createClient()
       const { data } = await supabase
         .from('products')
-        .select('id, name, unit, display_order, product_pricing_tiers(id, tier_label, quantity, unit_price, is_active), product_prices(price_rank, price_per_unit)')
+        .select('id, name, unit, category, display_order, product_pricing_tiers(id, tier_label, quantity, unit_price, is_active), product_prices(price_rank, price_per_unit)')
         .eq('is_active', true)
         .order('display_order', { ascending: true })
       // 「よく使う商品」順の並び替え用に使用実績を取得。失敗しても {} で display_order 順にフォールバック。
@@ -266,6 +270,7 @@ export default function AdminOrderDetailPage() {
         tier_label: tierLabel,
         tier_quantity: tierQuantity,
         is_custom: false,
+        category: product.category ?? null,
       },
     ])
     setAddProductId('')
@@ -313,6 +318,7 @@ export default function AdminOrderDetailPage() {
           tier_label: item.tier_label ?? null,
           tier_quantity: item.tier_quantity ?? null,
           is_custom: item.is_custom ?? false,
+          category: item.product?.category ?? null,
         }))
         setEditItems(newItems)
         setOrder((prev) =>
@@ -713,7 +719,7 @@ export default function AdminOrderDetailPage() {
                     <tr key={idx}>
                       <td className="px-4 py-3 text-gray-900">
                         {item.product_name}
-                        {item.tier_label && shouldShowTierBadge(item.tier_quantity) && (
+                        {item.tier_label && shouldShowTierBadge(item.tier_quantity, item.category) && (
                           <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
                             {item.tier_label}
                           </span>
@@ -728,7 +734,7 @@ export default function AdminOrderDetailPage() {
                             max={9999}
                           />
                           <span className="text-gray-500 whitespace-nowrap">
-                            {formatUnitWithTotal({ quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit })}
+                            {formatUnitWithTotal({ quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit, category: item.category })}
                           </span>
                         </div>
                       </td>
@@ -768,14 +774,14 @@ export default function AdminOrderDetailPage() {
                     <tr key={item.id}>
                       <td className="px-4 py-3 text-gray-900">
                         {item.product_name}
-                        {item.tier_label && shouldShowTierBadge(item.tier_quantity) && (
+                        {item.tier_label && shouldShowTierBadge(item.tier_quantity, item.product?.category) && (
                           <span className="ml-2 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
                             {item.tier_label}
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {formatQuantity({ quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit })}
+                        {formatQuantity({ quantity: item.quantity, tier_quantity: item.tier_quantity, unit: item.unit, category: item.product?.category })}
                       </td>
                       <td className="px-4 py-3 text-right">{formatCurrency(item.unit_price)}</td>
                       <td className="px-4 py-3 text-right font-medium">{formatCurrency(item.subtotal)}</td>

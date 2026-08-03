@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { generateFreeeCSV } from '@/lib/freee-csv'
-import { shouldShowTierBadge } from '@/lib/quantity-format'
+import { shouldShowTierBadge, isSetCategory } from '@/lib/quantity-format'
 import type { FreeeInvoiceData, FreeeLineItem } from '@/lib/freee-csv'
 
 function getTargetYearMonth(from: string, to: string): string {
@@ -153,13 +153,19 @@ export async function POST(req: NextRequest) {
       const entry = companiesMap.get(cid)!
 
       for (const oi of itemsByOrder.get(order.id) ?? []) {
+        const itemCategory = oi.product?.category ?? null
         const itemName = oi.product?.name ?? oi.product_name ?? ''
-        const itemUnit = oi.product?.unit ?? oi.unit ?? ''
+        // 柑橘/その他kg品のtier購入（Nkgセット等）は quantity が「実kg」ではなく
+        // 「セット数」のため、単位は product.unit（kg）ではなく「セット」で表示する。
+        const itemUnit = isSetCategory(itemCategory) && oi.tier_quantity != null
+          ? 'セット'
+          : oi.product?.unit ?? oi.unit ?? ''
         const realQty = oi.tier_quantity ? oi.quantity * oi.tier_quantity : oi.quantity
         const unitPrice = oi.unit_price || oi.subtotal
         const quantity = oi.unit_price ? realQty : 1
-        // tier_label は箱(ケース)のみ併記。バラ(tier_quantity===1)は付けない。
-        const desc = oi.tier_label && shouldShowTierBadge(oi.tier_quantity)
+        // tier_label はジュースの箱(ケース)のみ併記（バラ=tier_quantity===1は付けない）。
+        // 柑橘等のセットtierは、サイズ違いを区別できるよう常にtier_labelを併記する。
+        const desc = oi.tier_label && shouldShowTierBadge(oi.tier_quantity, itemCategory)
           ? `${md}納品 ${itemName}（${oi.tier_label}）`
           : `${md}納品 ${itemName}`
         entry.items.push({ description: desc, unitPrice, quantity, unit: itemUnit, taxRate: '8' })

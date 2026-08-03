@@ -19,7 +19,7 @@ export default function OrderPrintPage() {
     const supabase = createClient()
     supabase
       .from('orders')
-      .select('*, company:companies(*), order_items(*), order_shipping(*)')
+      .select('*, company:companies(*), order_items(*, product:products(category)), order_shipping(*)')
       .eq('id', id)
       .single()
       .then(({ data }) => {
