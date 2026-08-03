@@ -94,6 +94,7 @@ const initialFormData: Partial<Company> = {
   email: '',
   price_rank: 'standard',
   delivery_method: 'yamato',
+  price_tax_type: 'inclusive',
   notes: '',
   is_active: true,
   has_separate_billing: false,
@@ -439,6 +440,7 @@ export default function AdminCustomersPage() {
         email: formData.email || null,
         price_rank: formData.price_rank || 'standard',
         delivery_method: formData.delivery_method || 'yamato',
+        price_tax_type: formData.price_tax_type || 'inclusive',
         notes: formData.notes || null,
         is_active: formData.is_active ?? true,
         has_separate_billing: formData.has_separate_billing ?? false,
@@ -1063,6 +1065,23 @@ export default function AdminCustomersPage() {
                 </select>
                 <p className="text-xs text-gray-400 mt-1">
                   直接配達・来店引取りは送料一律¥0で計算されます。
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">単価の税区分</label>
+                <select
+                  value={formData.price_tax_type || 'inclusive'}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, price_tax_type: e.target.value as Company['price_tax_type'] }))
+                  }
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  <option value="inclusive">税込（通常）</option>
+                  <option value="exclusive">税抜（本体価格で登録）</option>
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  「税抜」にすると、単価マスタ・個別単価特例の値を本体価格として扱い、注文明細作成時に税込金額へ変換して保存します。
                 </p>
               </div>
 

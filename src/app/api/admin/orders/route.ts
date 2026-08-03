@@ -11,6 +11,7 @@ import {
   resolveUnitPriceOverride,
   resolveFixedShippingFee,
 } from '@/lib/company-overrides'
+import { toInclusiveUnitPrice } from '@/lib/tax-conversion'
 import type { CartItem, CoolType, CompanyOverride, DeliveryMethod } from '@/types'
 
 export async function POST(req: NextRequest) {
@@ -69,12 +70,18 @@ export async function POST(req: NextRequest) {
     const supabase = createServiceClient()
 
     // 取引先を解決
-    let company: { id: string; company_name: string; price_rank: string; delivery_method: DeliveryMethod }
+    let company: {
+      id: string
+      company_name: string
+      price_rank: string
+      delivery_method: DeliveryMethod
+      price_tax_type: 'inclusive' | 'exclusive'
+    }
 
     if (companyId) {
       const { data, error } = await supabase
         .from('companies')
-        .select('id, company_name, price_rank, delivery_method')
+        .select('id, company_name, price_rank, delivery_method, price_tax_type')
         .eq('id', companyId)
         .single()
       if (error || !data) {
@@ -86,7 +93,7 @@ export async function POST(req: NextRequest) {
       const trimmedName = (newCompanyName as string).trim()
       const { data: existing } = await supabase
         .from('companies')
-        .select('id, company_name, price_rank, delivery_method')
+        .select('id, company_name, price_rank, delivery_method, price_tax_type')
         .eq('company_name', trimmedName)
         .maybeSingle()
 
@@ -102,7 +109,7 @@ export async function POST(req: NextRequest) {
             is_active: true,
             has_separate_billing: false,
           })
-          .select('id, company_name, price_rank, delivery_method')
+          .select('id, company_name, price_rank, delivery_method, price_tax_type')
           .single()
         if (insertError || !inserted) {
           console.error('companies INSERT error:', insertError)
@@ -244,6 +251,12 @@ export async function POST(req: NextRequest) {
       })
       if (overridePrice != null) {
         unitPrice = overridePrice
+      }
+
+      // 会社が「単価は税抜」設定の場合、確定単価（product_prices由来・overrideによる
+      // 上書き後を問わず）を税込に変換してから保存・計算する。
+      if (company.price_tax_type === 'exclusive') {
+        unitPrice = toInclusiveUnitPrice(unitPrice)
       }
 
       if (product.stock_status === 'cross') {

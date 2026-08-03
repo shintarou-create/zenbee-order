@@ -61,6 +61,9 @@ export interface Company {
   price_rank: PriceRank
   // 発送方法（direct_delivery / pickup は送料一律¥0）
   delivery_method: DeliveryMethod
+  // 単価の税区分。'inclusive'=単価は税込（従来通り、デフォルト） / 'exclusive'=単価は税抜
+  // （本体価格）で登録されており、注文明細作成時に税込金額へ変換する。
+  price_tax_type: 'inclusive' | 'exclusive'
   notes: string | null
   // 社内専用の常設メモ（規格の好み・注意点など。顧客側には表示しない）
   internal_memo: string | null

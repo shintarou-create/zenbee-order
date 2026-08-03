@@ -11,6 +11,7 @@ import {
   resolveUnitPriceOverride,
   resolveFixedShippingFee,
 } from '@/lib/company-overrides'
+import { toInclusiveUnitPrice } from '@/lib/tax-conversion'
 import type { CreateOrderRequest, CartItem, CoolType, CompanyOverride } from '@/types'
 
 export async function POST(req: NextRequest) {
@@ -290,6 +291,12 @@ export async function POST(req: NextRequest) {
       })
       if (overridePrice != null) {
         unitPrice = overridePrice
+      }
+
+      // 会社が「単価は税抜」設定の場合、確定単価（product_prices由来・overrideによる
+      // 上書き後を問わず）を税込に変換してから保存・計算する。
+      if (company.price_tax_type === 'exclusive') {
+        unitPrice = toInclusiveUnitPrice(unitPrice)
       }
 
       // 在庫確認

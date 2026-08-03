@@ -6,6 +6,7 @@ import {
   getActiveOverrides,
   resolveUnitPriceOverride,
 } from '@/lib/company-overrides'
+import { toInclusiveUnitPrice } from '@/lib/tax-conversion'
 import type { CompanyOverride } from '@/types'
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -79,10 +80,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'この注文は編集できません（未対応の注文のみ編集可能）' }, { status: 409 })
   }
 
-  // 会社の price_rank を取得（tier なし商品の単価算出に使用）
+  // 会社の price_rank・price_tax_type を取得（tier なし商品の単価算出・税区分変換に使用）
   const { data: company } = await supabase
     .from('companies')
-    .select('price_rank')
+    .select('price_rank, price_tax_type')
     .eq('id', orderData.company_id)
     .single()
 
@@ -220,6 +221,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     })
     if (overridePrice != null) {
       unitPrice = overridePrice
+    }
+
+    // 会社が「単価は税抜」設定の場合、確定単価（product_prices由来・overrideによる
+    // 上書き後を問わず）を税込に変換してから保存・計算する。
+    if (company?.price_tax_type === 'exclusive') {
+      unitPrice = toInclusiveUnitPrice(unitPrice)
     }
 
     const subtotal = tierQuantity
