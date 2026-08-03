@@ -91,6 +91,12 @@ const COMPANY_COMBOBOX_ALL_LABEL = '全取引先（共通）'
 // 「表示する取引先」用の検索付きコンボボックス。companies が多いとプルダウンの
 // スクロールが大変なため、テキスト入力で company_name を部分一致フィルタできるようにする。
 // PricingTiersModal 専用（他画面には影響しない）。
+//
+// UX:
+//   - フォーカス時: 入力欄を空にして候補を全件表示（消す操作なしでそのままタイプできる）
+//   - 入力中: 部分一致で絞り込み。↑↓で候補移動・Enterで確定・Escでキャンセル
+//   - blur時: 選択が変わっていなければ元の表示（選択中の会社名 or 全取引先）に戻す
+//     （打ちかけの文字列が残って未選択扱いになる事故を防ぐ）
 function CompanyCombobox({
   companies,
   value,
@@ -106,22 +112,12 @@ function CompanyCombobox({
 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(selectedLabel)
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // 選択が外部から変わった場合（編集対象のtier切替など）に表示テキストを同期する
   useEffect(() => {
     setQuery(selectedLabel)
-  }, [selectedLabel])
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setQuery(selectedLabel) // 未確定の入力文字は選択済みの表示に戻す
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [selectedLabel])
 
   const normalizedQuery = normalizeForSearch(query)
@@ -130,10 +126,51 @@ function CompanyCombobox({
     : companies
   const allOptionMatches = !normalizedQuery || normalizeForSearch(COMPANY_COMBOBOX_ALL_LABEL).includes(normalizedQuery)
 
+  // 「全取引先」＋会社一覧を結合した候補リスト（キーボード操作・確定処理で共通利用）
+  const options = [
+    ...(allOptionMatches ? [{ id: '', label: COMPANY_COMBOBOX_ALL_LABEL }] : []),
+    ...filteredCompanies.map((c) => ({ id: c.id, label: c.company_name })),
+  ]
+
   function select(companyId: string, label: string) {
     onChange(companyId)
     setQuery(label)
     setOpen(false)
+  }
+
+  function revertToSelected() {
+    setOpen(false)
+    setQuery(selectedLabel)
+  }
+
+  function openWithFullList() {
+    setQuery('') // 消す操作なしでそのままタイプできるよう、フォーカス時に空にして全件表示
+    setHighlightedIndex(0)
+    setOpen(true)
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        e.preventDefault()
+        openWithFullList()
+      }
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlightedIndex((i) => Math.min(i + 1, options.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlightedIndex((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const opt = options[highlightedIndex]
+      if (opt) select(opt.id, opt.label)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      revertToSelected()
+    }
   }
 
   return (
@@ -141,40 +178,36 @@ function CompanyCombobox({
       <input
         type="text"
         value={query}
-        onFocus={() => setOpen(true)}
+        onFocus={openWithFullList}
         onChange={(e) => {
           setQuery(e.target.value)
+          setHighlightedIndex(0)
           setOpen(true)
         }}
+        onKeyDown={handleKeyDown}
+        onBlur={revertToSelected}
         placeholder="取引先名で検索..."
         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
       />
       {open && (
         <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
-          {allOptionMatches && (
-            <button
-              type="button"
-              onClick={() => select('', COMPANY_COMBOBOX_ALL_LABEL)}
-              className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${
-                value === '' ? 'font-bold text-green-700' : 'text-gray-700'
-              }`}
-            >
-              {COMPANY_COMBOBOX_ALL_LABEL}
-            </button>
-          )}
-          {filteredCompanies.length === 0 ? (
-            !allOptionMatches && <p className="px-3 py-2 text-xs text-gray-400">該当する取引先がありません</p>
+          {options.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-gray-400">該当する取引先がありません</p>
           ) : (
-            filteredCompanies.map((c) => (
+            options.map((opt, i) => (
               <button
                 type="button"
-                key={c.id}
-                onClick={() => select(c.id, c.company_name)}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${
-                  value === c.id ? 'font-bold text-green-700' : 'text-gray-700'
-                }`}
+                key={opt.id || '__all__'}
+                // input の blur より先に発火するmousedownでpreventDefaultし、
+                // クリック確定前にblurで表示が元に戻ってしまうのを防ぐ
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => select(opt.id, opt.label)}
+                onMouseEnter={() => setHighlightedIndex(i)}
+                className={`w-full text-left px-3 py-2 text-sm ${
+                  i === highlightedIndex ? 'bg-green-50' : 'hover:bg-gray-50'
+                } ${value === opt.id ? 'font-bold text-green-700' : 'text-gray-700'}`}
               >
-                {c.company_name}
+                {opt.label}
               </button>
             ))
           )}
