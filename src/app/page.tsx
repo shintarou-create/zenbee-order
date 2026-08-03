@@ -30,6 +30,7 @@ export default function HomePage() {
   const { products, isLoading: productsLoading } = useProducts({
     priceRank,
     withTiers: true,
+    companyId: company?.id,
   })
   const { items: cartItems, addToCart, addCustomItem, itemCount, customItemCount } = useCart()
 

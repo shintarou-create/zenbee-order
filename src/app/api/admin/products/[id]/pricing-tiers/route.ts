@@ -20,7 +20,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { tier_label, quantity, unit_price } = await req.json()
+    const { tier_label, quantity, unit_price, visible_company_id } = await req.json()
     if (!tier_label?.trim() || !quantity || !unit_price) {
       return NextResponse.json({ error: 'tier_label, quantity, unit_price が必要です' }, { status: 400 })
     }
@@ -42,6 +42,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         unit_price: Number(unit_price),
         display_order: nextOrder,
         is_active: true,
+        // NULL=全取引先に表示（デフォルト）。指定時はその会社のLIFF発注画面にのみ表示。
+        visible_company_id: visible_company_id || null,
       })
       .select()
       .single()

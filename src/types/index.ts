@@ -38,6 +38,9 @@ export interface ProductPricingTier {
   unit_price: number
   display_order: number
   is_active: boolean
+  // NULL=全取引先に表示（デフォルト）。特定companies.idが入っている場合、
+  // その会社のLIFF発注画面にのみ表示する専用tier。
+  visible_company_id: string | null
 }
 export type OrderStatus = 'pending' | 'shipped' | 'done' | 'cancelled'
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue'

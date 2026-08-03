@@ -8,6 +8,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { Product, ProductPricingTier } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
+import { createClient } from '@/lib/supabase/client'
 import PriceInput from './PriceInput'
 
 interface PricingTiersModalProps {
@@ -19,14 +20,18 @@ interface TierFormState {
   tier_label: string
   quantity: string
   unit_price: number
+  // ''=全取引先（共通・visible_company_id=null）。それ以外は companies.id。
+  visible_company_id: string
 }
 
 function SortableTierRow({
   tier,
+  companyName,
   onEdit,
   onDelete,
 }: {
   tier: ProductPricingTier
+  companyName?: string
   onEdit: (tier: ProductPricingTier) => void
   onDelete: (id: string) => void
 }) {
@@ -51,6 +56,11 @@ function SortableTierRow({
         <span className="text-gray-500 ml-2">
           （{tier.quantity}本 {formatCurrency(tier.unit_price)}/本）
         </span>
+        {tier.visible_company_id && (
+          <span className="ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+            {companyName ? `${companyName}専用` : '取引先専用'}
+          </span>
+        )}
       </div>
       <button onClick={() => onEdit(tier)} className="text-xs text-blue-600 hover:text-blue-700 px-2 py-1 rounded">
         編集
@@ -71,14 +81,29 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [editingTier, setEditingTier] = useState<ProductPricingTier | null>(null)
-  const [form, setForm] = useState<TierFormState>({ tier_label: '', quantity: '', unit_price: 0 })
+  const [form, setForm] = useState<TierFormState>({ tier_label: '', quantity: '', unit_price: 0, visible_company_id: '' })
   const [saving, setSaving] = useState(false)
+  const [companies, setCompanies] = useState<{ id: string; company_name: string }[]>([])
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
   useEffect(() => {
     fetchTiers()
+    fetchCompanies()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function fetchCompanies() {
+    try {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('companies')
+        .select('id, company_name')
+        .order('company_name', { ascending: true })
+      setCompanies(data ?? [])
+    } catch {
+      // 取引先専用tierの表示名が引けないだけなので致命的ではない
+    }
+  }
 
   async function fetchTiers() {
     setLoading(true)
@@ -106,6 +131,7 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
             tier_label: form.tier_label.trim(),
             quantity: Number(form.quantity),
             unit_price: form.unit_price,
+            visible_company_id: form.visible_company_id || null,
           }),
         })
         if (!res.ok) {
@@ -120,6 +146,7 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
             tier_label: form.tier_label.trim(),
             quantity: Number(form.quantity),
             unit_price: form.unit_price,
+            visible_company_id: form.visible_company_id || null,
           }),
         })
         if (!res.ok) {
@@ -130,7 +157,7 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
       await fetchTiers()
       setShowForm(false)
       setEditingTier(null)
-      setForm({ tier_label: '', quantity: '', unit_price: 0 })
+      setForm({ tier_label: '', quantity: '', unit_price: 0, visible_company_id: '' })
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存に失敗しました')
     } finally {
@@ -183,13 +210,14 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
       tier_label: tier.tier_label,
       quantity: String(tier.quantity),
       unit_price: tier.unit_price,
+      visible_company_id: tier.visible_company_id ?? '',
     })
     setShowForm(true)
   }
 
   function openNew() {
     setEditingTier(null)
-    setForm({ tier_label: '', quantity: '', unit_price: 0 })
+    setForm({ tier_label: '', quantity: '', unit_price: 0, visible_company_id: '' })
     setShowForm(true)
   }
 
@@ -225,7 +253,13 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
                     <p className="text-sm text-gray-400 text-center py-4">価格段階が設定されていません</p>
                   )}
                   {tiers.map((tier) => (
-                    <SortableTierRow key={tier.id} tier={tier} onEdit={openEdit} onDelete={handleDelete} />
+                    <SortableTierRow
+                      key={tier.id}
+                      tier={tier}
+                      companyName={companies.find((c) => c.id === tier.visible_company_id)?.company_name}
+                      onEdit={openEdit}
+                      onDelete={handleDelete}
+                    />
                   ))}
                 </div>
               </SortableContext>
@@ -265,6 +299,24 @@ export default function PricingTiersModal({ product, onClose }: PricingTiersModa
                     onChange={(v) => setForm((f) => ({ ...f, unit_price: v }))}
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">表示する取引先</label>
+                <select
+                  value={form.visible_company_id}
+                  onChange={(e) => setForm((f) => ({ ...f, visible_company_id: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  <option value="">全取引先（共通）</option>
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.company_name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  取引先を選ぶと、その会社のLIFF発注画面にのみ表示される専用の段階になります。
+                </p>
               </div>
               <div className="flex gap-2">
                 <button

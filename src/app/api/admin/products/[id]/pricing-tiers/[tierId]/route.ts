@@ -12,6 +12,8 @@ export async function PATCH(
     if (body.quantity !== undefined) updates.quantity = Number(body.quantity)
     if (body.unit_price !== undefined) updates.unit_price = Number(body.unit_price)
     if (body.display_order !== undefined) updates.display_order = Number(body.display_order)
+    // NULL=全取引先に表示（デフォルト）。指定時はその会社のLIFF発注画面にのみ表示。
+    if (body.visible_company_id !== undefined) updates.visible_company_id = body.visible_company_id || null
 
     const supabase = createServiceClient()
     const { data, error } = await supabase

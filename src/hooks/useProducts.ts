@@ -8,6 +8,10 @@ import { isProductVisible } from '@/lib/utils'
 interface UseProductsOptions {
   priceRank?: PriceRank
   withTiers?: boolean
+  // 発注者の company_id。pricing_tiers の絞り込み（visible_company_id IS NULL
+  // OR = companyId）に使う。未確定（未ログイン等）の間は null 扱いで、
+  // 全社共通tier（visible_company_id IS NULL）のみを返す。
+  companyId?: string | null
 }
 
 interface UseProductsReturn {
@@ -18,7 +22,7 @@ interface UseProductsReturn {
 }
 
 export function useProducts(options: UseProductsOptions = {}): UseProductsReturn {
-  const { priceRank = 'standard', withTiers = false } = options
+  const { priceRank = 'standard', withTiers = false, companyId = null } = options
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -35,10 +39,10 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
         const supabase = createClient()
 
         const tiersSelect = withTiers
-          ? `, pricing_tiers:product_pricing_tiers(id, product_id, tier_label, quantity, unit_price, display_order, is_active)`
+          ? `, pricing_tiers:product_pricing_tiers(id, product_id, tier_label, quantity, unit_price, display_order, is_active, visible_company_id)`
           : ''
 
-        const { data, error: fetchError } = await supabase
+        let query = supabase
           .from('products')
           .select(`
             *,
@@ -53,6 +57,20 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
           `)
           .eq('is_active', true)
           .order('display_order', { ascending: true })
+
+        // pricing_tiers の絞り込み（サーバー側＝PostgREST の埋め込みリソースフィルタで実施。
+        // 一度クライアントに全tierを返してからJSで隠す実装は不可＝他社の専用価格が漏れるため）。
+        // company_id が未確定の間は全社共通tier（visible_company_id IS NULL）のみを返す。
+        if (withTiers) {
+          query = query.or(
+            companyId
+              ? `visible_company_id.is.null,visible_company_id.eq.${companyId}`
+              : 'visible_company_id.is.null',
+            { referencedTable: 'pricing_tiers' }
+          )
+        }
+
+        const { data, error: fetchError } = await query
 
         if (fetchError) throw fetchError
 
@@ -94,7 +112,7 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
     return () => {
       mounted = false
     }
-  }, [priceRank, withTiers, fetchTrigger])
+  }, [priceRank, withTiers, companyId, fetchTrigger])
 
   const refetch = () => setFetchTrigger((n) => n + 1)
 
