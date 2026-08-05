@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
 import QuantityStepper from '@/components/admin/QuantityStepper'
-import { formatUnitWithTotal, shouldShowTierBadge } from '@/lib/quantity-format'
+import { formatUnitWithTotal, shouldShowTierBadge, isSetCategory } from '@/lib/quantity-format'
 import { sortProductsByUsage } from '@/lib/product-sort'
 
 type PricingTier = {
@@ -16,6 +16,7 @@ type PricingTier = {
   unit_price: number
   display_order: number
   is_active: boolean
+  visible_company_id: string | null
 }
 
 type ProductRow = {
@@ -28,6 +29,7 @@ type ProductRow = {
   step_qty: number
   min_order_qty: number
   display_order: number | null
+  category: string | null
   product_prices: { price_rank: string; price_per_unit: number }[]
   pricing_tiers: PricingTier[]
 }
@@ -49,6 +51,7 @@ type OrderItem = {
   pricingTierId: string | null
   tierLabel: string | null
   tierQuantity: number | null
+  category: string | null
 }
 
 type CustomItem = {
@@ -103,9 +106,9 @@ export default function AdminOrderNewPage() {
         supabase
           .from('products')
           .select(`
-            id, name, unit, stock_status, ship_start_date, cool_type, step_qty, min_order_qty, display_order,
+            id, name, unit, stock_status, ship_start_date, cool_type, step_qty, min_order_qty, display_order, category,
             product_prices (price_rank, price_per_unit),
-            pricing_tiers:product_pricing_tiers (id, tier_label, quantity, unit_price, display_order, is_active)
+            pricing_tiers:product_pricing_tiers (id, tier_label, quantity, unit_price, display_order, is_active, visible_company_id)
           `)
           .eq('is_active', true)
           .order('display_order', { ascending: true }),
@@ -136,11 +139,11 @@ export default function AdminOrderNewPage() {
     load()
   }, [])
 
-  // 商品が変わったらtierをリセット
+  // 商品または取引先が変わったらtierをリセット（不正なtierが選ばれたまま残らないように）
   useEffect(() => {
     setAddTierId('')
     setAddQuantity(1)
-  }, [addProductId])
+  }, [addProductId, companyMode, companyId])
 
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
@@ -162,18 +165,38 @@ export default function AdminOrderNewPage() {
     () => products.find((p) => p.id === addProductId),
     [products, addProductId]
   )
-  const activeTiers = useMemo(
-    () => selectedProduct?.pricing_tiers.filter((t) => t.is_active).sort((a, b) => a.display_order - b.display_order) ?? [],
-    [selectedProduct]
-  )
+  // 選択中の取引先に見えるtierだけに絞る（全社共通=visible_company_id null、または選択中の会社専用のみ）
+  const activeTiers = useMemo(() => {
+    if (!selectedProduct) return []
+    const visibleCompanyId = companyMode === 'existing' ? companyId : null
+    return selectedProduct.pricing_tiers
+      .filter((t) => t.is_active)
+      .filter((t) => t.visible_company_id == null || t.visible_company_id === visibleCompanyId)
+      .sort((a, b) => a.display_order - b.display_order)
+  }, [selectedProduct, companyMode, companyId])
   const hasTiers = activeTiers.length > 0
+  const isSetProduct = isSetCategory(selectedProduct?.category)
+
+  // バラ売り単価（選択中の取引先のprice_rank、なければstandardにフォールバック。APIの単価計算ロジックと同一）
+  const standardUnitPrice = useMemo(() => {
+    if (!selectedProduct) return null
+    const rank = companyMode === 'existing' ? companies.find((c) => c.id === companyId)?.price_rank : undefined
+    const entry =
+      selectedProduct.product_prices.find((pp) => pp.price_rank === (rank ?? 'standard')) ??
+      selectedProduct.product_prices.find((pp) => pp.price_rank === 'standard')
+    return entry?.price_per_unit ?? null
+  }, [selectedProduct, companyMode, companyId, companies])
+  const standardPriceLabel = standardUnitPrice
+    ? `¥${standardUnitPrice.toLocaleString()}/${selectedProduct?.unit ?? ''}`
+    : null
 
   const handleAddProduct = useCallback(() => {
     if (!selectedProduct) return
     if (addQuantity < 1) return
     if (hasTiers && !addTierId) return
 
-    const tier = hasTiers ? activeTiers.find((t) => t.id === addTierId) ?? null : null
+    const tier =
+      hasTiers && addTierId !== '__standard__' ? activeTiers.find((t) => t.id === addTierId) ?? null : null
 
     const newItem: OrderItem = {
       key: nextKey(),
@@ -181,6 +204,7 @@ export default function AdminOrderNewPage() {
       productId: selectedProduct.id,
       productName: selectedProduct.name,
       unit: selectedProduct.unit,
+      category: selectedProduct.category,
       quantity: addQuantity,
       pricingTierId: tier?.id ?? null,
       tierLabel: tier?.tier_label ?? null,
@@ -418,19 +442,30 @@ export default function AdminOrderNewPage() {
               <QuantityStepper value={addQuantity} onChange={setAddQuantity} min={1} max={9999} />
             </div>
 
-            {hasTiers && (
+            {hasTiers ? (
               <select
                 value={addTierId}
                 onChange={(e) => setAddTierId(e.target.value)}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
               >
                 <option value="">価格段階を選択...</option>
+                <option value="__standard__">
+                  バラ売り{standardPriceLabel ? `（${standardPriceLabel}）` : ''}
+                </option>
                 {activeTiers.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.tier_label}（{t.quantity}本 × ¥{t.unit_price.toLocaleString()}）
+                    {isSetProduct
+                      ? `${t.tier_label}（¥${t.unit_price.toLocaleString()}/セット）`
+                      : `${t.tier_label}（${t.quantity}本 × ¥${t.unit_price.toLocaleString()}）`}
                   </option>
                 ))}
               </select>
+            ) : (
+              selectedProduct && (
+                <p className="text-xs text-gray-500">
+                  この取引先にはバラ売り{standardPriceLabel ? `（${standardPriceLabel}）` : ''}で登録されます
+                </p>
+              )
             )}
 
             <button
@@ -475,7 +510,7 @@ export default function AdminOrderNewPage() {
                   <div key={item.key} className="flex items-center gap-2 p-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">{item.productName}</p>
-                      {item.tierLabel && shouldShowTierBadge(item.tierQuantity) && (
+                      {item.tierLabel && shouldShowTierBadge(item.tierQuantity, item.category) && (
                         <p className="text-xs text-gray-500">{item.tierLabel}</p>
                       )}
                     </div>
@@ -486,7 +521,12 @@ export default function AdminOrderNewPage() {
                       max={9999}
                     />
                     <span className="text-xs text-gray-500 shrink-0">
-                      {formatUnitWithTotal({ quantity: item.quantity, tier_quantity: item.tierQuantity, unit: item.unit })}
+                      {formatUnitWithTotal({
+                        quantity: item.quantity,
+                        tier_quantity: item.tierQuantity,
+                        unit: item.unit,
+                        category: item.category,
+                      })}
                     </span>
                     <button
                       type="button"
