@@ -20,7 +20,12 @@ export async function middleware(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
 
   // Rate limit: admin routes — 60 req/min/IP
-  if (pathname.startsWith('/api/admin') || pathname.startsWith('/api/shipping-csv') || pathname.startsWith('/api/freee-csv')) {
+  if (
+    pathname.startsWith('/api/admin') ||
+    pathname.startsWith('/api/shipping-csv') ||
+    pathname.startsWith('/api/freee-csv') ||
+    pathname.startsWith('/api/freee-partner-csv')
+  ) {
     if (isRateLimited(ip, 60, 60_000)) {
       return NextResponse.json({ error: 'リクエストが多すぎます。しばらくお待ちください。' }, { status: 429 })
     }
@@ -96,5 +101,12 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/api/admin/:path*', '/api/shipping-csv', '/api/freee-csv', '/api/orders', '/api/onboarding/:path*'],
+  matcher: [
+    '/api/admin/:path*',
+    '/api/shipping-csv',
+    '/api/freee-csv',
+    '/api/freee-partner-csv',
+    '/api/orders',
+    '/api/onboarding/:path*',
+  ],
 }

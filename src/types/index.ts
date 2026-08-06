@@ -87,6 +87,8 @@ export interface Company {
   // 請求書の送付方法。'email'=Gmail下書き対象 / 'postal'=郵送 / 'other'=その他（note にメモ）
   invoice_delivery_method: InvoiceDeliveryMethod
   invoice_delivery_note: string | null
+  // freeeに取引先として登録済みか。false=未登録（請求管理の「取引先CSV」ダウンロード対象）。
+  freee_partner_registered?: boolean
   created_at: string
   updated_at: string
   // Joined fields

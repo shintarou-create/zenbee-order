@@ -34,6 +34,14 @@ export default function AdminInvoicesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [downloadingCsv, setDownloadingCsv] = useState(false)
+
+  // freee取引先インポートCSV（未登録の取引先をfreeeに一括登録するためのCSV）
+  const [unregisteredCompanies, setUnregisteredCompanies] = useState<{ id: string; company_name: string }[]>([])
+  const [showPartnerModal, setShowPartnerModal] = useState(false)
+  const [partnerSelectedIds, setPartnerSelectedIds] = useState<Set<string>>(new Set())
+  const [partnerDownloading, setPartnerDownloading] = useState(false)
+  const [partnerDownloaded, setPartnerDownloaded] = useState(false)
+  const [partnerMarking, setPartnerMarking] = useState(false)
   const [gmailDraftingId, setGmailDraftingId] = useState<string | null>(null)
   const [pdfDownloadingId, setPdfDownloadingId] = useState<string | null>(null)
   const [bulkRunning, setBulkRunning] = useState(false)
@@ -66,6 +74,22 @@ export default function AdminInvoicesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     fetchInvoices()
   }, [selectedMonth]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetchUnregisteredPartners()
+  }, [])
+
+  async function fetchUnregisteredPartners() {
+    try {
+      const res = await adminFetch('/api/freee-partner-csv')
+      const json = await res.json().catch(() => ({}))
+      if (res.ok) {
+        setUnregisteredCompanies((json.companies || []) as { id: string; company_name: string }[])
+      }
+    } catch (err) {
+      console.error('freee未登録取引先の取得エラー:', err)
+    }
+  }
 
   async function fetchInvoices() {
     setIsLoading(true)
@@ -684,6 +708,95 @@ export default function AdminInvoicesPage() {
     }
   }
 
+  // 取引先CSVモーダルを開く。初期状態は未登録の全社をチェック済みにする。
+  function openPartnerModal() {
+    setPartnerSelectedIds(new Set(unregisteredCompanies.map((c) => c.id)))
+    setPartnerDownloaded(false)
+    setShowPartnerModal(true)
+  }
+
+  function togglePartnerSelect(id: string) {
+    setPartnerSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function togglePartnerSelectAll() {
+    const allSelected = unregisteredCompanies.length > 0 && unregisteredCompanies.every((c) => partnerSelectedIds.has(c.id))
+    setPartnerSelectedIds(allSelected ? new Set() : new Set(unregisteredCompanies.map((c) => c.id)))
+  }
+
+  // CSVダウンロード。ここでは freee_partner_registered を更新しない
+  // （ダウンロード＝freeeへのインポート成功を意味しないため。更新は handleMarkPartnerImported で行う）。
+  async function handleDownloadPartnerCsv() {
+    if (partnerSelectedIds.size === 0) return
+    setPartnerDownloading(true)
+    try {
+      const res = await adminFetch('/api/freee-partner-csv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyIds: Array.from(partnerSelectedIds) }),
+      })
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        setMessage({ type: 'error', text: json.error || 'CSV生成に失敗しました' })
+        setTimeout(() => setMessage(null), 5000)
+        return
+      }
+
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const dateStr = new Date().toLocaleDateString('sv-SE').replace(/-/g, '')
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `freee_partners_${dateStr}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setPartnerDownloaded(true)
+    } catch (err) {
+      console.error('freee取引先CSV ダウンロードエラー:', err)
+      setMessage({ type: 'error', text: 'CSV生成に失敗しました' })
+      setTimeout(() => setMessage(null), 5000)
+    } finally {
+      setPartnerDownloading(false)
+    }
+  }
+
+  // ダウンロード後の確認ステップから呼ぶ。freeeへのインポートが成功した後にのみ押してもらう想定。
+  async function handleMarkPartnerImported() {
+    if (partnerSelectedIds.size === 0) return
+    setPartnerMarking(true)
+    try {
+      const res = await adminFetch('/api/freee-partner-csv', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyIds: Array.from(partnerSelectedIds) }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMessage({ type: 'error', text: json.error || '登録済みへの更新に失敗しました' })
+        setTimeout(() => setMessage(null), 8000)
+        return
+      }
+      setMessage({ type: 'success', text: `${json.updated}社をfreee登録済みにしました` })
+      setTimeout(() => setMessage(null), 5000)
+      setShowPartnerModal(false)
+      await fetchUnregisteredPartners()
+    } catch (err) {
+      console.error('freee取引先 登録済みマークエラー:', err)
+      setMessage({ type: 'error', text: '通信エラーが発生しました' })
+      setTimeout(() => setMessage(null), 8000)
+    } finally {
+      setPartnerMarking(false)
+    }
+  }
+
   // 請求先会社の表示情報。has_separate_billing かつ billing_name があれば billing_name を主表示、
   // company_name を「店舗名」として添える。
   function getCompanyView(invoice: Invoice) {
@@ -833,6 +946,16 @@ export default function AdminInvoicesPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
             {downloadingCsv ? 'ダウンロード中...' : 'freee CSV'}
+          </button>
+          <button
+            onClick={openPartnerModal}
+            disabled={unregisteredCompanies.length === 0}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a4 4 0 10-4-4" />
+            </svg>
+            {unregisteredCompanies.length === 0 ? '取引先CSV（未登録なし）' : `取引先CSV（未登録${unregisteredCompanies.length}社）`}
           </button>
         </div>
       </div>
@@ -1327,6 +1450,105 @@ export default function AdminInvoicesPage() {
                 キャンセル
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* freee取引先インポートCSV モーダル */}
+      {showPartnerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => !partnerDownloading && !partnerMarking && setShowPartnerModal(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">freee取引先インポートCSV</h2>
+              <button
+                onClick={() => setShowPartnerModal(false)}
+                disabled={partnerDownloading || partnerMarking}
+                className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {!partnerDownloaded ? (
+              <>
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">freee未登録の取引先（{unregisteredCompanies.length}社）</p>
+                    <button
+                      type="button"
+                      onClick={togglePartnerSelectAll}
+                      className="text-xs font-bold text-indigo-700 hover:text-indigo-800"
+                    >
+                      {unregisteredCompanies.length > 0 && unregisteredCompanies.every((c) => partnerSelectedIds.has(c.id))
+                        ? '全解除'
+                        : '全選択'}
+                    </button>
+                  </div>
+                  <div className="border border-gray-100 rounded-lg divide-y divide-gray-100 max-h-64 overflow-y-auto">
+                    {unregisteredCompanies.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={partnerSelectedIds.has(c.id)}
+                          onChange={() => togglePartnerSelect(c.id)}
+                          className="w-4 h-4 accent-indigo-600"
+                        />
+                        <span className="text-sm text-gray-900">{c.company_name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="p-4 border-t border-gray-100 flex gap-3">
+                  <button
+                    onClick={handleDownloadPartnerCsv}
+                    disabled={partnerDownloading || partnerSelectedIds.size === 0}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
+                  >
+                    {partnerDownloading ? 'ダウンロード中...' : 'CSVダウンロード'}
+                  </button>
+                  <button
+                    onClick={() => setShowPartnerModal(false)}
+                    className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium px-6 py-2 rounded-lg text-sm transition-colors"
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="p-4 space-y-3">
+                  <p className="text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2">
+                    CSVをダウンロードしました。freeeへのインポートが成功したら、下のボタンで登録済みにしてください。
+                  </p>
+                  <p className="text-xs text-gray-500">対象：{partnerSelectedIds.size}社</p>
+                </div>
+                <div className="p-4 border-t border-gray-100 flex gap-3">
+                  <button
+                    onClick={handleMarkPartnerImported}
+                    disabled={partnerMarking}
+                    className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
+                  >
+                    {partnerMarking ? '更新中...' : 'インポート済みにする'}
+                  </button>
+                  <button
+                    onClick={() => setShowPartnerModal(false)}
+                    disabled={partnerMarking}
+                    className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
+                  >
+                    あとで
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
