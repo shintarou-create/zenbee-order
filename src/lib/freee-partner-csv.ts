@@ -41,25 +41,43 @@ function escapeCSV(value: string): string {
   return value
 }
 
+// 列インデックスをハードコードせず、ヘッダー名から解決する。CSV_HEADERSの並びが
+// 変わっても列がズレないようにするため（誤った列に値が入ると freee 側の設定を壊す）。
+function headerIndex(headerName: string): number {
+  const idx = CSV_HEADERS.indexOf(headerName)
+  if (idx === -1) throw new Error(`freee-partner-csv: 未知のヘッダー名です: ${headerName}`)
+  return idx
+}
+
 function makeRow(companyName: string): string[] {
   const row = new Array(COLUMN_COUNT).fill('')
-  row[0] = companyName                              // 名前（通称）
-  row[4] = companyName                               // 正式名称（帳票出力時に使用される名称）
-  row[6] = '様'                                       // 敬称
-  row[7] = isCorporate(companyName) ? '法人' : ''     // 事業所種別
-  row[8] = '国内'                                     // 地域
-  row[17] = '使用する'                                // 入力候補
-  row[40] = '利用する'                                // 顧客として利用する
-  row[41] = '利用しない'                              // 見込顧客として利用する
-  row[42] = '利用する'                                // 請求先として利用する
-  row[43] = '利用する'                                // 入金元として利用する（通帳消し込みに必要）
-  row[44] = '利用しない'                              // 仕入先として利用する
-  row[45] = '利用しない'                              // 支払先として利用する
-  row[46] = '内税'                                    // 外税/内税
-  row[53] = '利用しない'                              // 帳票共有ポータル
-  row[54] = '利用しない'                              // 従業員として利用する
-  row[55] = '利用しない'                              // 販売設定の送付先として利用する
-  row[56] = '利用しない'                              // 調達設定の送付先として利用する
+  const set = (headerName: string, value: string) => {
+    row[headerIndex(headerName)] = value
+  }
+
+  set('名前（通称）', companyName)
+  set('正式名称（帳票出力時に使用される名称）', companyName)
+  set('敬称', '様')
+  set('事業所種別', isCorporate(companyName) ? '法人' : '')
+  set('地域', '国内')
+  set('入力候補', '使用する')
+  set('顧客として利用する', '利用する')
+  set('見込顧客として利用する', '利用しない')
+  set('請求先として利用する', '利用する')
+  set('入金元として利用する', '利用する') // 通帳消し込みに必要
+  set('仕入先として利用する', '利用しない')
+  set('支払先として利用する', '利用しない')
+  set('外税/内税', '内税')
+  // 善兵衛の確定取引条件：銀行振込・月末締め・翌月末払い・振込手数料は先方負担
+  set('締め日(入金期日設定)', '末日')
+  set('入金月(入金期日設定)', '1') // 0=当月・1=翌月
+  set('入金日(入金期日設定)', '末日')
+  set('入金方法', '振込')
+  set('振込手数料負担区分(請求)', '先方') // 取引先負担
+  set('帳票共有ポータル', '利用しない')
+  set('従業員として利用する', '利用しない')
+  set('販売設定の送付先として利用する', '利用しない')
+  set('調達設定の送付先として利用する', '利用しない')
   return row
 }
 
