@@ -294,9 +294,10 @@ export interface Invoice {
   // Joined fields
   company?: Company
   invoice_items?: InvoiceItem[]
+  invoice_adjustments?: InvoiceAdjustment[]
 }
 
-export type InvoiceInput = Omit<Invoice, 'id' | 'created_at' | 'company' | 'invoice_items'>
+export type InvoiceInput = Omit<Invoice, 'id' | 'created_at' | 'company' | 'invoice_items' | 'invoice_adjustments'>
 
 // ============================================================
 // InvoiceItem
@@ -308,6 +309,19 @@ export interface InvoiceItem {
   amount: number
   // Joined fields
   order?: Order
+}
+
+// ============================================================
+// InvoiceAdjustment（請求書の調整行。注文由来ではない任意の追加項目）
+// ============================================================
+export interface InvoiceAdjustment {
+  id: string
+  invoice_id: string
+  description: string
+  amount: number // 税込。マイナス可（値引き・過払い返金）
+  tax_rate: '8' | '10' | '0'
+  sort_order: number
+  created_at: string
 }
 
 // ============================================================

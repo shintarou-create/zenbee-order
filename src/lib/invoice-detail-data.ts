@@ -11,7 +11,7 @@ export type InvoiceLineItem = {
   unit: string
   unitPrice: number
   amount: number
-  taxRate: '8' | '10'
+  taxRate: '8' | '10' | '0'
   reduced: boolean
 }
 
@@ -40,6 +40,8 @@ export type InvoiceDetail = {
     tax8: number
     subtotal10: number
     tax10: number
+    subtotal0: number
+    tax0: number
     grandTotal: number
   }
 }
@@ -63,6 +65,24 @@ type InvoiceItemRow = {
     order_items?: OrderItemRow[]
     order_shipping?: Array<{ label: string; cost: number }>
   } | null
+}
+
+type AdjustmentRow = {
+  id: string
+  description: string
+  amount: number
+  tax_rate: '8' | '10' | '0'
+  sort_order: number
+  created_at: string
+}
+
+// 税額計算をマイナス金額にも対応させる。単純に Math.floor(v - v/(1+rate)) だと
+// 負数側で切り捨て方向が逆転する（0に近づく方向ではなく-∞方向に切り捨てられる）ため、
+// 符号を分離して絶対値で計算してから符号を戻す。正数のときの結果は従来と1円も変わらない。
+function taxAmountFor(subtotal: number, rate: number): number {
+  const sign = subtotal < 0 ? -1 : 1
+  const abs = Math.abs(subtotal)
+  return sign * Math.floor(abs - abs / (1 + rate))
 }
 
 export type InvoiceDetailQuery = { invoiceId?: string; companyId?: string; billingMonth?: string }
@@ -108,7 +128,8 @@ export async function buildInvoiceDetail(
           order_items (product_name, unit, quantity, unit_price, subtotal, tier_label, tier_quantity, is_custom, product:products (name, unit, category)),
           order_shipping (label, cost)
         )
-      )
+      ),
+      invoice_adjustments (id, description, amount, tax_rate, sort_order, created_at)
     `)
 
   if (q.invoiceId) {
@@ -215,11 +236,31 @@ export async function buildInvoiceDetail(
     }
   }
 
+  // 調整行（注文由来ではない任意の追加項目）は、注文由来の明細を全て積んだ後ろに
+  // sort_order昇順→created_at昇順で追加する。
+  const adjustments = ((invoice.invoice_adjustments || []) as AdjustmentRow[])
+    .slice()
+    .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
+  for (const adj of adjustments) {
+    lineItems.push({
+      date: '',
+      description: adj.description,
+      quantity: 1,
+      unit: '',
+      unitPrice: adj.amount,
+      amount: adj.amount,
+      taxRate: adj.tax_rate,
+      reduced: adj.tax_rate === '8',
+    })
+  }
+
   const subtotal8 = lineItems.filter((l) => l.taxRate === '8').reduce((s, l) => s + l.amount, 0)
   const subtotal10 = lineItems.filter((l) => l.taxRate === '10').reduce((s, l) => s + l.amount, 0)
-  const tax8 = Math.floor(subtotal8 - subtotal8 / 1.08)
-  const tax10 = Math.floor(subtotal10 - subtotal10 / 1.1)
-  const grandTotal = subtotal8 + subtotal10
+  const subtotal0 = lineItems.filter((l) => l.taxRate === '0').reduce((s, l) => s + l.amount, 0)
+  const tax8 = taxAmountFor(subtotal8, 0.08)
+  const tax10 = taxAmountFor(subtotal10, 0.1)
+  const tax0 = 0
+  const grandTotal = subtotal8 + subtotal10 + subtotal0
 
   return {
     invoice: {
@@ -237,6 +278,6 @@ export async function buildInvoiceDetail(
       ...billingAddress,
     },
     lineItems,
-    summary: { subtotal8, tax8, subtotal10, tax10, grandTotal },
+    summary: { subtotal8, tax8, subtotal10, tax10, subtotal0, tax0, grandTotal },
   }
 }

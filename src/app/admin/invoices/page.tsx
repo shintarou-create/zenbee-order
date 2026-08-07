@@ -29,6 +29,14 @@ const initialCompanyFormData: Partial<Company> = {
   billing_building: '',
 }
 
+type TaxRate = '8' | '10' | '0'
+type AdjustmentDraft = { key: string; description: string; amount: string; tax_rate: TaxRate }
+
+let adjustmentKeyCounter = 0
+function nextAdjustmentKey() {
+  return String(++adjustmentKeyCounter)
+}
+
 export default function AdminInvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -62,6 +70,13 @@ export default function AdminInvoicesPage() {
   // 請求書の削除（確認モーダル）
   const [deletingInvoice, setDeletingInvoice] = useState<Invoice | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // 調整行の編集（注文由来ではない任意の追加項目・値引き等）
+  const [adjustmentsInvoice, setAdjustmentsInvoice] = useState<Invoice | null>(null)
+  const [adjustmentRows, setAdjustmentRows] = useState<AdjustmentDraft[]>([])
+  const [adjustmentsBaseAmount, setAdjustmentsBaseAmount] = useState(0) // 調整行を除いた請求金額（fetch時点で算出）
+  const [adjustmentsLoading, setAdjustmentsLoading] = useState(false)
+  const [adjustmentsSaving, setAdjustmentsSaving] = useState(false)
 
   // 月選択（デフォルト: 先月）
   const now = new Date()
@@ -100,7 +115,8 @@ export default function AdminInvoicesPage() {
         .select(`
           *,
           company:companies (company_name, email, has_separate_billing, billing_name, invoice_delivery_method),
-          invoice_items (id, order_id, amount)
+          invoice_items (id, order_id, amount),
+          invoice_adjustments (id)
         `)
         .eq('billing_month', selectedMonth)
         .order('created_at', { ascending: false })
@@ -454,6 +470,108 @@ export default function AdminInvoicesPage() {
       setTimeout(() => setMessage(null), 8000)
     } finally {
       setDeleting(false)
+    }
+  }
+
+  // 調整行モーダルを開く。既存の調整行を取得し、
+  // 「調整行を除いた請求金額」を fetch時点の total_amount から逆算して保持する
+  // （合計のリアルタイム計算のベースにする。invoice.total_amount には旧調整行が含まれているため）。
+  async function openAdjustmentsModal(invoice: Invoice) {
+    setAdjustmentsInvoice(invoice)
+    setAdjustmentRows([])
+    setAdjustmentsBaseAmount(invoice.total_amount)
+    setAdjustmentsLoading(true)
+    try {
+      const res = await adminFetch(`/api/admin/invoices/${invoice.id}/adjustments`)
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMessage({ type: 'error', text: json.error || '調整行の取得に失敗しました' })
+        setTimeout(() => setMessage(null), 5000)
+        return
+      }
+      const rows = (json.adjustments || []) as { description: string; amount: number; tax_rate: TaxRate }[]
+      const originalSum = rows.reduce((s, r) => s + r.amount, 0)
+      setAdjustmentsBaseAmount(invoice.total_amount - originalSum)
+      setAdjustmentRows(
+        rows.map((r) => ({
+          key: nextAdjustmentKey(),
+          description: r.description,
+          amount: String(r.amount),
+          tax_rate: r.tax_rate,
+        }))
+      )
+    } catch (err) {
+      console.error('調整行取得エラー:', err)
+      setMessage({ type: 'error', text: '通信エラーが発生しました' })
+      setTimeout(() => setMessage(null), 5000)
+    } finally {
+      setAdjustmentsLoading(false)
+    }
+  }
+
+  function addAdjustmentRow() {
+    setAdjustmentRows((prev) => [...prev, { key: nextAdjustmentKey(), description: '', amount: '', tax_rate: '8' }])
+  }
+
+  function removeAdjustmentRow(key: string) {
+    setAdjustmentRows((prev) => prev.filter((r) => r.key !== key))
+  }
+
+  function updateAdjustmentRow(key: string, patch: Partial<AdjustmentDraft>) {
+    setAdjustmentRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)))
+  }
+
+  function isValidAdjustmentRow(r: AdjustmentDraft): boolean {
+    const desc = r.description.trim()
+    return desc.length >= 1 && desc.length <= 100 && /^-?\d+$/.test(r.amount.trim())
+  }
+
+  // モーダル下部の「調整後の請求合計（税込）」。ベース金額（調整行を除いた金額）に、
+  // 現在編集中の各行の金額をそのまま加算する（未入力・不正な行は0として扱い、リアルタイムに反映する）。
+  const adjustmentsRealtimeTotal =
+    adjustmentsBaseAmount + adjustmentRows.reduce((s, r) => s + (/^-?\d+$/.test(r.amount.trim()) ? parseInt(r.amount, 10) : 0), 0)
+
+  async function handleSaveAdjustments() {
+    if (!adjustmentsInvoice) return
+    if (!adjustmentRows.every(isValidAdjustmentRow)) {
+      setMessage({ type: 'error', text: '品名（1〜100文字）と金額（整数）を正しく入力してください' })
+      setTimeout(() => setMessage(null), 6000)
+      return
+    }
+    setAdjustmentsSaving(true)
+    try {
+      const payload = {
+        adjustments: adjustmentRows.map((r) => ({
+          description: r.description.trim(),
+          amount: parseInt(r.amount, 10),
+          tax_rate: r.tax_rate,
+        })),
+      }
+      const res = await adminFetch(`/api/admin/invoices/${adjustmentsInvoice.id}/adjustments`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMessage({ type: 'error', text: json.error || '調整行の保存に失敗しました' })
+        setTimeout(() => setMessage(null), 8000)
+        return
+      }
+      const gmailWarning = adjustmentsInvoice.gmail_draft_created_at
+        ? ' Gmailの下書きは古い内容のままです。作り直してください。'
+        : ''
+      setMessage({ type: 'success', text: `調整行を保存しました。${gmailWarning}` })
+      setTimeout(() => setMessage(null), 10000)
+      setAdjustmentsInvoice(null)
+      setAdjustmentRows([])
+      await fetchInvoices()
+    } catch (err) {
+      console.error('調整行保存エラー:', err)
+      setMessage({ type: 'error', text: '通信エラーが発生しました' })
+      setTimeout(() => setMessage(null), 8000)
+    } finally {
+      setAdjustmentsSaving(false)
     }
   }
 
@@ -1119,6 +1237,14 @@ export default function AdminInvoicesPage() {
                         >
                           顧客情報を編集
                         </button>
+                        <button
+                          onClick={() => openAdjustmentsModal(invoice)}
+                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                        >
+                          {(invoice.invoice_adjustments?.length ?? 0) > 0
+                            ? `調整行を編集（${invoice.invoice_adjustments!.length}件）`
+                            : '調整行を編集'}
+                        </button>
                         {/* 訂正用ステータスプルダウン（工程は未送信⇔送信済み。入金工程は freee 側で完結のため撤去）。
                             既存の入金済み/未払いデータは表示崩れ防止のため、その行に限り「（過去の状態）」として表示する。 */}
                         <select
@@ -1545,6 +1671,130 @@ export default function AdminInvoicesPage() {
                     className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
                   >
                     あとで
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 調整行編集モーダル（注文由来ではない任意の追加項目・値引き等。注文明細は編集不可） */}
+      {adjustmentsInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => !adjustmentsSaving && setAdjustmentsInvoice(null)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">調整行を編集</h2>
+                <p className="text-xs text-gray-500 mt-0.5">{getCompanyView(adjustmentsInvoice).displayName} / {adjustmentsInvoice.invoice_number}</p>
+              </div>
+              <button
+                onClick={() => setAdjustmentsInvoice(null)}
+                disabled={adjustmentsSaving}
+                className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {adjustmentsLoading ? (
+              <div className="flex justify-center py-12">
+                <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+                <div className="p-4 space-y-3">
+                  <p className="text-xs text-gray-500">
+                    注文由来の明細行はここでは編集できません。ここで追加できるのは調整行（後から追加する任意の項目）のみです。金額は税込・マイナス入力可（値引き・返金）。
+                  </p>
+
+                  {adjustmentRows.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-4">調整行はありません</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {adjustmentRows.map((row) => (
+                        <div key={row.key} className="border border-gray-100 rounded-lg p-2 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={row.description}
+                              onChange={(e) => updateAdjustmentRow(row.key, { description: e.target.value })}
+                              placeholder="品名（例：前回振込差額の調整）"
+                              maxLength={100}
+                              className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeAdjustmentRow(row.key)}
+                              className="shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                              aria-label="削除"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              step="1"
+                              value={row.amount}
+                              onChange={(e) => updateAdjustmentRow(row.key, { amount: e.target.value })}
+                              placeholder="金額（円・マイナス可）"
+                              className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                            />
+                            <select
+                              value={row.tax_rate}
+                              onChange={(e) => updateAdjustmentRow(row.key, { tax_rate: e.target.value as TaxRate })}
+                              className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                            >
+                              <option value="8">8%軽減</option>
+                              <option value="10">10%</option>
+                              <option value="0">対象外</option>
+                            </select>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={addAdjustmentRow}
+                    className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    行を追加
+                  </button>
+
+                  <div className="flex items-center justify-between border-t border-gray-100 pt-3">
+                    <span className="text-sm font-medium text-gray-700">調整後の請求合計（税込）</span>
+                    <span className="text-lg font-bold text-gray-900">{formatCurrency(adjustmentsRealtimeTotal)}</span>
+                  </div>
+                </div>
+
+                <div className="p-4 border-t border-gray-100 flex gap-3">
+                  <button
+                    onClick={handleSaveAdjustments}
+                    disabled={adjustmentsSaving || !adjustmentRows.every(isValidAdjustmentRow)}
+                    className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
+                  >
+                    {adjustmentsSaving ? '保存中...' : '保存'}
+                  </button>
+                  <button
+                    onClick={() => setAdjustmentsInvoice(null)}
+                    disabled={adjustmentsSaving}
+                    className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
+                  >
+                    キャンセル
                   </button>
                 </div>
               </>

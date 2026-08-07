@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
             order_items (product_name, unit, quantity, unit_price, subtotal, tier_label, tier_quantity, is_custom, product:products (name, unit, category)),
             order_shipping (label, cost)
           )
-        )
+        ),
+        invoice_adjustments (id, description, amount, tax_rate, sort_order, created_at)
       `)
       .eq('billing_month', billingMonth)
       .order('invoice_number')
@@ -121,6 +122,28 @@ export async function POST(req: NextRequest) {
             taxRate: '10',
           })
         }
+      }
+
+      // 調整行（注文由来ではない任意の追加項目）。sort_order昇順→created_at昇順で末尾に追加。
+      type AdjustmentRow = {
+        id: string
+        description: string
+        amount: number
+        tax_rate: '8' | '10' | '0'
+        sort_order: number
+        created_at: string
+      }
+      const adjustments = ((invoice.invoice_adjustments || []) as AdjustmentRow[])
+        .slice()
+        .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
+      for (const adj of adjustments) {
+        lineItems.push({
+          description: adj.description,
+          unitPrice: adj.amount,
+          quantity: 1,
+          unit: '',
+          taxRate: adj.tax_rate,
+        })
       }
 
       csvInvoices.push({

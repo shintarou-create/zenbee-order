@@ -60,7 +60,7 @@ export function renderInvoiceHtml(detail: InvoiceDetail): string {
         <td style="padding:5px 6px;">${esc(item.unit)}</td>
         <td style="padding:5px 6px;text-align:right;">${yen(item.unitPrice)}</td>
         <td style="padding:5px 6px;text-align:right;">${yen(item.amount)}</td>
-        <td style="padding:5px 6px;text-align:right;">${item.taxRate}%</td>
+        <td style="padding:5px 6px;text-align:right;">${item.taxRate === '0' ? '対象外' : `${item.taxRate}%`}</td>
       </tr>`,
     )
     .join('')
@@ -146,6 +146,12 @@ export function renderInvoiceHtml(detail: InvoiceDetail): string {
             <td style="padding:4px 10px;text-align:right;">${yen(summary.subtotal10)}</td>
             <td style="padding:4px 10px;text-align:right;color:#444;">（消費税 ${yen(summary.tax10)}）</td>
           </tr>
+          ${summary.subtotal0 !== 0 ? `
+          <tr>
+            <td style="padding:4px 10px;color:#444;">対象外</td>
+            <td style="padding:4px 10px;text-align:right;">${yen(summary.subtotal0)}</td>
+            <td style="padding:4px 10px;text-align:right;color:#444;"></td>
+          </tr>` : ''}
           <tr style="border-top:2px solid #111;">
             <td style="padding:6px 10px;font-weight:700;">合計（税込）</td>
             <td style="padding:6px 10px;text-align:right;font-weight:700;" colspan="2">${yen(summary.grandTotal)}</td>

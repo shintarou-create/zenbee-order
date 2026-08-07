@@ -2,11 +2,11 @@
 // 「本文」行 + 「明細」行の構造
 
 export interface FreeeLineItem {
-  description: string   // 摘要: "M/D納品 商品名" or "M/D 送料（ラベル名）"
-  unitPrice: number     // 単価（税込）
-  quantity: number      // 数量
-  unit: string          // 単位（kg, 本, ケース 等。送料は空文字）
-  taxRate: '8' | '10'   // 8%=食品（軽減税率）, 10%=送料（標準税率）
+  description: string        // 摘要: "M/D納品 商品名" or "M/D 送料（ラベル名）"
+  unitPrice: number          // 単価（税込）
+  quantity: number           // 数量
+  unit: string                // 単位（kg, 本, ケース 等。送料は空文字）
+  taxRate: '8' | '10' | '0'  // 8%=食品（軽減税率）, 10%=送料（標準税率）, 0=調整行の対象外
 }
 
 export interface FreeeInvoiceData {
@@ -67,11 +67,14 @@ function makeDetailRow(item: FreeeLineItem): string[] {
   row[22] = String(item.unitPrice) // 単価
   row[23] = String(item.quantity)  // 数量
   row[24] = item.unit             // 単位
-  row[25] = item.taxRate === '8' ? '8%（軽減税率）' : '10%'  // 税率
+  // 税率: '0'=対象外（調整行のうち非課税・不課税扱いの項目用）。'0%'はfreee公式の許容値の一つ。
+  row[25] = item.taxRate === '8' ? '8%（軽減税率）' : item.taxRate === '10' ? '10%' : '0%'  // 税率
   // row[26] 源泉徴収: 空
   // row[27] 発生日: 空
   row[28] = '売上高'              // 勘定科目
-  row[29] = item.taxRate === '8' ? '課税売上8%（軽）' : '課税売上10%'  // 税区分
+  // 税区分: '対象外'はfreeeの税区分マスタの標準値（不課税・免税等に使う汎用区分）。
+  // 実インポートでの許容確認は未実施（要検証）。エラーが出た場合は '課税売上0%'等に置き換える。
+  row[29] = item.taxRate === '8' ? '課税売上8%（軽）' : item.taxRate === '10' ? '課税売上10%' : '対象外'  // 税区分
   return row
 }
 
