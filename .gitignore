@@ -42,3 +42,6 @@ supabase/.temp/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# レガシー卸売上CSV。取引先の担当者名・電話番号・メールアドレスを含むためGit管理外
+data/
