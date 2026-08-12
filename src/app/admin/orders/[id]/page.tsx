@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
 import type { Order, OrderItem, OrderStatus, OrderShippingLine, Company, PriceRank } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
-import { formatDeliveryTimeSlot } from '@/lib/yamato-csv'
+import { formatDeliveryTimeSlot, DELIVERY_TIME_SLOT_OPTIONS } from '@/lib/yamato-csv'
 import QuantityStepper from '@/components/admin/QuantityStepper'
 import AmountInput from '@/components/admin/AmountInput'
 import { formatQuantity, formatUnitWithTotal, shouldShowTierBadge } from '@/lib/quantity-format'
@@ -57,6 +57,7 @@ export default function AdminOrderDetailPage() {
   const [status, setStatus] = useState<OrderStatus>('pending')
   const [adminNotes, setAdminNotes] = useState('')
   const [deliveryDate, setDeliveryDate] = useState('')
+  const [deliveryTimeSlot, setDeliveryTimeSlot] = useState('')
   const [detailsConfirmed, setDetailsConfirmed] = useState(false)
   const [updating, setUpdating] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -105,6 +106,7 @@ export default function AdminOrderDetailPage() {
         setStatus(data.status as OrderStatus)
         setAdminNotes(data.admin_notes || '')
         setDeliveryDate(data.delivery_date || '')
+        setDeliveryTimeSlot(data.delivery_time_slot || '')
         setDetailsConfirmed(data.details_confirmed ?? false)
         setShippingLines(
           ((data.order_shipping ?? []) as OrderShippingLine[]).map((line) => ({
@@ -502,12 +504,13 @@ export default function AdminOrderDetailPage() {
           status,
           admin_notes: adminNotes || null,
           delivery_date: deliveryDate || null,
+          delivery_time_slot: deliveryTimeSlot || null,
         })
         .eq('id', order.id)
 
       if (updateError) throw updateError
 
-      setOrder((prev) => prev ? { ...prev, status, admin_notes: adminNotes } : null)
+      setOrder((prev) => prev ? { ...prev, status, admin_notes: adminNotes, delivery_time_slot: deliveryTimeSlot || null } : null)
       setMessage({ type: 'success', text: '注文を更新しました' })
       router.push('/admin/orders')
     } catch (err) {
@@ -1218,6 +1221,20 @@ export default function AdminOrderDetailPage() {
               onChange={(e) => setDeliveryDate(e.target.value)}
               className="w-full md:w-auto border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">配達時間帯</label>
+            <select
+              value={deliveryTimeSlot}
+              onChange={(e) => setDeliveryTimeSlot(e.target.value)}
+              className="w-full md:w-auto border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+            >
+              <option value="">指定なし</option>
+              {DELIVERY_TIME_SLOT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
           </div>
 
           <div>

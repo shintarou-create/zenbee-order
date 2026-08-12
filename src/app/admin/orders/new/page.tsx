@@ -8,6 +8,7 @@ import { adminFetch } from '@/lib/admin-fetch'
 import QuantityStepper from '@/components/admin/QuantityStepper'
 import { formatUnitWithTotal, shouldShowTierBadge, isSetCategory } from '@/lib/quantity-format'
 import { sortProductsByUsage } from '@/lib/product-sort'
+import { DELIVERY_TIME_SLOT_OPTIONS } from '@/lib/yamato-csv'
 
 type PricingTier = {
   id: string
@@ -581,11 +582,9 @@ export default function AdminOrderNewPage() {
             className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
           >
             <option value="">指定なし</option>
-            <option value="morning">午前中</option>
-            <option value="afternoon">14時〜16時</option>
-            <option value="evening1">16時〜18時</option>
-            <option value="evening2">18時〜20時</option>
-            <option value="evening3">19時〜21時</option>
+            {DELIVERY_TIME_SLOT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
           </select>
           <p className="text-xs text-gray-500">ヤマトの送り状に反映されます（任意）</p>
         </section>

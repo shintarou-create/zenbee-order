@@ -578,6 +578,15 @@ export function generateYamatoCsv(orders: OrderForCsv[], shipDate: string): Uint
   return new Uint8Array(encoded.buffer, encoded.byteOffset, encoded.byteLength)
 }
 
+// 配達時間帯の選択肢（値とラベルの対応）。新規注文作成・注文詳細の編集UIで共有する。
+export const DELIVERY_TIME_SLOT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'morning', label: '午前中' },
+  { value: 'afternoon', label: '14時〜16時' },
+  { value: 'evening1', label: '16時〜18時' },
+  { value: 'evening2', label: '18時〜20時' },
+  { value: 'evening3', label: '19時〜21時' },
+]
+
 // ヤマトB2クラウド「外部データ取込」用：配達時間帯を半角4桁コードに変換する。
 // formatDeliveryTimeSlot（画面表示用の日本語ラベル）とはキーを共有するが用途が異なる。
 function toYamatoTimeSlotCode(slot: string | null | undefined): string {
@@ -594,12 +603,5 @@ function toYamatoTimeSlotCode(slot: string | null | undefined): string {
 
 export function formatDeliveryTimeSlot(slot: string | null | undefined): string {
   if (!slot) return ''
-  const slots: Record<string, string> = {
-    'morning': '午前中',
-    'afternoon': '14時〜16時',
-    'evening1': '16時〜18時',
-    'evening2': '18時〜20時',
-    'evening3': '19時〜21時',
-  }
-  return slots[slot] || slot
+  return DELIVERY_TIME_SLOT_OPTIONS.find((o) => o.value === slot)?.label ?? slot
 }
