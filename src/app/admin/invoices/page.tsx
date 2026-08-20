@@ -76,6 +76,7 @@ export default function AdminInvoicesPage() {
   const [adjustmentRows, setAdjustmentRows] = useState<AdjustmentDraft[]>([])
   const [adjustmentsBaseAmount, setAdjustmentsBaseAmount] = useState(0) // 調整行を除いた請求金額（fetch時点で算出）
   const [adjustmentsLoading, setAdjustmentsLoading] = useState(false)
+  const [adjustmentsLoadError, setAdjustmentsLoadError] = useState<string | null>(null) // 取得失敗時のメッセージ（既存調整行の状態が不明なため保存を禁止する）
   const [adjustmentsSaving, setAdjustmentsSaving] = useState(false)
 
   // 月選択（デフォルト: 先月）
@@ -480,13 +481,15 @@ export default function AdminInvoicesPage() {
     setAdjustmentsInvoice(invoice)
     setAdjustmentRows([])
     setAdjustmentsBaseAmount(invoice.total_amount)
+    setAdjustmentsLoadError(null)
     setAdjustmentsLoading(true)
     try {
       const res = await adminFetch(`/api/admin/invoices/${invoice.id}/adjustments`)
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setMessage({ type: 'error', text: json.error || '調整行の取得に失敗しました' })
-        setTimeout(() => setMessage(null), 5000)
+        // 既存の調整行の状態が不明なまま保存されると、PUTの全置換で意図せず消える。
+        // モーダル内に常時表示して保存を禁止する（トーストは見逃されるため不十分）。
+        setAdjustmentsLoadError(json.error || '調整行の取得に失敗しました')
         return
       }
       const rows = (json.adjustments || []) as { description: string; amount: number; tax_rate: TaxRate }[]
@@ -502,8 +505,7 @@ export default function AdminInvoicesPage() {
       )
     } catch (err) {
       console.error('調整行取得エラー:', err)
-      setMessage({ type: 'error', text: '通信エラーが発生しました' })
-      setTimeout(() => setMessage(null), 5000)
+      setAdjustmentsLoadError('通信エラーが発生しました')
     } finally {
       setAdjustmentsLoading(false)
     }
@@ -533,6 +535,12 @@ export default function AdminInvoicesPage() {
 
   async function handleSaveAdjustments() {
     if (!adjustmentsInvoice) return
+    if (adjustmentsLoadError) {
+      // 既存調整行の取得に失敗した状態のまま保存すると、PUTの全置換で意図せず全削除されるため禁止する
+      setMessage({ type: 'error', text: '調整行の取得に失敗しているため保存できません。モーダルを開き直してください' })
+      setTimeout(() => setMessage(null), 8000)
+      return
+    }
     if (!adjustmentRows.every(isValidAdjustmentRow)) {
       setMessage({ type: 'error', text: '品名（1〜100文字）と金額（整数）を正しく入力してください' })
       setTimeout(() => setMessage(null), 6000)
@@ -1710,12 +1718,24 @@ export default function AdminInvoicesPage() {
             ) : (
               <>
                 <div className="p-4 space-y-3">
+                  {adjustmentsLoadError && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <p className="text-sm font-medium text-red-700">既存の調整行を取得できませんでした</p>
+                      <p className="text-xs text-red-600 mt-0.5">{adjustmentsLoadError}</p>
+                      <p className="text-xs text-red-600 mt-0.5">
+                        既存の調整行の状態が不明なため、この画面では保存できません。モーダルを閉じてもう一度開き直してください。
+                      </p>
+                    </div>
+                  )}
+
                   <p className="text-xs text-gray-500">
                     注文由来の明細行はここでは編集できません。ここで追加できるのは調整行（後から追加する任意の項目）のみです。金額は税込・マイナス入力可（値引き・返金）。
                   </p>
 
                   {adjustmentRows.length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-4">調整行はありません</p>
+                    <p className="text-sm text-gray-400 text-center py-4">
+                      {adjustmentsLoadError ? '調整行の状態が不明です（上記エラーを参照）' : '調整行はありません'}
+                    </p>
                   ) : (
                     <div className="space-y-2">
                       {adjustmentRows.map((row) => (
@@ -1784,7 +1804,7 @@ export default function AdminInvoicesPage() {
                 <div className="p-4 border-t border-gray-100 flex gap-3">
                   <button
                     onClick={handleSaveAdjustments}
-                    disabled={adjustmentsSaving || !adjustmentRows.every(isValidAdjustmentRow)}
+                    disabled={adjustmentsSaving || !!adjustmentsLoadError || !adjustmentRows.every(isValidAdjustmentRow)}
                     className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
                   >
                     {adjustmentsSaving ? '保存中...' : '保存'}
