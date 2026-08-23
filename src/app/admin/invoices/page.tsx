@@ -300,6 +300,9 @@ export default function AdminInvoicesPage() {
   // 会社単位の請求書作成（未請求注文がある会社を1社選んで作成する）
   const [showSingleInvoiceModal, setShowSingleInvoiceModal] = useState(false)
   const [singleInvoiceCreatingId, setSingleInvoiceCreatingId] = useState<string | null>(null)
+  // モーダル専用の検索state。一覧側の invoiceSearch とは共有しない
+  // （モーダルを閉じたときに一覧の検索まで消えるのは意図しない挙動のため）。
+  const [singleInvoiceSearch, setSingleInvoiceSearch] = useState('')
 
   // 顧客情報の編集（請求先会社 = invoice.company_id）
   const [showCompanyModal, setShowCompanyModal] = useState(false)
@@ -474,6 +477,12 @@ export default function AdminInvoicesPage() {
     }
   }
 
+  // 「1社だけ作成」モーダルを閉じる。開閉のたびにモーダル専用検索stateをクリアする。
+  function closeSingleInvoiceModal() {
+    setShowSingleInvoiceModal(false)
+    setSingleInvoiceSearch('')
+  }
+
   // 会社1社分だけ請求書を作成する（未請求警告バナー・「1社だけ作成」モーダルから呼ばれる）。
   async function handleCreateSingleInvoice(summary: UnbilledCompanySummary) {
     setSingleInvoiceCreatingId(summary.companyId)
@@ -495,7 +504,7 @@ export default function AdminInvoicesPage() {
             ? `${result.invoiceNumber} を作成し、対象の注文${result.orderIds.length}件を完了にしました`
             : `${result.invoiceNumber} を作成しましたが、対象注文の完了更新に失敗しました（注文管理で手動で完了にしてください）`,
         })
-        setShowSingleInvoiceModal(false)
+        closeSingleInvoiceModal()
         await Promise.all([fetchInvoices(), fetchMonthOrders()])
       } else if (result.status === 'already_exists') {
         // モーダルは既存請求書がある会社にはボタンを出さないため通常は起こらないが、
@@ -1233,6 +1242,13 @@ export default function AdminInvoicesPage() {
   const unbilledWithoutInvoice = unbilledSummaries.filter((s) => !s.existingInvoice)
   const unbilledWithInvoice = unbilledSummaries.filter((s) => s.existingInvoice)
 
+  // 「1社だけ作成」モーダル専用の検索結果（部分一致・大文字小文字無視・前後空白トリム）
+  const singleInvoiceSearchResults = (() => {
+    const q = singleInvoiceSearch.trim().toLowerCase()
+    if (!q) return unbilledSummaries
+    return unbilledSummaries.filter((s) => s.displayName.toLowerCase().includes(q))
+  })()
+
   const selectedCount = selectedIds.size
   const allTabSelected = tabInvoices.length > 0 && tabInvoices.every((i) => selectedIds.has(i.id))
   const anyBusy = bulkRunning || bulkStatusRunning || gmailDraftingId !== null || pdfDownloadingId !== null
@@ -1292,7 +1308,10 @@ export default function AdminInvoicesPage() {
             {generating ? '生成中...' : '請求書を生成'}
           </button>
           <button
-            onClick={() => setShowSingleInvoiceModal(true)}
+            onClick={() => {
+              setSingleInvoiceSearch('')
+              setShowSingleInvoiceModal(true)
+            }}
             disabled={monthOrdersLoading || isLoading}
             className="bg-white border border-green-600 text-green-700 hover:bg-green-50 font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
           >
@@ -2121,13 +2140,13 @@ export default function AdminInvoicesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/50"
-            onClick={() => !singleInvoiceCreatingId && setShowSingleInvoiceModal(false)}
+            onClick={() => !singleInvoiceCreatingId && closeSingleInvoiceModal()}
           />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b border-gray-100 flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">1社だけ請求書を作成</h2>
               <button
-                onClick={() => setShowSingleInvoiceModal(false)}
+                onClick={closeSingleInvoiceModal}
                 disabled={!!singleInvoiceCreatingId}
                 className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
               >
@@ -2142,6 +2161,29 @@ export default function AdminInvoicesPage() {
                 月の途中で作成した場合、その後に入った同月納品の注文はこの請求書に自動では含まれません。月末に警告が出るので調整行で対応してください。
               </p>
 
+              {/* モーダル専用検索（一覧側の検索とは独立） */}
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  value={singleInvoiceSearch}
+                  onChange={(e) => setSingleInvoiceSearch(e.target.value)}
+                  placeholder="取引先名で検索"
+                  className="w-full pl-9 pr-9 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                />
+                {singleInvoiceSearch && (
+                  <button
+                    onClick={() => setSingleInvoiceSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600"
+                    aria-label="検索をクリア"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
               {monthOrdersLoading || isLoading ? (
                 <div className="flex justify-center py-8">
                   <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
@@ -2149,39 +2191,50 @@ export default function AdminInvoicesPage() {
               ) : unbilledSummaries.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-4">{selectedMonth} に未請求の注文がある取引先はありません</p>
               ) : (
-                <div className="border border-gray-100 rounded-lg divide-y divide-gray-100">
-                  {unbilledSummaries.map((s) => (
-                    <div key={s.companyId} className="p-3 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold text-gray-900">{s.displayName}</span>
-                        <span className="text-sm font-bold text-gray-900">{formatCurrency(s.totalAmount)}</span>
-                      </div>
-                      <p className="text-xs text-gray-500">
-                        未請求{s.count}件 / 最終納品日 {s.lastDeliveryDate ?? '-'}
-                      </p>
-                      {s.existingInvoice ? (
-                        <div className="text-xs text-red-700 bg-red-50 rounded-lg px-2.5 py-1.5 mt-1.5">
-                          <p className="font-bold">{s.existingInvoice.invoice_number} に未反映の注文あり</p>
-                          <p className="mt-0.5">この請求書の調整行で対応してください</p>
+                <>
+                  {singleInvoiceSearch.trim() && (
+                    <p className="text-xs text-gray-500">
+                      {unbilledSummaries.length}社中{singleInvoiceSearchResults.length}社を表示
+                    </p>
+                  )}
+                  {singleInvoiceSearchResults.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-4">該当する取引先がありません</p>
+                  ) : (
+                    <div className="border border-gray-100 rounded-lg divide-y divide-gray-100">
+                      {singleInvoiceSearchResults.map((s) => (
+                        <div key={s.companyId} className="p-3 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-gray-900">{s.displayName}</span>
+                            <span className="text-sm font-bold text-gray-900">{formatCurrency(s.totalAmount)}</span>
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            未請求{s.count}件 / 最終納品日 {s.lastDeliveryDate ?? '-'}
+                          </p>
+                          {s.existingInvoice ? (
+                            <div className="text-xs text-red-700 bg-red-50 rounded-lg px-2.5 py-1.5 mt-1.5">
+                              <p className="font-bold">{s.existingInvoice.invoice_number} に未反映の注文あり</p>
+                              <p className="mt-0.5">この請求書の調整行で対応してください</p>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleCreateSingleInvoice(s)}
+                              disabled={singleInvoiceCreatingId !== null}
+                              className="mt-1.5 bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-1.5 rounded-lg text-xs disabled:opacity-50 transition-colors"
+                            >
+                              {singleInvoiceCreatingId === s.companyId ? '作成中...' : '請求書を作成'}
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <button
-                          onClick={() => handleCreateSingleInvoice(s)}
-                          disabled={singleInvoiceCreatingId !== null}
-                          className="mt-1.5 bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-1.5 rounded-lg text-xs disabled:opacity-50 transition-colors"
-                        >
-                          {singleInvoiceCreatingId === s.companyId ? '作成中...' : '請求書を作成'}
-                        </button>
-                      )}
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </div>
 
             <div className="p-4 border-t border-gray-100 flex gap-3">
               <button
-                onClick={() => setShowSingleInvoiceModal(false)}
+                onClick={closeSingleInvoiceModal}
                 disabled={!!singleInvoiceCreatingId}
                 className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
               >
