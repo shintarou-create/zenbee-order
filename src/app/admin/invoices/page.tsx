@@ -7,6 +7,227 @@ import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
 
 type TabKey = 'all' | 'draft' | 'sent'
+type SupabaseClientType = ReturnType<typeof createClient>
+
+// 請求先会社の表示情報。has_separate_billing かつ billing_name があれば billing_name を主表示、
+// company_name を「店舗名」として添える。Invoice経由（getCompanyView）・注文の company 経由
+// （未請求集計）の両方から使うため、会社レコード部分だけを切り出してある。
+function companyDisplayView(
+  c:
+    | {
+        company_name?: string
+        has_separate_billing?: boolean | null
+        billing_name?: string | null
+      }
+    | null
+    | undefined
+) {
+  const useBilling = !!(c?.has_separate_billing && c?.billing_name)
+  const displayName = useBilling ? c!.billing_name! : c?.company_name ?? '（会社名未設定）'
+  const storeName = useBilling ? c?.company_name ?? '' : ''
+  return { displayName, storeName }
+}
+
+// 請求月判定日 = delivery_date ?? shipping_date。
+function billingBasisDateOf(order: Pick<Order, 'delivery_date' | 'shipping_date'>): string | null {
+  return order.delivery_date ?? order.shipping_date
+}
+
+// 対象月判定。基準日が selectedMonth と同じ年月かどうか。
+function isInBillingMonth(order: Pick<Order, 'delivery_date' | 'shipping_date'>, billingMonth: string): boolean {
+  const basis = billingBasisDateOf(order)
+  if (!basis) return false
+  return basis.slice(0, 7) === billingMonth
+}
+
+// 請求先会社ID = 親会社があれば親会社ID、無ければ自社ID（company が取れない場合も自社IDにフォールバック）
+function billingCompanyIdOf(order: Order): string {
+  return order.company?.parent_company_id ?? order.company_id
+}
+
+// 対象月の発送済み（shipped/done）注文を取得し、月判定でクライアント側フィルタする。
+// Supabase の gte/lte では NULL 側（shipping_date が無い手入力注文）が漏れるため、
+// ステータスのみで取得し月範囲はクライアント側でフィルタする（月数十件規模）。
+async function fetchOrdersForBillingMonth(supabase: SupabaseClientType, billingMonth: string): Promise<Order[]> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      *,
+      company:companies (*)
+    `)
+    .in('status', ['shipped', 'done'])
+
+  if (error) throw error
+  return ((data || []) as Order[]).filter((o) => isInBillingMonth(o, billingMonth))
+}
+
+// 「選択中の請求月に、請求書に載っていない注文がある会社」の集計結果。
+// 画面上部の警告バナー・「1社だけ作成」モーダルの両方から参照する（同じ判定を2箇所に書かない）。
+type UnbilledCompanySummary = {
+  companyId: string
+  displayName: string
+  orders: Order[]
+  count: number
+  totalAmount: number
+  lastDeliveryDate: string | null
+  existingInvoice: { id: string; invoice_number: string } | null
+}
+
+// monthOrders（対象月の shipped/done 注文）と invoices（fetchInvoices が取得済みの、
+// 対象月の請求書一覧。invoice_items(id, order_id, amount) を含む）から、
+// 会社ごとの未請求状況を算出する。
+//
+// 既請求判定は invoices[].invoice_items[].order_id の集合との突き合わせのみで行う。
+// 注文が別月の請求書に紐づくケースは設計上存在しない（請求月は納品日で決まるため）。
+// 手動DB操作等で万一ずれても「未請求と誤検出して警告が出る」だけで、
+// 見逃すより安全側に倒れる。
+function computeUnbilledSummaries(monthOrders: Order[], invoices: Invoice[]): UnbilledCompanySummary[] {
+  const billedOrderIds = new Set<string>()
+  for (const inv of invoices) {
+    for (const item of inv.invoice_items || []) {
+      billedOrderIds.add(item.order_id)
+    }
+  }
+
+  const invoiceByCompanyId = new Map<string, Invoice>()
+  for (const inv of invoices) invoiceByCompanyId.set(inv.company_id, inv)
+
+  const grouped = new Map<string, Order[]>()
+  for (const order of monthOrders) {
+    if (billedOrderIds.has(order.id)) continue
+    const companyId = billingCompanyIdOf(order)
+    const list = grouped.get(companyId)
+    if (list) list.push(order)
+    else grouped.set(companyId, [order])
+  }
+
+  return Array.from(grouped.entries())
+    .map(([companyId, orders]) => {
+      const { displayName } = companyDisplayView(orders[0]?.company)
+      const totalAmount = orders.reduce((s, o) => s + o.total_amount, 0)
+      const lastDeliveryDate = orders.reduce<string | null>((max, o) => {
+        const d = billingBasisDateOf(o)
+        if (!d) return max
+        return !max || d > max ? d : max
+      }, null)
+      const existing = invoiceByCompanyId.get(companyId)
+      return {
+        companyId,
+        displayName,
+        orders,
+        count: orders.length,
+        totalAmount,
+        lastDeliveryDate,
+        existingInvoice: existing ? { id: existing.id, invoice_number: existing.invoice_number } : null,
+      }
+    })
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, 'ja'))
+}
+
+// その月の既存請求書番号から末尾の連番部分の最大値+1を返す（無ければ1から）。
+function computeNextSeqFromInvoiceNumbers(rows: { invoice_number: string }[]): number {
+  const seqs = rows.map((inv) => {
+    const m = /-(\d{3,})$/.exec(inv.invoice_number)
+    return m ? parseInt(m[1], 10) : 0
+  })
+  return seqs.length > 0 ? Math.max(...seqs) + 1 : 1
+}
+
+type CreateInvoiceForCompanyResult =
+  | { status: 'created'; invoiceId: string; invoiceNumber: string; orderIds: string[] }
+  | { status: 'already_exists'; invoiceNumber: string }
+  | { status: 'error'; error: string }
+
+// 請求先会社1社分の請求書を作成する（invoices INSERT + invoice_items INSERT）。
+// 一括生成・単体生成のどちらもこの関数を呼ぶ（処理を二重に書かない）。
+//
+// 採番: seqCounter.next を呼び出し元が「その月の既存最大連番+1」で1回だけ初期化して渡す。
+// INSERT成功時のみ seqCounter.next をインクリメントする（失敗時に採番を進めない）。
+// 複数社をループで呼ぶ一括生成では、同じ seqCounter を使い回すことで連番の重複を防ぐ。
+//
+// INSERT直前に「その会社・その月の請求書が既に存在しないか」を再確認する。
+// unbilledSummaries はUI表示用のスナップショット（stateが古い可能性がある）のため、
+// 実際の二重作成防止はここでの直前チェックで担保する。
+async function createInvoiceForCompany(
+  supabase: SupabaseClientType,
+  billingCompanyId: string,
+  compOrders: Order[],
+  billingMonth: string,
+  seqCounter: { next: number }
+): Promise<CreateInvoiceForCompanyResult> {
+  const { data: existing } = await supabase
+    .from('invoices')
+    .select('id, invoice_number')
+    .eq('company_id', billingCompanyId)
+    .eq('billing_month', billingMonth)
+    .maybeSingle()
+
+  if (existing) {
+    return { status: 'already_exists', invoiceNumber: existing.invoice_number }
+  }
+
+  const [year, month] = billingMonth.split('-').map(Number)
+  const totalAmount = compOrders.reduce((sum, o) => sum + o.total_amount, 0)
+  const taxRate = 0.08
+  const taxAmount = Math.floor(totalAmount - totalAmount / (1 + taxRate))
+
+  const invoiceNumber = `INV-${billingMonth.replace('-', '')}-${String(seqCounter.next).padStart(3, '0')}`
+
+  // 支払期限: billing_month の翌月末日（例: 2026-06 → 2026-07-31）。
+  // new Date(year, month + 1, 0) = 翌月(month+1, 1-indexed)の0日目 = 翌月末日。
+  // toISOString は UTC 変換で日付がずれるためローカルで手動フォーマットする。
+  const dueDate = new Date(year, month + 1, 0)
+  const dueDateStr = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`
+
+  const { data: invoice, error: invoiceError } = await supabase
+    .from('invoices')
+    .insert({
+      invoice_number: invoiceNumber,
+      company_id: billingCompanyId,
+      billing_month: billingMonth,
+      total_amount: totalAmount,
+      tax_amount: taxAmount,
+      status: 'draft',
+      due_date: dueDateStr,
+    })
+    .select()
+    .single()
+
+  if (invoiceError || !invoice) {
+    return { status: 'error', error: invoiceError?.message || '不明なエラー' }
+  }
+
+  // このグループでの採番が成功したので次のグループはこの続きから
+  seqCounter.next++
+
+  const { error: itemsError } = await supabase.from('invoice_items').insert(
+    compOrders.map((order) => ({
+      invoice_id: invoice.id,
+      order_id: order.id,
+      amount: order.total_amount,
+    }))
+  )
+  if (itemsError) {
+    return {
+      status: 'error',
+      error: `請求書(${invoiceNumber})は作成されましたが明細の作成に失敗しました: ${itemsError.message}`,
+    }
+  }
+
+  return { status: 'created', invoiceId: invoice.id, invoiceNumber, orderIds: compOrders.map((o) => o.id) }
+}
+
+// 請求書発行済みになった注文を一括で「完了(done)」に更新する。
+// .update() はゼロ行マッチや RLS で沈黙失敗するため error を必ず確認する。
+async function markOrdersDone(supabase: SupabaseClientType, orderIds: string[]): Promise<boolean> {
+  if (orderIds.length === 0) return true
+  const { error } = await supabase.from('orders').update({ status: 'done' }).in('id', orderIds)
+  if (error) {
+    console.error('注文の完了更新エラー:', error)
+    return false
+  }
+  return true
+}
 
 // 請求管理から編集できる顧客情報フォーム項目（顧客管理の編集フォームと同じフルセット）
 const initialCompanyFormData: Partial<Company> = {
@@ -59,6 +280,15 @@ export default function AdminInvoicesPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('all')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [invoiceSearch, setInvoiceSearch] = useState('')
+
+  // 未請求注文の集計（画面上部の警告バナー・「1社だけ作成」モーダルの両方が参照する）
+  const [monthOrders, setMonthOrders] = useState<Order[]>([])
+  const [monthOrdersLoading, setMonthOrdersLoading] = useState(true)
+
+  // 会社単位の請求書作成（未請求注文がある会社を1社選んで作成する）
+  const [showSingleInvoiceModal, setShowSingleInvoiceModal] = useState(false)
+  const [singleInvoiceCreatingId, setSingleInvoiceCreatingId] = useState<string | null>(null)
 
   // 顧客情報の編集（請求先会社 = invoice.company_id）
   const [showCompanyModal, setShowCompanyModal] = useState(false)
@@ -89,6 +319,8 @@ export default function AdminInvoicesPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     fetchInvoices()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchMonthOrders()
   }, [selectedMonth]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -132,34 +364,26 @@ export default function AdminInvoicesPage() {
     }
   }
 
+  // 対象月の未請求注文集計（警告バナー・「1社だけ作成」モーダル）用の注文取得。
+  async function fetchMonthOrders() {
+    setMonthOrdersLoading(true)
+    try {
+      const supabase = createClient()
+      const orders = await fetchOrdersForBillingMonth(supabase, selectedMonth)
+      setMonthOrders(orders)
+    } catch (err) {
+      console.error('未請求注文の取得エラー:', err)
+      setMonthOrders([])
+    } finally {
+      setMonthOrdersLoading(false)
+    }
+  }
+
   async function handleGenerateInvoices() {
     setGenerating(true)
     try {
       const supabase = createClient()
-
-      // 対象月の発送済み注文を取得。
-      // 月判定は「納品日(delivery_date)ベース」が正。手入力注文は shipping_date が
-      // 入らない（NULL）ため、delivery_date があればそれ、無ければ shipping_date に
-      // フォールバックして判定する。Supabase の gte/lte では NULL 側が漏れるため、
-      // ステータスのみで取得し月範囲はクライアント側でフィルタする（月数十件規模）。
-      const [year, month] = selectedMonth.split('-').map(Number)
-
-      const { data: allOrders, error: ordersError } = await supabase
-        .from('orders')
-        .select(`
-          *,
-          company:companies (*)
-        `)
-        .in('status', ['shipped', 'done'])
-
-      if (ordersError) throw ordersError
-
-      // 請求月判定日 = delivery_date ?? shipping_date。その年月が selectedMonth と一致する注文のみ。
-      const orders = (allOrders || []).filter((o) => {
-        const basis = (o.delivery_date ?? o.shipping_date) as string | null
-        if (!basis) return false
-        return basis.slice(0, 7) === selectedMonth
-      })
+      const orders = await fetchOrdersForBillingMonth(supabase, selectedMonth)
 
       if (orders.length === 0) {
         setMessage({ type: 'error', text: '対象月に発送済みの注文がありません' })
@@ -167,118 +391,49 @@ export default function AdminInvoicesPage() {
         return
       }
 
-      // 請求先会社ごとにグループ化
-      // 請求先会社ID = 親会社があれば親会社ID、無ければ自社ID（company が取れない場合も自社IDにフォールバック）
-      const companyOrders: Record<string, Order[]> = {}
-      for (const order of orders) {
-        const billingCompanyId = (order as Order).company?.parent_company_id ?? order.company_id
-        if (!companyOrders[billingCompanyId]) {
-          companyOrders[billingCompanyId] = []
-        }
-        companyOrders[billingCompanyId].push(order as Order)
+      // 未請求（＝まだどの請求書にも載っていない）の会社のみ対象にする。
+      // 既に請求書がある会社は意図的にスキップする（月途中の単体作成後の再実行など）。
+      // そのスキップは無言にはしない：スキップされた分は fetchInvoices/fetchMonthOrders
+      // 後に再計算される未請求警告バナーに残り続けるので、ユーザーは気づける。
+      const targets = computeUnbilledSummaries(orders, invoices).filter((s) => !s.existingInvoice)
+
+      if (targets.length === 0) {
+        setMessage({ type: 'error', text: '対象月の注文はすべて請求済みです' })
+        setTimeout(() => setMessage(null), 3000)
+        return
       }
 
       // 採番: その月の既存請求書番号から末尾の連番部分の最大値を取得し、そこから続ける。
-      // created（今回新規作成できた件数の集計用）とは別カウンタで管理する。
-      // これをやらないと、一括生成のあとに1社だけ追加で生成した場合など created が 0 から
-      // 始まり直し、既存の invoice_number と重複して UNIQUE制約違反でINSERTが失敗する。
+      // これをやらないと、一括生成のあとに1社だけ追加で生成した場合など連番が
+      // 0から始まり直し、既存の invoice_number と重複して UNIQUE制約違反でINSERTが失敗する。
       const { data: existingInvoices } = await supabase
         .from('invoices')
         .select('invoice_number')
         .eq('billing_month', selectedMonth)
+      const seqCounter = { next: computeNextSeqFromInvoiceNumbers(existingInvoices || []) }
 
-      const existingSeqNumbers = (existingInvoices || []).map((inv) => {
-        const m = /-(\d{3,})$/.exec(inv.invoice_number)
-        return m ? parseInt(m[1], 10) : 0
-      })
-      let nextSeq = existingSeqNumbers.length > 0 ? Math.max(...existingSeqNumbers) + 1 : 1
-
-      // 請求書を作成
       let created = 0
       // INSERT失敗した会社（無言でスキップせず、結果メッセージに含めてユーザーに見せる）
       const failures: { companyName: string; error: string }[] = []
       // 今回新規作成した請求書に紐づく注文ID（ループ後に一括で done に更新する）
       const completedOrderIds: string[] = []
-      for (const [billingCompanyId, compOrders] of Object.entries(companyOrders)) {
-        // 既に請求書があるか確認
-        const { data: existing } = await supabase
-          .from('invoices')
-          .select('id')
-          .eq('company_id', billingCompanyId)
-          .eq('billing_month', selectedMonth)
-          .single()
 
-        if (existing) continue // スキップ
-
-        const totalAmount = compOrders.reduce((sum, o) => sum + o.total_amount, 0)
-        const taxRate = 0.08
-        const taxAmount = Math.floor(totalAmount - totalAmount / (1 + taxRate))
-
-        // 請求番号生成（月内の既存最大連番+1から。会社ごとに1件成功するたびインクリメント）
-        const invoiceNumber = `INV-${selectedMonth.replace('-', '')}-${String(nextSeq).padStart(3, '0')}`
-
-        // 支払期限: billing_month の翌月末日（例: 2026-06 → 2026-07-31）。
-        // new Date(year, month + 1, 0) = 翌月(month+1, 1-indexed)の0日目 = 翌月末日。
-        // toISOString は UTC 変換で日付がずれるためローカルで手動フォーマットする。
-        const dueDate = new Date(year, month + 1, 0)
-        const dueDateStr = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`
-
-        const { data: invoice, error: invoiceError } = await supabase
-          .from('invoices')
-          .insert({
-            invoice_number: invoiceNumber,
-            company_id: billingCompanyId,
-            billing_month: selectedMonth,
-            total_amount: totalAmount,
-            tax_amount: taxAmount,
-            status: 'draft',
-            due_date: dueDateStr,
-          })
-          .select()
-          .single()
-
-        if (invoiceError || !invoice) {
-          // 握りつぶさずログ＋結果メッセージ用に記録する。1社の失敗で全体は止めない。
-          console.error(`請求書生成エラー（company_id=${billingCompanyId}, invoice_number=${invoiceNumber}）:`, invoiceError)
-          failures.push({
-            companyName: compOrders[0]?.company?.company_name || billingCompanyId,
-            error: invoiceError?.message || '不明なエラー',
-          })
+      for (const target of targets) {
+        const result = await createInvoiceForCompany(supabase, target.companyId, target.orders, selectedMonth, seqCounter)
+        if (result.status === 'created') {
+          completedOrderIds.push(...result.orderIds)
+          created++
+        } else if (result.status === 'already_exists') {
+          // computeUnbilledSummaries算出時点からの間に他経路で作成された場合。無言スキップでよい
+          // （元々ここは「skip」対象であり、警告バナーが別途表示される）。
           continue
-        }
-
-        // このグループでの採番が成功したので次のグループはこの続きから
-        nextSeq++
-
-        // 請求明細を作成
-        const { error: itemsError } = await supabase.from('invoice_items').insert(
-          compOrders.map((order) => ({
-            invoice_id: invoice.id,
-            order_id: order.id,
-            amount: order.total_amount,
-          }))
-        )
-        if (itemsError) throw itemsError
-
-        // このグループの注文は請求書発行済み → 後で done にする
-        completedOrderIds.push(...compOrders.map((o) => o.id))
-        created++
-      }
-
-      // 新規作成した請求書に紐づく注文を一括で「完了(done)」に更新する。
-      // 出荷済=未請求 / 完了=請求書発行済み、という工程の再定義に対応。
-      // .update() はゼロ行マッチや RLS で沈黙失敗するため error を必ず確認する。
-      let completeFailed = false
-      if (completedOrderIds.length > 0) {
-        const { error: completeError } = await supabase
-          .from('orders')
-          .update({ status: 'done' })
-          .in('id', completedOrderIds)
-        if (completeError) {
-          console.error('注文の完了更新エラー:', completeError)
-          completeFailed = true
+        } else {
+          console.error(`請求書生成エラー（company_id=${target.companyId}）:`, result.error)
+          failures.push({ companyName: target.displayName, error: result.error })
         }
       }
+
+      const completeOk = await markOrdersDone(supabase, completedOrderIds)
 
       // 失敗があった場合は握りつぶさず結果メッセージに含める（詳細はコンソールを参照）。
       const failureText =
@@ -286,7 +441,7 @@ export default function AdminInvoicesPage() {
           ? `${failures.length}件失敗しました（${failures.map((f) => f.companyName).join('、')}）。詳細はコンソールをご確認ください。`
           : ''
 
-      if (completeFailed) {
+      if (!completeOk) {
         // 請求書生成自体は成功として扱い、ロールバックはしない。
         setMessage({
           type: 'error',
@@ -298,13 +453,56 @@ export default function AdminInvoicesPage() {
           text: `${created}件の請求書を生成し、対象の注文${completedOrderIds.length}件を完了にしました${failureText ? `。${failureText}` : ''}`,
         })
       }
-      await fetchInvoices()
+      await Promise.all([fetchInvoices(), fetchMonthOrders()])
     } catch (err) {
       console.error('請求書生成エラー:', err)
       setMessage({ type: 'error', text: '請求書の生成に失敗しました' })
     } finally {
       setGenerating(false)
       setTimeout(() => setMessage(null), 5000)
+    }
+  }
+
+  // 会社1社分だけ請求書を作成する（未請求警告バナー・「1社だけ作成」モーダルから呼ばれる）。
+  async function handleCreateSingleInvoice(summary: UnbilledCompanySummary) {
+    setSingleInvoiceCreatingId(summary.companyId)
+    try {
+      const supabase = createClient()
+      const { data: existingInvoices } = await supabase
+        .from('invoices')
+        .select('invoice_number')
+        .eq('billing_month', selectedMonth)
+      const seqCounter = { next: computeNextSeqFromInvoiceNumbers(existingInvoices || []) }
+
+      const result = await createInvoiceForCompany(supabase, summary.companyId, summary.orders, selectedMonth, seqCounter)
+
+      if (result.status === 'created') {
+        const completeOk = await markOrdersDone(supabase, result.orderIds)
+        setMessage({
+          type: completeOk ? 'success' : 'error',
+          text: completeOk
+            ? `${result.invoiceNumber} を作成し、対象の注文${result.orderIds.length}件を完了にしました`
+            : `${result.invoiceNumber} を作成しましたが、対象注文の完了更新に失敗しました（注文管理で手動で完了にしてください）`,
+        })
+        setShowSingleInvoiceModal(false)
+        await Promise.all([fetchInvoices(), fetchMonthOrders()])
+      } else if (result.status === 'already_exists') {
+        // モーダルは既存請求書がある会社にはボタンを出さないため通常は起こらないが、
+        // 表示後に他経路で作成された場合の保険。
+        setMessage({
+          type: 'error',
+          text: `既に請求書（${result.invoiceNumber}）が存在するため作成できませんでした。この請求書の調整行で対応してください`,
+        })
+        await Promise.all([fetchInvoices(), fetchMonthOrders()])
+      } else {
+        setMessage({ type: 'error', text: `請求書の作成に失敗しました: ${result.error}` })
+      }
+    } catch (err) {
+      console.error('単体請求書作成エラー:', err)
+      setMessage({ type: 'error', text: '通信エラーが発生しました' })
+    } finally {
+      setSingleInvoiceCreatingId(null)
+      setTimeout(() => setMessage(null), 8000)
     }
   }
 
@@ -935,9 +1133,7 @@ export default function AdminInvoicesPage() {
           invoice_delivery_method?: 'email' | 'postal' | 'other' | null
         }
       | undefined
-    const useBilling = !!(c?.has_separate_billing && c?.billing_name)
-    const displayName = useBilling ? c!.billing_name! : c?.company_name ?? '（会社名未設定）'
-    const storeName = useBilling ? c?.company_name ?? '' : ''
+    const { displayName, storeName } = companyDisplayView(c)
     const deliveryMethod = c?.invoice_delivery_method ?? 'email'
     return { email: c?.email ?? null, displayName, storeName, deliveryMethod }
   }
@@ -960,7 +1156,9 @@ export default function AdminInvoicesPage() {
   }
 
   function toggleSelectAllTab() {
-    const ids = invoices.filter((inv) => activeTab === 'all' || inv.status === activeTab).map((i) => i.id)
+    // 検索で絞られた結果を基準にする（検索で画面から消えた行が選択されたまま
+    // 残ると、一括Gmail下書き作成等が意図しない取引先に実行されるため）。
+    const ids = tabInvoices.map((i) => i.id)
     setSelectedIds((prev) => {
       const allSel = ids.length > 0 && ids.every((id) => prev.has(id))
       const next = new Set(prev)
@@ -987,15 +1185,29 @@ export default function AdminInvoicesPage() {
   const statusLabel = (status: string) =>
     ({ draft: '未送信', sent: '送信済み', paid: '入金済み', overdue: '未払い' } as Record<string, string>)[status] || status
 
-  // 派生値
-  const tabInvoices = invoices.filter((inv) => activeTab === 'all' || inv.status === activeTab)
-  const tabCounts = {
-    all: invoices.length,
-    draft: invoices.filter((i) => i.status === 'draft').length,
-    sent: invoices.filter((i) => i.status === 'sent').length,
+  // 検索一致（会社名・請求先名・請求書番号）。freeeのエラー画面から番号を控えて探す場面があるため
+  // 請求書番号も対象にする。件数バッジ・一覧・全選択の基準を揃える（顧客管理と同じ実装方針）。
+  function matchesInvoiceSearch(inv: Invoice): boolean {
+    const q = invoiceSearch.trim().toLowerCase()
+    if (!q) return true
+    const c = inv.company as { company_name?: string; billing_name?: string | null } | undefined
+    return (
+      (c?.company_name || '').toLowerCase().includes(q) ||
+      (c?.billing_name || '').toLowerCase().includes(q) ||
+      inv.invoice_number.toLowerCase().includes(q)
+    )
   }
-  // 請求合計（選択中の請求月・全件）
-  const totalSum = invoices.reduce((s, i) => s + i.total_amount, 0)
+
+  // 派生値
+  const searchBase = invoices.filter(matchesInvoiceSearch)
+  const tabInvoices = searchBase.filter((inv) => activeTab === 'all' || inv.status === activeTab)
+  const tabCounts = {
+    all: searchBase.length,
+    draft: searchBase.filter((i) => i.status === 'draft').length,
+    sent: searchBase.filter((i) => i.status === 'sent').length,
+  }
+  // 請求合計（選択中の請求月・検索結果基準。検索中は「請求合計」の見出しにその旨を添える）
+  const totalSum = searchBase.reduce((s, i) => s + i.total_amount, 0)
 
   // メール送付の取引先でメール未登録の請求のみ警告対象（郵送・その他は対象外）
   const noEmailNames = invoices
@@ -1004,6 +1216,11 @@ export default function AdminInvoicesPage() {
       return deliveryMethod === 'email' && !email
     })
     .map((inv) => getCompanyView(inv).displayName)
+
+  // 未請求注文の集計（画面上部の警告バナー・「1社だけ作成」モーダルで共通利用）
+  const unbilledSummaries = computeUnbilledSummaries(monthOrders, invoices)
+  const unbilledWithoutInvoice = unbilledSummaries.filter((s) => !s.existingInvoice)
+  const unbilledWithInvoice = unbilledSummaries.filter((s) => s.existingInvoice)
 
   const selectedCount = selectedIds.size
   const allTabSelected = tabInvoices.length > 0 && tabInvoices.every((i) => selectedIds.has(i.id))
@@ -1064,6 +1281,16 @@ export default function AdminInvoicesPage() {
             {generating ? '生成中...' : '請求書を生成'}
           </button>
           <button
+            onClick={() => setShowSingleInvoiceModal(true)}
+            disabled={monthOrdersLoading || isLoading}
+            className="bg-white border border-green-600 text-green-700 hover:bg-green-50 font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            1社だけ作成
+          </button>
+          <button
             onClick={handleDownloadFreeeCsv}
             disabled={downloadingCsv || invoices.length === 0}
             className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
@@ -1089,9 +1316,11 @@ export default function AdminInvoicesPage() {
       {/* 上部サマリー（請求合計 1カード） */}
       {invoices.length > 0 && (
         <div className="bg-white rounded-xl border border-green-200 shadow-sm p-4">
-          <p className="text-xs font-medium text-green-700">{selectedMonth} 請求合計</p>
+          <p className="text-xs font-medium text-green-700">
+            {selectedMonth} 請求合計{invoiceSearch.trim() && '（検索結果）'}
+          </p>
           <p className="text-2xl font-bold text-green-800 mt-1">{formatCurrency(totalSum)}</p>
-          <p className="text-xs text-gray-400 mt-0.5">{invoices.length}件</p>
+          <p className="text-xs text-gray-400 mt-0.5">{searchBase.length}件</p>
         </div>
       )}
 
@@ -1102,6 +1331,58 @@ export default function AdminInvoicesPage() {
           {noEmailNames.join('、')}
         </div>
       )}
+
+      {/* 未請求注文の警告バナー（月途中の単体作成後、月末までに追加された注文の請求漏れを検知する）。
+          自動での修正・追加は一切行わない。検出して見せるだけ。 */}
+      {!monthOrdersLoading && !isLoading && unbilledWithInvoice.length > 0 && (
+        <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p className="font-bold">
+            ⚠ 既に請求書がある取引先で、請求書に含まれていない注文が{unbilledWithInvoice.length}社分あります
+          </p>
+          <ul className="mt-1.5 space-y-0.5 list-disc list-inside">
+            {unbilledWithInvoice.map((s) => (
+              <li key={s.companyId}>
+                {s.displayName}（{s.count}件・{formatCurrency(s.totalAmount)}・{s.existingInvoice?.invoice_number}）
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-xs text-red-700">それぞれの請求書の調整行で対応してください。</p>
+        </div>
+      )}
+      {!monthOrdersLoading && !isLoading && unbilledWithoutInvoice.length > 0 && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          未請求の注文がある取引先が{unbilledWithoutInvoice.length}社あります
+        </div>
+      )}
+
+      {/* 検索ボックス */}
+      <div className="relative">
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input
+          type="text"
+          value={invoiceSearch}
+          onChange={(e) => {
+            setInvoiceSearch(e.target.value)
+            setSelectedIds(new Set())
+          }}
+          placeholder="取引先名で検索"
+          className="w-full pl-9 pr-9 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+        />
+        {invoiceSearch && (
+          <button
+            onClick={() => {
+              setInvoiceSearch('')
+              setSelectedIds(new Set())
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600"
+            aria-label="検索をクリア"
+          >
+            ✕
+          </button>
+        )}
+      </div>
 
       {/* ステータスタブ */}
       <div className="flex gap-1.5 overflow-x-auto">
@@ -1819,6 +2100,83 @@ export default function AdminInvoicesPage() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 「1社だけ作成」モーダル。実装1（未請求集計）の結果をそのまま一覧表示するだけで、
+          自動での修正・追加は一切行わない。作成は既存請求書が無い会社のみ可能。 */}
+      {showSingleInvoiceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => !singleInvoiceCreatingId && setShowSingleInvoiceModal(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">1社だけ請求書を作成</h2>
+              <button
+                onClick={() => setShowSingleInvoiceModal(false)}
+                disabled={!!singleInvoiceCreatingId}
+                className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                月の途中で作成した場合、その後に入った同月納品の注文はこの請求書に自動では含まれません。月末に警告が出るので調整行で対応してください。
+              </p>
+
+              {monthOrdersLoading || isLoading ? (
+                <div className="flex justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : unbilledSummaries.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">{selectedMonth} に未請求の注文がある取引先はありません</p>
+              ) : (
+                <div className="border border-gray-100 rounded-lg divide-y divide-gray-100">
+                  {unbilledSummaries.map((s) => (
+                    <div key={s.companyId} className="p-3 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-gray-900">{s.displayName}</span>
+                        <span className="text-sm font-bold text-gray-900">{formatCurrency(s.totalAmount)}</span>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        未請求{s.count}件 / 最終納品日 {s.lastDeliveryDate ?? '-'}
+                      </p>
+                      {s.existingInvoice ? (
+                        <div className="text-xs text-red-700 bg-red-50 rounded-lg px-2.5 py-1.5 mt-1.5">
+                          <p className="font-bold">{s.existingInvoice.invoice_number} に未反映の注文あり</p>
+                          <p className="mt-0.5">この請求書の調整行で対応してください</p>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleCreateSingleInvoice(s)}
+                          disabled={singleInvoiceCreatingId !== null}
+                          className="mt-1.5 bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-1.5 rounded-lg text-xs disabled:opacity-50 transition-colors"
+                        >
+                          {singleInvoiceCreatingId === s.companyId ? '作成中...' : '請求書を作成'}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-gray-100 flex gap-3">
+              <button
+                onClick={() => setShowSingleInvoiceModal(false)}
+                disabled={!!singleInvoiceCreatingId}
+                className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
+              >
+                閉じる
+              </button>
+            </div>
           </div>
         </div>
       )}
