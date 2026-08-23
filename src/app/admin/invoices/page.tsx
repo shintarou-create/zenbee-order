@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Invoice, Order, Company } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
+import { fetchAllRows } from '@/lib/supabase-batch'
 
 type TabKey = 'all' | 'draft' | 'sent'
 type SupabaseClientType = ReturnType<typeof createClient>
@@ -49,16 +50,22 @@ function billingCompanyIdOf(order: Order): string {
 // Supabase の gte/lte では NULL 側（shipping_date が無い手入力注文）が漏れるため、
 // ステータスのみで取得し月範囲はクライアント側でフィルタする（月数十件規模）。
 async function fetchOrdersForBillingMonth(supabase: SupabaseClientType, billingMonth: string): Promise<Order[]> {
-  const { data, error } = await supabase
-    .from('orders')
-    .select(`
-      *,
-      company:companies (*)
-    `)
-    .in('status', ['shipped', 'done'])
-
-  if (error) throw error
-  return ((data || []) as Order[]).filter((o) => isInBillingMonth(o, billingMonth))
+  // PostgREST は .limit() を書かなくても1クエリ最大1000行しか返らないため、
+  // fetchAllRows で range(from, to) を使い全件取得する。range によるページングは
+  // ORDER BY が無いと行の並びが安定せず、ページ間で行が重複・欠落しうるため、
+  // 一意な id で明示的に順序付ける（created_at 等は同時刻の同着があり得るため不可）。
+  const data = await fetchAllRows<Order>((from, to) =>
+    supabase
+      .from('orders')
+      .select(`
+        *,
+        company:companies (*)
+      `)
+      .in('status', ['shipped', 'done'])
+      .order('id', { ascending: true })
+      .range(from, to)
+  )
+  return data.filter((o) => isInBillingMonth(o, billingMonth))
 }
 
 // 「選択中の請求月に、請求書に載っていない注文がある会社」の集計結果。
@@ -208,9 +215,13 @@ async function createInvoiceForCompany(
     }))
   )
   if (itemsError) {
+    // 請求書本体は作成済みだが明細が0件のまま残る。この請求書は「未請求警告バナー」に
+    // 既存請求書あり＋未請求注文ありとして現れるが、バナーの案内（調整行で対応）では
+    // 直らない（調整行は注文明細ではないため）。正しい対処はこの請求書を削除して
+    // 作り直すことなので、その旨を明記する。
     return {
       status: 'error',
-      error: `請求書(${invoiceNumber})は作成されましたが明細の作成に失敗しました: ${itemsError.message}`,
+      error: `請求書(${invoiceNumber})は作成されましたが明細の作成に失敗しました: ${itemsError.message}。この請求書（${invoiceNumber}）は明細が0件のまま残っているため、請求書一覧から削除してから作成し直してください（調整行では直りません）。`,
     }
   }
 
