@@ -6,6 +6,7 @@ import type { Invoice, Order, Company } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
 import { fetchAllRows } from '@/lib/supabase-batch'
+import { decodeFreeeCsvFile, parseFreeePartnerCsv, matchUnregisteredCompanies, type PartnerMatchResult } from '@/lib/freee-partner-match'
 
 type TabKey = 'all' | 'draft' | 'sent'
 type SupabaseClientType = ReturnType<typeof createClient>
@@ -282,6 +283,10 @@ export default function AdminInvoicesPage() {
   const [partnerDownloading, setPartnerDownloading] = useState(false)
   const [partnerDownloaded, setPartnerDownloaded] = useState(false)
   const [partnerMarking, setPartnerMarking] = useState(false)
+  // freeeの取引先CSVをアップロードして自動照合（完全一致のみ）する機能
+  const [partnerMatchFile, setPartnerMatchFile] = useState<File | null>(null)
+  const [partnerMatching, setPartnerMatching] = useState(false)
+  const [partnerMatchResult, setPartnerMatchResult] = useState<PartnerMatchResult | null>(null)
   const [gmailDraftingId, setGmailDraftingId] = useState<string | null>(null)
   const [pdfDownloadingId, setPdfDownloadingId] = useState<string | null>(null)
   const [bulkRunning, setBulkRunning] = useState(false)
@@ -1056,6 +1061,8 @@ export default function AdminInvoicesPage() {
   function openPartnerModal() {
     setPartnerSelectedIds(new Set(unregisteredCompanies.map((c) => c.id)))
     setPartnerDownloaded(false)
+    setPartnerMatchFile(null)
+    setPartnerMatchResult(null)
     setShowPartnerModal(true)
   }
 
@@ -1138,6 +1145,51 @@ export default function AdminInvoicesPage() {
       setTimeout(() => setMessage(null), 8000)
     } finally {
       setPartnerMarking(false)
+    }
+  }
+
+  // freeeの取引先CSVをアップロードして自動照合する。company_name の完全一致のみを対象とし
+  // （表記ゆれの吸収はしない。あいまい照合は誤爆リスクがあるため、ゆれがあれば人間が目視で
+  // 気づいて手動対応する運用とする）、一致した会社は即座に freee_partner_registered=true に更新する。
+  async function handlePartnerCsvUpload(file: File) {
+    setPartnerMatchFile(file)
+    setPartnerMatchResult(null)
+    setPartnerMatching(true)
+    try {
+      const buffer = await file.arrayBuffer()
+      const text = decodeFreeeCsvFile(buffer)
+      const freeeNames = parseFreeePartnerCsv(text)
+      const result = matchUnregisteredCompanies(freeeNames, unregisteredCompanies)
+
+      if (result.matchedIds.length > 0) {
+        const res = await adminFetch('/api/freee-partner-csv', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyIds: result.matchedIds }),
+        })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          setMessage({ type: 'error', text: json.error || '照合結果の反映に失敗しました' })
+          setTimeout(() => setMessage(null), 8000)
+          return
+        }
+        // 登録済みになった会社を選択状態からも外す（一覧から消えた行が選択されたまま
+        // 残ると、その後のCSVダウンロードが対象外の会社を含んで失敗するため）。
+        setPartnerSelectedIds((prev) => {
+          const next = new Set(prev)
+          result.matchedIds.forEach((id) => next.delete(id))
+          return next
+        })
+        await fetchUnregisteredPartners()
+      }
+
+      setPartnerMatchResult(result)
+    } catch (err) {
+      console.error('freee取引先CSV 照合エラー:', err)
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'CSVの読み込みに失敗しました' })
+      setTimeout(() => setMessage(null), 8000)
+    } finally {
+      setPartnerMatching(false)
     }
   }
 
@@ -1923,6 +1975,48 @@ export default function AdminInvoicesPage() {
             {!partnerDownloaded ? (
               <>
                 <div className="p-4 space-y-3">
+                  {/* freeeの取引先CSVをアップロードして自動照合。
+                      押し忘れ等で実際は登録済みなのにシステム上「未登録」のままの会社を自動検出する。 */}
+                  <div className="border border-gray-100 rounded-lg p-3 space-y-2 bg-gray-50">
+                    <p className="text-sm font-bold text-gray-700">freeeの取引先CSVをアップロードして自動照合</p>
+                    <p className="text-xs text-gray-500">
+                      freeeの取引先一覧からエクスポートしたCSVをアップロードすると、既に登録済みの取引先を自動検出して更新します（会社名の完全一致のみ）。
+                    </p>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      disabled={partnerMatching}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) handlePartnerCsvUpload(file)
+                        e.target.value = '' // 同じファイルを選び直せるようにリセット
+                      }}
+                      className="block w-full text-xs text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white file:text-sm file:font-bold hover:file:bg-indigo-700 file:cursor-pointer disabled:opacity-50"
+                    />
+                    {partnerMatchFile && (
+                      <p className="text-xs text-gray-500">選択中: {partnerMatchFile.name}</p>
+                    )}
+                    {partnerMatching && <p className="text-xs text-indigo-600">照合中...</p>}
+                    {partnerMatchResult && (
+                      <div
+                        className={`rounded-lg px-3 py-2 text-xs ${
+                          partnerMatchResult.matchedIds.length > 0 ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'
+                        }`}
+                      >
+                        {partnerMatchResult.matchedIds.length === 0 ? (
+                          <p>照合できる取引先はありませんでした</p>
+                        ) : (
+                          <>
+                            <p className="font-bold">{partnerMatchResult.matchedIds.length}社が既にfreeeに登録済みでした（自動で更新しました）</p>
+                            {partnerMatchResult.unmatchedCount > 0 && (
+                              <p className="mt-0.5">残り{partnerMatchResult.unmatchedCount}社は本当に未登録です（下のリストからCSVを作成してください）</p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-gray-600">freee未登録の取引先（{unregisteredCompanies.length}社）</p>
                     <button
