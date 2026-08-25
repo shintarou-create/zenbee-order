@@ -155,9 +155,10 @@ export default function AdminOrderDetailPage() {
     fetchTemplates()
   }, [])
 
-  // pending 注文のときだけ商品一覧を取得（商品追加セレクタ用）
+  // 商品明細が編集可能（pending・shipped）なときだけ商品一覧を取得（商品追加セレクタ用）。
+  // isItemsEditable と同じ条件（この時点では isItemsEditable 未定義のためここで直接判定する）。
   useEffect(() => {
-    if (!order || order.status !== 'pending') return
+    if (!order || (order.status !== 'pending' && order.status !== 'shipped')) return
 
     async function fetchProducts() {
       const supabase = createClient()
@@ -543,7 +544,7 @@ export default function AdminOrderDetailPage() {
 
   const company = order.company
   const isShippingEditable = order.status === 'pending' || order.status === 'shipped'
-  const isItemsEditable = order.status === 'pending'
+  const isItemsEditable = order.status === 'pending' || order.status === 'shipped'
   const selectedProductForAdd = availableProducts.find((p) => p.id === addProductId)
 
   return (
@@ -645,13 +646,10 @@ export default function AdminOrderDetailPage() {
         )}
       </div>
 
-      {/* 注文明細 */}
+      {/* 注文明細（pending・shipped で編集可能。送料セクションと同じ条件） */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-bold text-gray-900">注文明細</h2>
-          {isItemsEditable && (
-            <span className="text-xs text-blue-600 font-medium">編集中（未対応）</span>
-          )}
         </div>
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
@@ -793,7 +791,7 @@ export default function AdminOrderDetailPage() {
                 })}
           </tbody>
         </table>
-        {/* 商品追加 UI（pending のみ） */}
+        {/* 商品追加 UI（pending・shipped のみ） */}
         {isItemsEditable && (
           <div className="border-t border-gray-100 px-4 py-3 space-y-2">
             <p className="text-xs font-semibold text-gray-500">商品を追加</p>

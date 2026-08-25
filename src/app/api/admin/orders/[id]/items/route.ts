@@ -66,7 +66,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const supabase = createServiceClient()
 
-  // 2. status = 'pending' のみ編集可
+  // 2. status = 'pending' または 'shipped' のみ編集可（送料編集と同じ条件。
+  //    出荷済みでも後から金額調整・行追加ができるようにするため。done・cancelled は編集不可のまま）
   const { data: orderData } = await supabase
     .from('orders')
     .select('status, company_id')
@@ -76,8 +77,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!orderData) {
     return NextResponse.json({ error: '注文が見つかりません' }, { status: 404 })
   }
-  if (orderData.status !== 'pending') {
-    return NextResponse.json({ error: 'この注文は編集できません（未対応の注文のみ編集可能）' }, { status: 409 })
+  if (orderData.status !== 'pending' && orderData.status !== 'shipped') {
+    return NextResponse.json({ error: 'この注文は編集できません（未対応・出荷済みの注文のみ編集可能）' }, { status: 409 })
   }
 
   // 会社の price_rank・price_tax_type を取得（tier なし商品の単価算出・税区分変換に使用）
