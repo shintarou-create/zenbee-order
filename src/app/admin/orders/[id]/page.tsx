@@ -202,7 +202,8 @@ export default function AdminOrderDetailPage() {
       prev.map((item, i) => {
         if (i !== index) return item
         if (field === 'unit_price') {
-          const unitPrice = Math.max(0, parseFloat(value) || 0)
+          // サンプル代の値引き等で自由記入行にマイナス単価を許容する。下限は妥当な範囲でクランプ。
+          const unitPrice = Math.min(100_000_000, Math.max(-1_000_000, parseFloat(value) || 0))
           return { ...item, unit_price: unitPrice, subtotal: unitPrice * item.quantity }
         }
         return { ...item, [field]: value }
@@ -700,13 +701,15 @@ export default function AdminOrderDetailPage() {
                           <AmountInput
                             value={item.unit_price}
                             onChange={(v) => handleCustomItemFieldChange(idx, 'unit_price', String(v))}
-                            min={0}
+                            min={-1_000_000}
                             max={100_000_000}
                             className="w-24 text-right border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
                           />
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-500">
-                          {item.unit_price > 0 ? formatCurrency(item.subtotal) : '—'}
+                          {/* unit_price===0 は「未入力」の意味で使っている（handleAddCustomItemRow の初期値）。
+                              マイナスは値引き等の正当な確定値なので > 0 ではなく !== 0 で判定する。 */}
+                          {item.unit_price !== 0 ? formatCurrency(item.subtotal) : '—'}
                         </td>
                         <td className="px-2 py-3 text-right">
                           <button type="button" onClick={() => handleItemDelete(idx)} className="text-red-400 hover:text-red-600 text-xs font-medium">
@@ -762,11 +765,13 @@ export default function AdminOrderDetailPage() {
                           {item.product_name}
                         </td>
                         <td className="px-4 py-3 text-right">{item.quantity}{item.unit}</td>
+                        {/* unit_price===0 は「未入力のまま保存された」ことを表す（マイナスは値引き等の
+                            正当な確定値）。編集側の判定（!== 0）と揃える。 */}
                         <td className="px-4 py-3 text-right text-gray-400 text-sm">
-                          {item.unit_price > 0 ? formatCurrency(item.unit_price) : '未確定'}
+                          {item.unit_price !== 0 ? formatCurrency(item.unit_price) : '未確定'}
                         </td>
                         <td className="px-4 py-3 text-right text-gray-400">
-                          {item.subtotal > 0 ? formatCurrency(item.subtotal) : '—'}
+                          {item.subtotal !== 0 ? formatCurrency(item.subtotal) : '—'}
                         </td>
                       </tr>
                     )

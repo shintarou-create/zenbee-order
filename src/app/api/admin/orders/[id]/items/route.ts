@@ -45,9 +45,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       if (!Number.isInteger(i.quantity) || (i.quantity as number) < 1 || (i.quantity as number) > 9999) {
         return NextResponse.json({ error: '数量は1〜9999の整数で指定してください' }, { status: 400 })
       }
+      // サンプル代の値引き等で自由記入行にマイナス単価を許容する（通常商品行は商品マスター価格
+      // を使うため対象外）。下限は妥当な範囲でクランプする。
       const up = Number(i.unit_price)
-      if (isNaN(up) || up < 0) {
-        return NextResponse.json({ error: '単価は0以上の数値です' }, { status: 400 })
+      if (isNaN(up) || up < -1_000_000) {
+        return NextResponse.json({ error: '単価は-1,000,000以上の数値です' }, { status: 400 })
       }
     } else {
       if (typeof i.product_id !== 'string' || !i.product_id) {
