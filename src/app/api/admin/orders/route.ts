@@ -132,11 +132,12 @@ export async function POST(req: NextRequest) {
     }> = []
 
     if (productIds.length > 0) {
+      // is_active フィルタなし: 管理画面（手動注文入力）では非表示商品も選んで追加できる
+      // （UI側で選択可能にしている）。価格段階側の is_active フィルタは下記で維持する。
       const { data: fetched, error: productsError } = await supabase
         .from('products')
         .select('*, product_prices (price_rank, price_per_unit)')
         .in('id', productIds)
-        .eq('is_active', true)
       if (productsError || !fetched) {
         return NextResponse.json({ error: '商品情報の取得に失敗しました' }, { status: 500 })
       }

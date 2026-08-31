@@ -31,6 +31,7 @@ type ProductRow = {
   min_order_qty: number
   display_order: number | null
   category: string | null
+  is_active: boolean
   product_prices: { price_rank: string; price_per_unit: number }[]
   pricing_tiers: PricingTier[]
 }
@@ -104,14 +105,15 @@ export default function AdminOrderNewPage() {
     async function load() {
       const supabase = createClient()
       const [productsRes, companiesRes] = await Promise.all([
+        // is_active フィルタなし: シーズン外等で非表示にした商品も管理者は意図して選べる必要がある
+        // （客側LIFFの発注画面は別経路・別クエリのため、ここを変えても客側の表示には影響しない）。
         supabase
           .from('products')
           .select(`
-            id, name, unit, stock_status, ship_start_date, cool_type, step_qty, min_order_qty, display_order, category,
+            id, name, unit, stock_status, ship_start_date, cool_type, step_qty, min_order_qty, display_order, category, is_active,
             product_prices (price_rank, price_per_unit),
             pricing_tiers:product_pricing_tiers (id, tier_label, quantity, unit_price, display_order, is_active, visible_company_id)
           `)
-          .eq('is_active', true)
           .order('display_order', { ascending: true }),
         supabase
           .from('companies')
@@ -434,11 +436,20 @@ export default function AdminOrderNewPage() {
                 className="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
               >
                 <option value="">商品を選択...</option>
-                {products.map((p) => (
+                {products.filter((p) => p.is_active).map((p) => (
                   <option key={p.id} value={p.id} disabled={p.stock_status === 'cross'}>
                     {p.name}{p.stock_status === 'cross' ? '（在庫なし）' : ''}
                   </option>
                 ))}
+                {products.some((p) => !p.is_active) && (
+                  <optgroup label="非表示">
+                    {products.filter((p) => !p.is_active).map((p) => (
+                      <option key={p.id} value={p.id} disabled={p.stock_status === 'cross'}>
+                        {p.name}{p.stock_status === 'cross' ? '（在庫なし）' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
               <QuantityStepper value={addQuantity} onChange={setAddQuantity} min={1} max={9999} />
             </div>

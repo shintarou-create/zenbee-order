@@ -34,6 +34,7 @@ interface ProductForSelector {
   unit: string
   category?: string | null
   display_order?: number | null
+  is_active: boolean
   product_pricing_tiers: Array<{ id: string; tier_label: string; quantity: number; unit_price: number; is_active: boolean }>
   product_prices: Array<{ price_rank: string; price_per_unit: number }>
 }
@@ -162,10 +163,11 @@ export default function AdminOrderDetailPage() {
 
     async function fetchProducts() {
       const supabase = createClient()
+      // is_active フィルタなし: シーズン外等で非表示にした商品も管理者は意図して選べる必要がある
+      // （客側LIFFの発注画面は別経路・別クエリのため、ここを変えても客側の表示には影響しない）。
       const { data } = await supabase
         .from('products')
-        .select('id, name, unit, category, display_order, product_pricing_tiers(id, tier_label, quantity, unit_price, is_active), product_prices(price_rank, price_per_unit)')
-        .eq('is_active', true)
+        .select('id, name, unit, category, display_order, is_active, product_pricing_tiers(id, tier_label, quantity, unit_price, is_active), product_prices(price_rank, price_per_unit)')
         .order('display_order', { ascending: true })
       // 「よく使う商品」順の並び替え用に使用実績を取得。失敗しても {} で display_order 順にフォールバック。
       let usageStats: Record<string, number> = {}
@@ -807,9 +809,16 @@ export default function AdminOrderDetailPage() {
                 className="flex-1 min-w-0 border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
               >
                 <option value="">商品を選択</option>
-                {availableProducts.map((p) => (
+                {availableProducts.filter((p) => p.is_active).map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
+                {availableProducts.some((p) => !p.is_active) && (
+                  <optgroup label="非表示">
+                    {availableProducts.filter((p) => !p.is_active).map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
               {selectedProductForAdd && selectedProductForAdd.product_pricing_tiers.filter((t) => t.is_active).length > 0 && (
                 <select

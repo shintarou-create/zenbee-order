@@ -176,11 +176,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const normalItem = item as { product_id: string; pricing_tier_id?: string | null; quantity: number }
 
+    // is_active フィルタなし: 管理画面では非表示商品も選んで追加できる（UI側で選択可能にしている）。
+    // 価格段階（product_pricing_tiers）側の is_active フィルタは維持する（下記）。
     const { data: product } = await supabase
       .from('products')
       .select('id, name, unit, product_prices(price_rank, price_per_unit)')
       .eq('id', normalItem.product_id)
-      .eq('is_active', true)
       .single()
 
     if (!product) {
