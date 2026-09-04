@@ -11,7 +11,8 @@
     "verify:wholesale-sales": "tsx --env-file=.env.local scripts/verify-wholesale-sales.ts",
     "seed:legacy-product-mappings": "tsx --env-file=.env.local scripts/seed-legacy-product-mappings.ts",
     "import:legacy-wholesale": "tsx --env-file=.env.local scripts/import-legacy-wholesale.ts",
-    "verify:legacy-wholesale": "tsx --env-file=.env.local scripts/verify-legacy-wholesale.ts"
+    "verify:legacy-wholesale": "tsx --env-file=.env.local scripts/verify-legacy-wholesale.ts",
+    "setup:tatsumi-quote": "tsx --env-file=.env.local scripts/setup-tatsumi-quote-20260904.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

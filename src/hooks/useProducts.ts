@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Product, PriceRank } from '@/types'
 import { isProductVisible } from '@/lib/utils'
+import { filterTiersForCompany } from '@/lib/tier-visibility'
 
 interface UseProductsOptions {
   priceRank?: PriceRank
@@ -59,8 +60,10 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
           .order('display_order', { ascending: true })
 
         // pricing_tiers の絞り込み（サーバー側＝PostgREST の埋め込みリソースフィルタで実施。
-        // 一度クライアントに全tierを返してからJSで隠す実装は不可＝他社の専用価格が漏れるため）。
+        // 他社の専用tierはこの時点でクライアントに一切届かない＝漏洩しない）。
         // company_id が未確定の間は全社共通tier（visible_company_id IS NULL）のみを返す。
+        // このOR条件だけでは「専用tierがある商品の全社共通tierを隠す」表現ができないため、
+        // その絞り込みは下の filterTiersForCompany（商品ごとのグルーピング判定）で行う。
         if (withTiers) {
           query = query.or(
             companyId
@@ -82,9 +85,10 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
             const priceEntry = p.product_prices?.find((pp) => pp.price_rank === priceRank)
               ?? p.product_prices?.find((pp) => pp.price_rank === 'standard')
             const activeTiers = withTiers
-              ? (p.pricing_tiers ?? [])
-                  .filter((t) => t.is_active !== false)
-                  .sort((a, b) => a.display_order - b.display_order)
+              ? filterTiersForCompany(
+                  (p.pricing_tiers ?? []).filter((t) => t.is_active !== false),
+                  companyId
+                ).sort((a, b) => a.display_order - b.display_order)
               : undefined
             return {
               ...p,

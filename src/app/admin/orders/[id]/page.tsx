@@ -12,6 +12,7 @@ import QuantityStepper from '@/components/admin/QuantityStepper'
 import AmountInput from '@/components/admin/AmountInput'
 import { formatQuantity, formatUnitWithTotal, shouldShowTierBadge } from '@/lib/quantity-format'
 import { sortProductsByUsage } from '@/lib/product-sort'
+import { filterTiersForCompany } from '@/lib/tier-visibility'
 
 interface EditableOrderItem {
   product_id: string | null
@@ -35,7 +36,7 @@ interface ProductForSelector {
   category?: string | null
   display_order?: number | null
   is_active: boolean
-  product_pricing_tiers: Array<{ id: string; tier_label: string; quantity: number; unit_price: number; is_active: boolean }>
+  product_pricing_tiers: Array<{ id: string; product_id: string; tier_label: string; quantity: number; unit_price: number; is_active: boolean; visible_company_id: string | null }>
   product_prices: Array<{ price_rank: string; price_per_unit: number }>
 }
 
@@ -167,7 +168,7 @@ export default function AdminOrderDetailPage() {
       // （客側LIFFの発注画面は別経路・別クエリのため、ここを変えても客側の表示には影響しない）。
       const { data } = await supabase
         .from('products')
-        .select('id, name, unit, category, display_order, is_active, product_pricing_tiers(id, tier_label, quantity, unit_price, is_active), product_prices(price_rank, price_per_unit)')
+        .select('id, name, unit, category, display_order, is_active, product_pricing_tiers(id, product_id, tier_label, quantity, unit_price, is_active, visible_company_id), product_prices(price_rank, price_per_unit)')
         .order('display_order', { ascending: true })
       // 「よく使う商品」順の並び替え用に使用実績を取得。失敗しても {} で display_order 順にフォールバック。
       let usageStats: Record<string, number> = {}
@@ -245,7 +246,11 @@ export default function AdminOrderDetailPage() {
     let pricingTierId: string | null = null
 
     if (addTierId) {
-      const tier = product.product_pricing_tiers.find((t) => t.id === addTierId && t.is_active)
+      const visibleTiers = filterTiersForCompany(
+        product.product_pricing_tiers.filter((t) => t.is_active),
+        order?.company_id ?? null
+      )
+      const tier = visibleTiers.find((t) => t.id === addTierId)
       if (tier) {
         unitPrice = tier.unit_price
         tierLabel = tier.tier_label
@@ -549,6 +554,12 @@ export default function AdminOrderDetailPage() {
   const isShippingEditable = order.status === 'pending' || order.status === 'shipped'
   const isItemsEditable = order.status === 'pending' || order.status === 'shipped'
   const selectedProductForAdd = availableProducts.find((p) => p.id === addProductId)
+  const selectedProductVisibleTiers = selectedProductForAdd
+    ? filterTiersForCompany(
+        selectedProductForAdd.product_pricing_tiers.filter((t) => t.is_active),
+        order?.company_id ?? null
+      )
+    : []
 
   return (
     <div className="space-y-4 max-w-3xl">
@@ -820,18 +831,16 @@ export default function AdminOrderDetailPage() {
                   </optgroup>
                 )}
               </select>
-              {selectedProductForAdd && selectedProductForAdd.product_pricing_tiers.filter((t) => t.is_active).length > 0 && (
+              {selectedProductForAdd && selectedProductVisibleTiers.length > 0 && (
                 <select
                   value={addTierId}
                   onChange={(e) => setAddTierId(e.target.value)}
                   className="border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
                 >
                   <option value="">価格段階を選択</option>
-                  {selectedProductForAdd.product_pricing_tiers
-                    .filter((t) => t.is_active)
-                    .map((t) => (
-                      <option key={t.id} value={t.id}>{t.tier_label}</option>
-                    ))}
+                  {selectedProductVisibleTiers.map((t) => (
+                    <option key={t.id} value={t.id}>{t.tier_label}</option>
+                  ))}
                 </select>
               )}
               <QuantityStepper value={addQuantity} onChange={setAddQuantity} min={1} max={9999} />

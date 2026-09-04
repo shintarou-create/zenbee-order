@@ -9,9 +9,11 @@ import QuantityStepper from '@/components/admin/QuantityStepper'
 import { formatUnitWithTotal, shouldShowTierBadge, isSetCategory } from '@/lib/quantity-format'
 import { sortProductsByUsage } from '@/lib/product-sort'
 import { DELIVERY_TIME_SLOT_OPTIONS } from '@/lib/yamato-csv'
+import { filterTiersForCompany } from '@/lib/tier-visibility'
 
 type PricingTier = {
   id: string
+  product_id: string
   tier_label: string
   quantity: number
   unit_price: number
@@ -112,7 +114,7 @@ export default function AdminOrderNewPage() {
           .select(`
             id, name, unit, stock_status, ship_start_date, cool_type, step_qty, min_order_qty, display_order, category, is_active,
             product_prices (price_rank, price_per_unit),
-            pricing_tiers:product_pricing_tiers (id, tier_label, quantity, unit_price, display_order, is_active, visible_company_id)
+            pricing_tiers:product_pricing_tiers (id, product_id, tier_label, quantity, unit_price, display_order, is_active, visible_company_id)
           `)
           .order('display_order', { ascending: true }),
         supabase
@@ -168,14 +170,14 @@ export default function AdminOrderNewPage() {
     () => products.find((p) => p.id === addProductId),
     [products, addProductId]
   )
-  // 選択中の取引先に見えるtierだけに絞る（全社共通=visible_company_id null、または選択中の会社専用のみ）
+  // 選択中の取引先に見えるtierだけに絞る（専用tierがある商品は全社共通tierを隠す）
   const activeTiers = useMemo(() => {
     if (!selectedProduct) return []
-    const visibleCompanyId = companyMode === 'existing' ? companyId : null
-    return selectedProduct.pricing_tiers
-      .filter((t) => t.is_active)
-      .filter((t) => t.visible_company_id == null || t.visible_company_id === visibleCompanyId)
-      .sort((a, b) => a.display_order - b.display_order)
+    const visibleCompanyId = companyMode === 'existing' ? companyId || null : null
+    return filterTiersForCompany(
+      selectedProduct.pricing_tiers.filter((t) => t.is_active),
+      visibleCompanyId
+    ).sort((a, b) => a.display_order - b.display_order)
   }, [selectedProduct, companyMode, companyId])
   const hasTiers = activeTiers.length > 0
   const isSetProduct = isSetCategory(selectedProduct?.category)
