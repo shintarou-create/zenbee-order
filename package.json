@@ -15,6 +15,9 @@
     "seed:colorme-product-mappings": "tsx --env-file=.env.local scripts/seed-colorme-product-mappings.ts",
     "import:colorme": "tsx --env-file=.env.local scripts/import-colorme-sales.ts",
     "verify:colorme": "tsx --env-file=.env.local scripts/verify-colorme-sales.ts",
+    "seed:manual-product-mappings": "tsx --env-file=.env.local scripts/seed-manual-product-mappings.ts",
+    "import:manual": "tsx --env-file=.env.local scripts/import-manual-sales.ts",
+    "verify:manual": "tsx --env-file=.env.local scripts/verify-manual-sales.ts",
     "setup:tatsumi-quote": "tsx --env-file=.env.local scripts/setup-tatsumi-quote-20260904.ts"
   },
   "dependencies": {
