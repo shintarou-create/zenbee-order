@@ -5,7 +5,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
-import type { Order, OrderItem, OrderStatus, OrderShippingLine, Company, PriceRank } from '@/types'
+import type { Order, OrderItem, OrderStatus, OrderShippingLine, Company, PriceRank, PaymentMethod } from '@/types'
+import { PAYMENT_METHOD_LABELS } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
 import { formatDeliveryTimeSlot, DELIVERY_TIME_SLOT_OPTIONS } from '@/lib/yamato-csv'
 import QuantityStepper from '@/components/admin/QuantityStepper'
@@ -13,6 +14,7 @@ import AmountInput from '@/components/admin/AmountInput'
 import { formatQuantity, formatUnitWithTotal, shouldShowTierBadge } from '@/lib/quantity-format'
 import { sortProductsByUsage } from '@/lib/product-sort'
 import { filterTiersForCompany } from '@/lib/tier-visibility'
+import { suggestCodFee, isOverCodLimit, calcCodTax, calcCodAmount } from '@/lib/cod'
 
 interface EditableOrderItem {
   product_id: string | null
@@ -68,6 +70,14 @@ export default function AdminOrderDetailPage() {
   const [shippingTemplates, setShippingTemplates] = useState<{ label: string; cost: number }[]>([])
   const [calcingShipping, setCalcingShipping] = useState(false)
 
+  // 支払方法（代引き対応）
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('invoice')
+  const [codFee, setCodFee] = useState(0)
+  const [savingPayment, setSavingPayment] = useState(false)
+  // 請求書に紐づいている注文かどうか（G-1: 代引きへの変更をブロックするための表示専用チェック。
+  // 実際の拒否はAPI側で必ず行う。UIガードのみだと直POSTで抜けられるため）
+  const [linkedInvoice, setLinkedInvoice] = useState<{ id: string; invoice_number: string } | null>(null)
+
   // 取引先編集
   const [showCompanyEditModal, setShowCompanyEditModal] = useState(false)
   const [companyForm, setCompanyForm] = useState<Partial<Company>>({})
@@ -110,6 +120,8 @@ export default function AdminOrderDetailPage() {
         setDeliveryDate(data.delivery_date || '')
         setDeliveryTimeSlot(data.delivery_time_slot || '')
         setDetailsConfirmed(data.details_confirmed ?? false)
+        setPaymentMethod(((data.payment_method as PaymentMethod) ?? 'invoice'))
+        setCodFee(data.cod_fee ?? 0)
         setShippingLines(
           ((data.order_shipping ?? []) as OrderShippingLine[]).map((line) => ({
             id: line.id,
@@ -141,6 +153,23 @@ export default function AdminOrderDetailPage() {
     }
 
     fetchOrder()
+  }, [orderId])
+
+  // G-1（表示専用チェック）: この注文が既に請求書に含まれているかを取得し、
+  // 代金引換への変更を選べないようにする（実際の拒否はAPI側の必須チェックで担保する）。
+  useEffect(() => {
+    if (!orderId) return
+    async function fetchLinkedInvoice() {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('invoice_items')
+        .select('invoice:invoices (id, invoice_number)')
+        .eq('order_id', orderId)
+        .limit(1)
+      const row = data?.[0] as { invoice?: { id: string; invoice_number: string } | null } | undefined
+      setLinkedInvoice(row?.invoice ?? null)
+    }
+    fetchLinkedInvoice()
   }, [orderId])
 
   // 送料テンプレート（箱）を取得（「テンプレートから追加」プルダウン用）
@@ -531,6 +560,52 @@ export default function AdminOrderDetailPage() {
     }
   }
 
+  // 支払方法セレクタの変更ハンドラ。請求書払い→代金引換への切り替え時、手数料が
+  // まだ未入力（0）ならサジェスト額を初期値として入れる（手入力での上書きは常に可能）。
+  function handlePaymentMethodChange(next: PaymentMethod) {
+    if (next === 'cod' && paymentMethod !== 'cod' && codFee === 0 && order) {
+      setCodFee(suggestCodFee(order.total_amount))
+    }
+    setPaymentMethod(next)
+  }
+
+  async function handleSavePayment() {
+    if (!order) return
+    // cod → invoice への変更で、既にコレクト伝票を出力済みの可能性がある場合は確認する
+    // （G-1の逆方向はAPI側でブロックしないため、ここでのユーザー確認のみで進める）。
+    if (
+      paymentMethod === 'invoice' &&
+      order.payment_method === 'cod' &&
+      order.shipping_label_printed &&
+      !window.confirm('既にコレクト伝票を出力済みの可能性があります。請求書払いに変更しますか？')
+    ) {
+      return
+    }
+    setSavingPayment(true)
+    try {
+      const resolvedCodFee = paymentMethod === 'cod' ? codFee : 0
+      const res = await adminFetch(`/api/admin/orders/${orderId}/payment`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_method: paymentMethod, cod_fee: resolvedCodFee }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setMessage({ type: 'error', text: json.error || '支払方法の保存に失敗しました' })
+        return
+      }
+      setCodFee(resolvedCodFee)
+      setOrder((prev) => (prev ? { ...prev, payment_method: paymentMethod, cod_fee: resolvedCodFee } : null))
+      setMessage({ type: 'success', text: '支払方法を保存しました' })
+    } catch (err) {
+      console.error('支払方法保存エラー:', err)
+      setMessage({ type: 'error', text: '通信エラーが発生しました' })
+    } finally {
+      setSavingPayment(false)
+      setTimeout(() => setMessage(null), 5000)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -560,6 +635,17 @@ export default function AdminOrderDetailPage() {
         order?.company_id ?? null
       )
     : []
+
+  // 代引き関連の派生値（プレビュー表示用）。金額の内訳は「保存済みの明細・送料」
+  // （editItems・shippingLines。保存直後は order.order_items/order_shipping と一致する）から
+  // 算出し、代引き請求額の基準は order.total_amount（永続化された値）を使う。
+  const codItemsTotal = editItems.reduce((sum, item) => sum + item.subtotal, 0)
+  const codShippingTotal = shippingLines.reduce((sum, line) => sum + line.cost, 0)
+  const codAmountPreview = calcCodAmount(order.total_amount, codFee)
+  const codTaxPreview = calcCodTax(codItemsTotal, codShippingTotal, codFee)
+  const codOverLimit = isOverCodLimit(codAmountPreview)
+  const deliveryMethodNeedsAttention =
+    company?.delivery_method === 'pickup' || company?.delivery_method === 'direct_delivery'
 
   return (
     <div className="space-y-4 max-w-3xl">
@@ -658,6 +744,72 @@ export default function AdminOrderDetailPage() {
             )}
           </div>
         )}
+      </div>
+
+      {/* 支払方法（代引き対応。注文単位で指定。顧客マスタにはフラグを持たせない） */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <h2 className="font-bold text-gray-900 mb-3">支払方法</h2>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">支払方法</label>
+            <select
+              value={paymentMethod}
+              onChange={(e) => handlePaymentMethodChange(e.target.value as PaymentMethod)}
+              className="w-full md:w-auto border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+            >
+              <option value="invoice">{PAYMENT_METHOD_LABELS.invoice}</option>
+              <option value="cod" disabled={!!linkedInvoice}>{PAYMENT_METHOD_LABELS.cod}</option>
+            </select>
+            {linkedInvoice && (
+              <p className="text-xs text-amber-600 mt-1">
+                請求書 {linkedInvoice.invoice_number} に含まれているため、代金引換に変更するには先にその請求書を削除してください。
+              </p>
+            )}
+          </div>
+
+          {paymentMethod === 'cod' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">代引き手数料（税込）</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={codFee}
+                  onChange={(e) => setCodFee(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  className="w-full md:w-40 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  サジェスト額 ¥{suggestCodFee(order.total_amount).toLocaleString()}（契約内容により実際の手数料と異なる場合があります。手入力で上書きできます）
+                </p>
+              </div>
+
+              <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                代引き請求額 <span className="font-bold text-gray-900">{formatCurrency(codAmountPreview)}</span>
+                <span className="text-gray-500">（うち消費税 {formatCurrency(codTaxPreview)}）</span>
+              </div>
+
+              {codOverLimit && (
+                <p className="text-xs text-red-600 font-bold">
+                  ※ 代引き請求額が30万円を超えています。宅急便コレクトは30万円が上限です。
+                </p>
+              )}
+
+              {deliveryMethodNeedsAttention && (
+                <p className="text-xs text-amber-600">
+                  この取引先は直接配達・来店引取設定です。
+                </p>
+              )}
+            </>
+          )}
+
+          <button
+            onClick={handleSavePayment}
+            disabled={savingPayment}
+            className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
+          >
+            {savingPayment ? '保存中...' : '支払方法を保存'}
+          </button>
+        </div>
       </div>
 
       {/* 注文明細（pending・shipped で編集可能。送料セクションと同じ条件） */}

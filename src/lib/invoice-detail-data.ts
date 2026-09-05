@@ -44,6 +44,10 @@ export type InvoiceDetail = {
     tax0: number
     grandTotal: number
   }
+  // G-2（保険）: 紐づく注文に payment_method='cod' が混ざっている場合 true。
+  // G-1（保存時ブロック）があれば通常は発生しないが、手動DB操作や過去データの
+  // 混入を検知するための保険。PDF（invoice-html.ts）には出さず、画面表示のみで使う。
+  hasCodWarning: boolean
 }
 
 type OrderItemRow = {
@@ -62,6 +66,7 @@ type InvoiceItemRow = {
   order?: {
     shipping_date?: string | null
     delivery_date?: string | null
+    payment_method?: string | null
     order_items?: OrderItemRow[]
     order_shipping?: Array<{ label: string; cost: number }>
   } | null
@@ -125,6 +130,7 @@ export async function buildInvoiceDetail(
         order:orders (
           shipping_date,
           delivery_date,
+          payment_method,
           order_items (product_name, unit, quantity, unit_price, subtotal, tier_label, tier_quantity, is_custom, product:products (name, unit, category)),
           order_shipping (label, cost)
         )
@@ -183,10 +189,12 @@ export async function buildInvoiceDetail(
 
   const lineItems: InvoiceLineItem[] = []
   const invoiceItems = (invoice.invoice_items || []) as InvoiceItemRow[]
+  let hasCodWarning = false
 
   for (const invItem of invoiceItems) {
     const order = invItem.order
     if (!order) continue
+    if (order.payment_method === 'cod') hasCodWarning = true
 
     // 「M/D納品」は納品日基準。delivery_date 優先・shipping_date フォールバック。
     const sd = order.delivery_date || order.shipping_date || ''
@@ -279,5 +287,6 @@ export async function buildInvoiceDetail(
     },
     lineItems,
     summary: { subtotal8, tax8, subtotal10, tax10, subtotal0, tax0, grandTotal },
+    hasCodWarning,
   }
 }

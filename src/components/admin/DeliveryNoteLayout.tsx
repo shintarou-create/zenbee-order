@@ -1,6 +1,7 @@
 import type { Order } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import { formatQuantity, shouldShowTierBadge } from '@/lib/quantity-format'
+import { calcCodAmount, calcCodTax } from '@/lib/cod'
 
 function toJpDate(dateStr: string): string {
   const s = dateStr.split('T')[0]
@@ -23,6 +24,10 @@ export default function DeliveryNoteLayout({ order }: Props) {
   const tax10 = Math.floor((shippingSubtotal * 10) / 110)
   const itemsExcl = itemsSubtotal - tax8
   const shippingExcl = shippingSubtotal - tax10
+
+  const isCod = order.payment_method === 'cod'
+  const codAmount = isCod ? calcCodAmount(order.total_amount, order.cod_fee) : 0
+  const codTax = isCod ? calcCodTax(itemsSubtotal, shippingSubtotal, order.cod_fee) : 0
 
   const today = toJpDate(new Date().toISOString())
 
@@ -189,6 +194,25 @@ export default function DeliveryNoteLayout({ order }: Props) {
             <span style={{ fontSize: '14px', fontWeight: 500 }}>合計（税込）</span>
             <span style={{ fontSize: '24px', fontWeight: 500, color: '#111' }}>{formatCurrency(order.total_amount)}</span>
           </div>
+
+          {isCod && (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              border: '2px solid #111',
+              marginTop: '10px',
+              padding: '9px 10px',
+            }}>
+              <span style={{ fontSize: '14px', fontWeight: 700 }}>代金引換（お荷物と引き換えにお支払いください）</span>
+              <span style={{ fontSize: '18px', fontWeight: 700, color: '#111' }}>
+                {formatCurrency(codAmount)}
+                <span style={{ fontSize: '11px', fontWeight: 500, color: '#444', marginLeft: '6px' }}>
+                  （うち消費税 {formatCurrency(codTax)}）
+                </span>
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

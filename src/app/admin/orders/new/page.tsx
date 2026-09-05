@@ -10,6 +10,8 @@ import { formatUnitWithTotal, shouldShowTierBadge, isSetCategory } from '@/lib/q
 import { sortProductsByUsage } from '@/lib/product-sort'
 import { DELIVERY_TIME_SLOT_OPTIONS } from '@/lib/yamato-csv'
 import { filterTiersForCompany } from '@/lib/tier-visibility'
+import type { PaymentMethod } from '@/types'
+import { PAYMENT_METHOD_LABELS } from '@/types'
 
 type PricingTier = {
   id: string
@@ -98,6 +100,10 @@ export default function AdminOrderNewPage() {
   const [deliveryDate, setDeliveryDate] = useState('')
   const [deliveryTimeSlot, setDeliveryTimeSlot] = useState('')
   const [notes, setNotes] = useState('')
+
+  // 支払方法（代引き対応。初期値は請求書払い・手数料0）
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('invoice')
+  const [codFee, setCodFee] = useState(0)
 
   // 送信
   const [submitting, setSubmitting] = useState(false)
@@ -280,6 +286,8 @@ export default function AdminOrderNewPage() {
       deliveryDate: deliveryDate || null,
       deliveryTimeSlot: deliveryTimeSlot || null,
       notes: notes || null,
+      paymentMethod,
+      codFee: paymentMethod === 'cod' ? codFee : 0,
     }
 
     setSubmitting(true)
@@ -613,6 +621,35 @@ export default function AdminOrderNewPage() {
             rows={3}
             className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"
           />
+        </section>
+
+        {/* 支払方法（代引き対応） */}
+        <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
+          <h2 className="text-base font-bold text-gray-900">支払方法</h2>
+          <select
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+            className="w-full sm:w-auto border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+          >
+            <option value="invoice">{PAYMENT_METHOD_LABELS.invoice}</option>
+            <option value="cod">{PAYMENT_METHOD_LABELS.cod}</option>
+          </select>
+
+          {paymentMethod === 'cod' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">代引き手数料（税込）</label>
+              <input
+                type="number"
+                min={0}
+                value={codFee}
+                onChange={(e) => setCodFee(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                className="w-full sm:w-40 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                金額はこの画面では自動計算されません。登録後、注文詳細画面で合計金額を確認してから金額を確定してください。
+              </p>
+            </div>
+          )}
         </section>
 
         {/* エラー */}

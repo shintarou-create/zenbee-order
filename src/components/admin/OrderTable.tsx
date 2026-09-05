@@ -35,6 +35,17 @@ function getDisplayStatusColor(order: Order): string {
   return getOrderStatusColor(order.status)
 }
 
+// 代引きバッジ。伝票作成時の取り違え防止が目的のため、一覧をざっと見ただけで
+// 確実に気づける強い赤色で表示する（他の淡色バッジとは区別する）。
+function CodBadge({ order }: { order: Order }) {
+  if (order.payment_method !== 'cod') return null
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs font-bold text-white bg-red-600 px-1.5 py-0.5 rounded">
+      代引
+    </span>
+  )
+}
+
 function LabelBadge({
   order,
   onUnmarkLabel,
@@ -244,9 +255,12 @@ export default function OrderTable({
 
         {/* お客様 */}
         <td className="px-4 py-3 max-w-[200px]">
-          <p className="font-medium text-base text-gray-900 leading-snug truncate">
-            {company?.company_name || '—'}
-          </p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="flex-shrink-0"><CodBadge order={order} /></span>
+            <p className="font-medium text-base text-gray-900 leading-snug truncate min-w-0">
+              {company?.company_name || '—'}
+            </p>
+          </div>
           <p className="text-xs text-gray-400 mt-0.5 truncate">
             {order.order_number}・{formatDate(order.created_at)}
           </p>
@@ -354,7 +368,8 @@ export default function OrderTable({
                 className="mt-1 w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500 flex-shrink-0"
               />
             )}
-            <p className="font-semibold text-gray-900 text-base leading-snug truncate">
+            <span className="flex-shrink-0"><CodBadge order={order} /></span>
+            <p className="font-semibold text-gray-900 text-base leading-snug truncate min-w-0">
               {company?.company_name || '—'}
             </p>
           </div>

@@ -63,6 +63,9 @@ async function fetchOrdersForBillingMonth(supabase: SupabaseClientType, billingM
         company:companies (*)
       `)
       .in('status', ['shipped', 'done'])
+      // 代引き（cod）は現金回収済みのため月次請求書には載せない（二重請求防止）。
+      // 売上分析・sales_facts系は対象外にしない（ここは「請求書に載せるか」だけの絞り込み）。
+      .neq('payment_method', 'cod')
       .order('id', { ascending: true })
       .range(from, to)
   )
@@ -172,6 +175,17 @@ async function createInvoiceForCompany(
 
   if (existing) {
     return { status: 'already_exists', invoiceNumber: existing.invoice_number }
+  }
+
+  // G-3（最後の砦）: fetchOrdersForBillingMonth で代引き注文は除外済みのはずだが、
+  // この関数は一括生成・単体生成の唯一の入口のため、INSERT直前にもう一度確認する。
+  // 「未請求警告バナーの数字」と「実際に作られる請求書」がズレないことを優先する。
+  const codOrder = compOrders.find((o) => o.payment_method === 'cod')
+  if (codOrder) {
+    return {
+      status: 'error',
+      error: `注文 ${codOrder.order_number} は代金引換のため請求書に含められません（データ不整合の可能性があります）。`,
+    }
   }
 
   const [year, month] = billingMonth.split('-').map(Number)
@@ -367,7 +381,7 @@ export default function AdminInvoicesPage() {
         .select(`
           *,
           company:companies (company_name, email, has_separate_billing, billing_name, invoice_delivery_method),
-          invoice_items (id, order_id, amount),
+          invoice_items (id, order_id, amount, order:orders (payment_method)),
           invoice_adjustments (id)
         `)
         .eq('billing_month', selectedMonth)
@@ -1195,6 +1209,12 @@ export default function AdminInvoicesPage() {
 
   // 請求先会社の表示情報。has_separate_billing かつ billing_name があれば billing_name を主表示、
   // company_name を「店舗名」として添える。
+  // G-2（保険）: 請求書に紐づく注文に payment_method='cod' が混ざっていないかの警告判定。
+  // G-1（保存時ブロック）があれば通常は発生しないが、手動DB操作や過去データの混入を検知する。
+  function invoiceHasCodWarning(invoice: Invoice): boolean {
+    return (invoice.invoice_items ?? []).some((item) => item.order?.payment_method === 'cod')
+  }
+
   function getCompanyView(invoice: Invoice) {
     const c = invoice.company as
       | {
@@ -1575,6 +1595,11 @@ export default function AdminInvoicesPage() {
                         )}
                         {isEmailMethod && !hasEmail && (
                           <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">メール未登録</span>
+                        )}
+                        {invoiceHasCodWarning(invoice) && (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                            ⚠ 代引き注文が含まれています
+                          </span>
                         )}
                       </div>
 

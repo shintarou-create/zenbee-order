@@ -43,6 +43,8 @@ type InvoiceDetail = {
     tax10: number
     grandTotal: number
   }
+  // G-2（保険）: 紐づく注文に代引き（cod）が混ざっている場合 true。画面表示のみ・印刷（PDF）には出さない。
+  hasCodWarning?: boolean
 }
 
 // 発行者（株式会社善兵衛）固定情報。納品書（DeliveryNoteLayout）と同一の本社住所。
@@ -177,6 +179,13 @@ export default function InvoicePrintPage() {
           }
         }
       `}</style>
+
+      {/* G-2（保険）警告バナー。印刷（PDF）には出さない no-print 領域のみに表示する */}
+      {detail.hasCodWarning && (
+        <div className="no-print mx-6 mt-4 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm font-bold text-red-700">
+          ⚠ この請求書には代金引換（cod）の注文が含まれています。データ不整合の可能性があります。確認してください。
+        </div>
+      )}
 
       {/* 操作バー（印刷時非表示） */}
       <div className="no-print mb-6 flex items-center gap-3 px-6 pt-4">

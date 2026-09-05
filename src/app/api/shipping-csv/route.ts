@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { generateYamatoCsv } from '@/lib/yamato-csv'
 import type { OrderForCsv } from '@/lib/yamato-csv'
+import { calcCodAmount, calcCodTax } from '@/lib/cod'
 import type { ShippingCsvRequest } from '@/types'
 
 export async function POST(req: NextRequest) {
@@ -29,10 +30,12 @@ export async function POST(req: NextRequest) {
           quantity,
           tier_quantity,
           tier_label,
+          subtotal,
           product:products (name, category, unit, step_qty, cool_type)
         ),
         order_shipping (
-          quantity
+          quantity,
+          cost
         )
       `)
       .in('id', orderIds)
@@ -50,6 +53,34 @@ export async function POST(req: NextRequest) {
     // OrderForCsv 形式に変換
     const csvOrders: OrderForCsv[] = orders.map((order) => {
       const company = order.company
+      const orderItems = order.order_items || []
+      const orderShipping = order.order_shipping || []
+
+      // 代引き（payment_method='cod'）の注文のみ codAmount・codTax を算出する。
+      let codAmount: number | undefined
+      let codTax: number | undefined
+      if (order.payment_method === 'cod') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const itemsTotal = orderItems.reduce((sum: number, i: any) => sum + (i.subtotal || 0), 0)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const shippingTotal = orderShipping.reduce((sum: number, s: any) => sum + (s.cost || 0), 0)
+        // 整合性チェック: 明細合計とtotal_amountが一致しない場合はtotal_amountを正として
+        // 代引き総額を算出する（税額の内訳計算だけは取得した明細から求める）。
+        if (itemsTotal + shippingTotal !== order.total_amount) {
+          console.warn(
+            `[shipping-csv] 注文 ${order.order_number} の明細合計(${itemsTotal + shippingTotal})と total_amount(${order.total_amount}) が一致しません。total_amount を正として代引き総額を算出します。`
+          )
+        }
+        // company.delivery_method が pickup/direct_delivery の会社はそもそもヤマトを使わない運用。
+        if (company?.delivery_method === 'pickup' || company?.delivery_method === 'direct_delivery') {
+          console.warn(
+            `[shipping-csv] 注文 ${order.order_number} は代金引換ですが、取引先の発送方法が${company.delivery_method}です（通常ヤマトを使わない運用のはずです）。`
+          )
+        }
+        codAmount = calcCodAmount(order.total_amount, order.cod_fee)
+        codTax = calcCodTax(itemsTotal, shippingTotal, order.cod_fee)
+      }
+
       return {
         orderNumber: order.order_number,
         deliveryDate: order.delivery_date || undefined,
@@ -57,7 +88,7 @@ export async function POST(req: NextRequest) {
         notes: order.notes || undefined,
         // 口数（箱数）= 送料行の「本数」（行数）。送料欄UIは1行=1箱で、箱を増やす際は
         // 行を追加する運用のため、quantity の合算ではなく行数（length）で数える。
-        shippingCount: (order.order_shipping || []).length,
+        shippingCount: orderShipping.length,
         company: {
           postalCode: company?.postal_code || '',
           prefecture: company?.prefecture || '',
@@ -69,7 +100,7 @@ export async function POST(req: NextRequest) {
           phone: company?.phone || '',
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        items: (order.order_items || []).map((item: any) => ({
+        items: orderItems.map((item: any) => ({
           quantity: item.quantity,
           tier_quantity: item.tier_quantity ?? null,
           tier_label: item.tier_label ?? null,
@@ -81,6 +112,8 @@ export async function POST(req: NextRequest) {
             cool_type: item.product?.cool_type ?? 0,
           },
         })),
+        codAmount,
+        codTax,
       }
     })
 

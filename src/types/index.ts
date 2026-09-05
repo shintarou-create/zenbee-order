@@ -6,6 +6,13 @@
 export type PriceRank = 'standard' | 'premium' | 'vip'
 export type DeliveryMethod = 'yamato' | 'direct_delivery' | 'pickup'
 
+// 注文単位の支払方法（顧客マスタにはフラグを持たせない。回によって変わるため）
+export type PaymentMethod = 'invoice' | 'cod'
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  invoice: '請求書払い',
+  cod: '代金引換',
+}
+
 // 請求書の送付方法（取引先ごと）
 export type InvoiceDeliveryMethod = 'email' | 'postal' | 'other'
 export const INVOICE_DELIVERY_METHOD_LABELS: Record<InvoiceDeliveryMethod, string> = {
@@ -227,6 +234,9 @@ export interface Order {
   billing_city: string | null
   billing_address: string | null
   billing_building: string | null
+  // 支払方法（注文単位。代金引換のとき cod_fee が意味を持つ）
+  payment_method: PaymentMethod
+  cod_fee: number
   created_at: string
   updated_at: string
   // Joined fields
@@ -236,7 +246,7 @@ export interface Order {
 }
 
 export type OrderInput = Omit<Order, 'id' | 'created_at' | 'updated_at' | 'company' | 'order_items' | 'order_shipping'>
-export type OrderUpdate = Partial<Pick<Order, 'status' | 'shipping_date' | 'delivery_date' | 'delivery_time_slot' | 'shipping_label_printed' | 'delivery_note_printed' | 'details_confirmed' | 'admin_notes' | 'billing_name' | 'billing_postal_code' | 'billing_prefecture' | 'billing_city' | 'billing_address' | 'billing_building'>>
+export type OrderUpdate = Partial<Pick<Order, 'status' | 'shipping_date' | 'delivery_date' | 'delivery_time_slot' | 'shipping_label_printed' | 'delivery_note_printed' | 'details_confirmed' | 'admin_notes' | 'billing_name' | 'billing_postal_code' | 'billing_prefecture' | 'billing_city' | 'billing_address' | 'billing_building' | 'payment_method' | 'cod_fee'>>
 
 // ============================================================
 // OrderItem

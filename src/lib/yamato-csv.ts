@@ -59,6 +59,10 @@ export interface OrderForCsv {
   shippingCount?: number
   company: CompanyForCsv
   items: OrderItemForCsv[]
+  // 代引き（ヤマトコレクト）。codAmount・codTax の両方が入っていて codAmount > 0 のときだけ
+  // 代引きモードとして扱う（どちらか欠けている・0以下の注文は従来通りの発払いで出力する）。
+  codAmount?: number  // 代引き総額（税込）
+  codTax?: number     // 内消費税額等
 }
 
 // ────────────────────────────────────────────────────────────
@@ -418,6 +422,12 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
   const ambientItems = items.filter(i => i.product.cool_type === 0)
   const typeCount = [ambientItems, coolItems, frozenItems].filter(a => a.length > 0).length
 
+  // 代引き（ヤマトコレクト）。codAmount・codTax の両方が入っていて codAmount > 0 のときだけ
+  // 代引きモードとして扱う。代金は最初に出力される1行にのみ載せる（codAssignedで制御）。
+  const isCod = order.codAmount != null && order.codTax != null && order.codAmount > 0
+  const codInfo = isCod ? { amount: order.codAmount as number, tax: order.codTax as number } : null
+  let codAssigned = false
+
   function buildRow(
     orderNum: string,
     coolType: number,
@@ -426,12 +436,13 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
     handling2: string,
     boxCount: number,
     isMultiPackage: boolean,
+    codRowInfo?: { amount: number; tax: number },
   ): string[] {
     // 公式テンプレート95列。未指定の列は全て空文字のまま出力する。
     // 列番号(1始まり) = 配列index + 1。列ズレ防止のため index 指定で代入する。
     const row: string[] = new Array(95).fill('')
     row[0]  = orderNum                                   //  1: お客様管理番号
-    row[1]  = isMultiPackage ? '6' : '0'                 //  2: 送り状種類（6=複数口 / 0=発払い）
+    row[1]  = codRowInfo ? '2' : (isMultiPackage ? '6' : '0') //  2: 送り状種類（2=コレクト / 6=複数口 / 0=発払い）
     row[2]  = String(coolType)                           //  3: クール区分
     // row[3]                                            //  4: 伝票番号（B2自動付与・空欄）
     row[4]  = shipDateStr                                //  5: 出荷予定日（画面で選んだ発送日 YYYY/MM/DD）
@@ -463,13 +474,54 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
     row[30] = handling1                                  // 31: 荷扱い１
     row[31] = handling2                                  // 32: 荷扱い２
     // row[32]                                           // 33: 記事
-    row[37] = String(boxCount)                           // 38: 発行枚数
-    row[38] = isMultiPackage ? '3' : ''                  // 39: 個数口表示フラグ
+    if (codRowInfo) {
+      row[33] = String(codRowInfo.amount)                // 34: ｺﾚｸﾄ代金引換額（税込)
+      row[34] = String(codRowInfo.tax)                   // 35: 内消費税額等
+      row[37] = '1'                                      // 38: 発行枚数（コレクトは複数口が無いため必ず1）
+      row[38] = ''                                       // 39: 個数口表示フラグ（コレクトでは使用不可）
+    } else {
+      // row[33]                                         // 34: ｺﾚｸﾄ代金引換額（税込)（コレクト以外は空）
+      // row[34]                                         // 35: 内消費税額等（コレクト以外は空）
+      row[37] = String(boxCount)                         // 38: 発行枚数
+      row[38] = isMultiPackage ? '3' : ''                // 39: 個数口表示フラグ
+    }
     row[39] = getYamatoCustomerCode()                    // 40: 請求先顧客コード
     // row[40]                                           // 41: 請求先分類コード
     row[41] = getYamatoFreightManagementNo()             // 42: 運賃管理番号
-    row[73] = isMultiPackage ? orderNum.replace(/-/g, '') : '' // 74: 複数口くくりキー（半角英数字20文字・ハイフン不可。複数口時のみ注文番号）
+    row[73] = codRowInfo ? '' : (isMultiPackage ? orderNum.replace(/-/g, '') : '') // 74: 複数口くくりキー（半角英数字20文字・ハイフン不可。複数口時のみ注文番号。コレクトでは使用不可）
     return row
+  }
+
+  // 代引き対応の行追加ヘルパー。最初に呼ばれたとき（isCod && !codAssigned）だけ代引き行として
+  // 積み、その温度帯の箱数が2以上なら残り(boxes-1)箱を通常の発払い（複数口可）行として
+  // 追加で積む（コレクトには複数口が存在しないため）。2回目以降の呼び出しは常に通常どおり。
+  function pushBandRow(
+    customerMgmtNumber: string,
+    coolType: number,
+    itemName: string,
+    handling1: string,
+    handling2: string,
+    boxes: number,
+    normalMultiPackage: boolean,
+    bandLabel: string,
+  ) {
+    if (codInfo && !codAssigned) {
+      codAssigned = true
+      rows.push(buildRow(customerMgmtNumber, coolType, itemName, handling1, handling2, 1, false, codInfo))
+      if (boxes >= 2) {
+        const remainderBoxes = boxes - 1
+        let remainderMultiPackage = remainderBoxes >= 2
+        if (remainderBoxes > 99) {
+          console.warn(
+            `[yamato-csv] 注文 ${order.orderNumber} の${bandLabel}残箱数が99を超過(${remainderBoxes})。複数口を無効化し発払いにフォールバックします。`,
+          )
+          remainderMultiPackage = false
+        }
+        rows.push(buildRow(`${customerMgmtNumber}-R`, coolType, itemName, handling1, handling2, remainderBoxes, remainderMultiPackage))
+      }
+      return
+    }
+    rows.push(buildRow(customerMgmtNumber, coolType, itemName, handling1, handling2, boxes, normalMultiPackage))
   }
 
   const rows: string[][] = []
@@ -497,7 +549,7 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
       }
       // 複数口でも行は1行のみ。発行枚数(row[37])=N をB2が展開する。
       // 行を口数ぶん複製すると「行数 × 発行枚数」で二重計上されるため複製しない。
-      rows.push(buildRow(
+      pushBandRow(
         order.orderNumber,
         0,
         itemName,
@@ -505,7 +557,8 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
         h2,
         ambientBoxes,
         isMultiPackage,
-      ))
+        '常温',
+      )
     } else {
       // 混載（常温＋クール/冷凍）。送料行はクール区分を持たず温度帯に按分できないため、
       // 従来の箱数換算ロジックを維持し、温度帯ごとに別々の送り状として出力する。
@@ -519,7 +572,7 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
         )
         ambientMultiPackage = false
       }
-      rows.push(buildRow(
+      pushBandRow(
         `${order.orderNumber}-${suffix}`,
         0,
         itemName,
@@ -527,13 +580,14 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
         h2,
         ambientBoxes,
         ambientMultiPackage,
-      ))
+        '常温',
+      )
     }
   }
 
   if (coolItems.length > 0) {
     suffix++
-    rows.push(buildRow(
+    pushBandRow(
       typeCount > 1 ? `${order.orderNumber}-${suffix}` : order.orderNumber,
       2,  // ヤマト クール区分: 2=冷蔵
       '枇杷',
@@ -541,12 +595,13 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
       '下積み厳禁',
       calcCoolBoxes(coolItems),
       false,  // クール便は複数口にできないため常に単一送り状
-    ))
+      'クール',
+    )
   }
 
   if (frozenItems.length > 0) {
     suffix++
-    rows.push(buildRow(
+    pushBandRow(
       typeCount > 1 ? `${order.orderNumber}-${suffix}` : order.orderNumber,
       1,  // ヤマト クール区分: 1=冷凍
       '冷凍みかんジュース',
@@ -554,7 +609,8 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
       '下積み厳禁',
       calcFrozenBoxes(frozenItems),
       false,  // クール便は複数口にできないため常に単一送り状
-    ))
+      '冷凍',
+    )
   }
 
   return rows

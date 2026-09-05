@@ -22,11 +22,19 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { companyId, newCompanyName, items, notes, deliveryDate, deliveryTimeSlot } = body
+    const { companyId, newCompanyName, items, notes, deliveryDate, deliveryTimeSlot, paymentMethod, codFee } = body
 
     if (!companyId && !newCompanyName?.trim()) {
       return NextResponse.json({ error: '取引先を指定してください' }, { status: 400 })
     }
+    if (paymentMethod !== undefined && paymentMethod !== 'invoice' && paymentMethod !== 'cod') {
+      return NextResponse.json({ error: 'paymentMethod は invoice または cod を指定してください' }, { status: 400 })
+    }
+    if (codFee !== undefined && (!Number.isInteger(codFee) || codFee < 0)) {
+      return NextResponse.json({ error: 'codFee は0以上の整数で指定してください' }, { status: 400 })
+    }
+    const resolvedPaymentMethod = paymentMethod === 'cod' ? 'cod' : 'invoice'
+    const resolvedCodFee = resolvedPaymentMethod === 'cod' && Number.isInteger(codFee) ? codFee : 0
     if (!items || items.length === 0) {
       return NextResponse.json({ error: '注文商品が指定されていません' }, { status: 400 })
     }
@@ -328,6 +336,8 @@ export async function POST(req: NextRequest) {
         notes: notes || null,
         delivery_date: deliveryDate || null,
         delivery_time_slot: deliveryTimeSlot || null,
+        payment_method: resolvedPaymentMethod,
+        cod_fee: resolvedCodFee,
       })
       .select()
       .single()
