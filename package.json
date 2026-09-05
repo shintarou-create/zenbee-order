@@ -12,6 +12,9 @@
     "seed:legacy-product-mappings": "tsx --env-file=.env.local scripts/seed-legacy-product-mappings.ts",
     "import:legacy-wholesale": "tsx --env-file=.env.local scripts/import-legacy-wholesale.ts",
     "verify:legacy-wholesale": "tsx --env-file=.env.local scripts/verify-legacy-wholesale.ts",
+    "seed:colorme-product-mappings": "tsx --env-file=.env.local scripts/seed-colorme-product-mappings.ts",
+    "import:colorme": "tsx --env-file=.env.local scripts/import-colorme-sales.ts",
+    "verify:colorme": "tsx --env-file=.env.local scripts/verify-colorme-sales.ts",
     "setup:tatsumi-quote": "tsx --env-file=.env.local scripts/setup-tatsumi-quote-20260904.ts"
   },
   "dependencies": {
