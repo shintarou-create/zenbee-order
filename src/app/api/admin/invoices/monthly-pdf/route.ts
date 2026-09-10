@@ -18,8 +18,17 @@ function em(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)).slice(0, 200)
 }
 
+// Storageのオブジェクトキー（内部パス）はASCII安全な文字だけにする。
+// 日本語・アンダースコア・全角文字を含めると Supabase Storage が
+// "Invalid key" で upload を拒否するため。
 function storagePathFor(billingMonth: string): string {
-  return `monthly/請求書_${billingMonth}_一式.pdf`
+  return `monthly/invoices-${billingMonth}.pdf`
+}
+
+// ユーザーに見えるダウンロードファイル名（Content-Disposition・署名URLのdownloadオプション用）。
+// Storageのキーとは別物。こちらは従来通り日本語のまま維持する。
+function downloadFilenameFor(billingMonth: string): string {
+  return `請求書_${billingMonth}_一式.pdf`
 }
 
 function extractHead(html: string): string {
@@ -124,7 +133,7 @@ export async function POST(req: NextRequest) {
       console.error('[monthly-pdf] invoice_monthly_export_log insert (non-fatal):', logError.message)
     }
 
-    const filename = `請求書_${billingMonth}_一式.pdf`
+    const filename = downloadFilenameFor(billingMonth)
     return new NextResponse(new Uint8Array(pdf), {
       status: 200,
       headers: {
@@ -165,9 +174,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'この月の保存済みPDFはありません' }, { status: 404 })
     }
 
+    // download オプションに日本語ファイル名を指定し、署名URLを開いたときも
+    // Storageキー（invoices-2026-06.pdf等）ではなく日本語のファイル名で保存されるようにする。
     const { data: signed, error: signedError } = await supabase.storage
       .from(BUCKET)
-      .createSignedUrl(logRow.storage_path, 60)
+      .createSignedUrl(logRow.storage_path, 60, { download: downloadFilenameFor(billingMonth) })
 
     if (signedError || !signed) {
       console.error('[monthly-pdf GET] createSignedUrl失敗:', signedError)
