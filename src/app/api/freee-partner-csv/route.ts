@@ -43,9 +43,16 @@ export async function POST(req: NextRequest) {
 
     const supabase = createServiceClient()
 
-    let query = supabase.from('companies').select('id, company_name').eq('freee_partner_registered', false)
+    // companyIds が明示指定された場合は freee_partner_registered を条件にしない
+    // （このフラグは手動更新のため実態とズレることがあり、例えば「freee取引先照合」機能で
+    // 検出した未登録企業はフラグがtrueのまま残っている場合がある。呼び出し側が明示的に
+    // 選んだ企業は、フラグの値に関わらずそのままCSVに含める）。
+    // companyIds 未指定時は従来通り「未登録（false）の全社」を対象にする。
+    let query = supabase.from('companies').select('id, company_name')
     if (companyIds && companyIds.length > 0) {
       query = query.in('id', companyIds as string[])
+    } else {
+      query = query.eq('freee_partner_registered', false)
     }
     const { data, error } = await query.order('company_name', { ascending: true })
 

@@ -7,6 +7,7 @@ import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
 import { fetchAllRows } from '@/lib/supabase-batch'
 import { decodeFreeeCsvFile, parseFreeePartnerCsv, matchUnregisteredCompanies, type PartnerMatchResult } from '@/lib/freee-partner-match'
+import FreeePartnerReconcilePanel from '@/components/admin/FreeePartnerReconcilePanel'
 
 type TabKey = 'all' | 'draft' | 'sent'
 type SupabaseClientType = ReturnType<typeof createClient>
@@ -301,6 +302,8 @@ export default function AdminInvoicesPage() {
   const [partnerMatchFile, setPartnerMatchFile] = useState<File | null>(null)
   const [partnerMatching, setPartnerMatching] = useState(false)
   const [partnerMatchResult, setPartnerMatchResult] = useState<PartnerMatchResult | null>(null)
+  // freee取引先照合（請求書CSVを出す前に、その月の請求対象社をfreeeエクスポートCSVと突合する）
+  const [showReconcileModal, setShowReconcileModal] = useState(false)
   const [gmailDraftingId, setGmailDraftingId] = useState<string | null>(null)
   const [pdfDownloadingId, setPdfDownloadingId] = useState<string | null>(null)
   const [bulkRunning, setBulkRunning] = useState(false)
@@ -1309,6 +1312,20 @@ export default function AdminInvoicesPage() {
     })
     .map((inv) => getCompanyView(inv).displayName)
 
+  // freee取引先照合パネル用: この月の請求対象社（invoices.company_id ベース、検索フィルタの
+  // 影響を受けない全件）。company_name は生の値を使う（freeeの請求書CSVも billing_name 等に
+  // 差し替えず companies.company_name をそのまま使うため、揃える必要がある）。
+  const billingCompanies = Array.from(
+    new Map(
+      invoices
+        .map((inv) => {
+          const name = (inv.company as { company_name?: string } | undefined)?.company_name
+          return name ? ([inv.company_id, { id: inv.company_id, company_name: name }] as const) : null
+        })
+        .filter((x): x is readonly [string, { id: string; company_name: string }] => x !== null)
+    ).values()
+  )
+
   // 未請求注文の集計（画面上部の警告バナー・「1社だけ作成」モーダルで共通利用）
   const unbilledSummaries = computeUnbilledSummaries(monthOrders, invoices)
   const unbilledWithoutInvoice = unbilledSummaries.filter((s) => !s.existingInvoice)
@@ -1411,6 +1428,16 @@ export default function AdminInvoicesPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a4 4 0 10-4-4" />
             </svg>
             {unregisteredCompanies.length === 0 ? '取引先CSV（未登録なし）' : `取引先CSV（未登録${unregisteredCompanies.length}社）`}
+          </button>
+          <button
+            onClick={() => setShowReconcileModal(true)}
+            disabled={invoices.length === 0}
+            className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            freee取引先照合
           </button>
         </div>
       </div>
@@ -2113,6 +2140,27 @@ export default function AdminInvoicesPage() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* freee取引先照合モーダル（請求書CSVを出す前に、その月の請求対象社をfreeeエクスポートCSVと突合） */}
+      {showReconcileModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-base font-bold text-gray-900">freee取引先照合</h2>
+              <button
+                onClick={() => setShowReconcileModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+                aria-label="閉じる"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-5">
+              <FreeePartnerReconcilePanel billingMonth={selectedMonth} billingCompanies={billingCompanies} />
+            </div>
           </div>
         </div>
       )}
