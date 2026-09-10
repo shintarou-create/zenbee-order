@@ -352,11 +352,18 @@ export default function AdminInvoicesPage() {
     `${defaultMonth.getFullYear()}-${String(defaultMonth.getMonth() + 1).padStart(2, '0')}`
   )
 
+  // 月次PDF一式（全社ぶん請求書を1本のPDFに連結してダウンロード＋Storageに保存）
+  const [generatingMonthlyPdf, setGeneratingMonthlyPdf] = useState(false)
+  const [monthlyPdfInfo, setMonthlyPdfInfo] = useState<{ exportedAt: string; url: string } | null>(null)
+  const [monthlyPdfChecking, setMonthlyPdfChecking] = useState(false)
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     fetchInvoices()
     // eslint-disable-next-line react-hooks/exhaustive-deps
     fetchMonthOrders()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchMonthlyPdfInfo()
   }, [selectedMonth]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1040,6 +1047,69 @@ export default function AdminInvoicesPage() {
     }
   }
 
+  // 選択中の月に保存済みの月次PDFがあるか確認する（あればバッジ＋再ダウンロードリンクを表示）。
+  // 無ければ（404）monthlyPdfInfo は null のまま＝バッジ非表示。
+  async function fetchMonthlyPdfInfo() {
+    setMonthlyPdfChecking(true)
+    try {
+      const res = await adminFetch(`/api/admin/invoices/monthly-pdf?billingMonth=${encodeURIComponent(selectedMonth)}`)
+      if (!res.ok) {
+        setMonthlyPdfInfo(null)
+        return
+      }
+      const json = (await res.json()) as { url: string; exportedAt: string }
+      setMonthlyPdfInfo({ url: json.url, exportedAt: json.exportedAt })
+    } catch (err) {
+      console.error('月次PDF確認エラー:', err)
+      setMonthlyPdfInfo(null)
+    } finally {
+      setMonthlyPdfChecking(false)
+    }
+  }
+
+  // 月次PDF一式を生成・Storage保存し、その場でダウンロードする（1リクエストで両方行う）。
+  async function handleGenerateMonthlyPdf() {
+    setGeneratingMonthlyPdf(true)
+    setMessage({ type: 'success', text: '月次PDFを作成しています…（初回は準備に30秒ほどかかります）' })
+    try {
+      const res = await adminFetch('/api/admin/invoices/monthly-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billingMonth: selectedMonth }),
+      })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        setMessage({ type: 'error', text: json.error || '月次PDFの作成に失敗しました' })
+        setTimeout(() => setMessage(null), 12000)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const filename = `請求書_${selectedMonth}_一式.pdf`
+      try {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      } catch {
+        // ダウンロード発火に失敗する環境向けフォールバック
+        window.open(url, '_blank')
+      }
+      setMessage({ type: 'success', text: '月次PDFを保存しました' })
+      setTimeout(() => setMessage(null), 4000)
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+      // 保存成功後、バッジ表示を最新化する
+      await fetchMonthlyPdfInfo()
+    } catch (err) {
+      setMessage({ type: 'error', text: `月次PDFの作成に失敗: ${err instanceof Error ? err.message : String(err)}` })
+      setTimeout(() => setMessage(null), 12000)
+    } finally {
+      setGeneratingMonthlyPdf(false)
+    }
+  }
+
   async function handleDownloadFreeeCsv() {
     setDownloadingCsv(true)
     try {
@@ -1385,6 +1455,20 @@ export default function AdminInvoicesPage() {
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
             />
+            {!monthlyPdfChecking && monthlyPdfInfo && (
+              <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500">
+                <span className="bg-gray-100 text-gray-600 font-medium px-2 py-0.5 rounded-full">
+                  PDF保存済み {new Date(monthlyPdfInfo.exportedAt).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}出力
+                </span>
+                <button
+                  type="button"
+                  onClick={() => window.open(monthlyPdfInfo.url, '_blank')}
+                  className="text-green-600 hover:text-green-800 font-medium underline"
+                >
+                  再ダウンロード
+                </button>
+              </div>
+            )}
           </div>
           <button
             onClick={handleGenerateInvoices}
@@ -1418,6 +1502,16 @@ export default function AdminInvoicesPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
             {downloadingCsv ? 'ダウンロード中...' : 'freee CSV'}
+          </button>
+          <button
+            onClick={handleGenerateMonthlyPdf}
+            disabled={generatingMonthlyPdf || invoices.length === 0}
+            className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-6 4h6m2 5H7a2 2 0 01-2-2V4a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V20a2 2 0 01-2 2z" />
+            </svg>
+            {generatingMonthlyPdf ? 'PDF作成中...' : '月次PDF一式を作成・保存'}
           </button>
           <button
             onClick={openPartnerModal}
