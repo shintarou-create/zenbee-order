@@ -114,6 +114,7 @@ export default function OrderDetailPage() {
             <div>
               <p className="font-bold text-gray-900 text-lg">{order.order_number}</p>
               <p className="text-gray-500 text-sm">{formatDate(order.created_at)}</p>
+              <p className="text-gray-500 text-sm mt-1">発注担当者: {order.ordered_by_display_name || '担当者不明'}</p>
             </div>
             <span className={`text-sm font-bold px-3 py-1 rounded-full ${getCustomerOrderStatusColor(order.status, order.details_confirmed)}`}>
               {getCustomerOrderStatusLabel(order.status, order.details_confirmed)}

@@ -689,6 +689,10 @@ export default function AdminOrderDetailPage() {
               <span>{formatDate(order.created_at)}</span>
             </div>
             <div className="flex justify-between">
+              <span className="text-gray-500">発注担当者</span>
+              <span>{order.ordered_by_display_name || '担当者不明'}</span>
+            </div>
+            <div className="flex justify-between">
               <span className="text-gray-500">発送日</span>
               <span>{order.shipping_date ? formatDate(order.shipping_date) : '—'}</span>
             </div>

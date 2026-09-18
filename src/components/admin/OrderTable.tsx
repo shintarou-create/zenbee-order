@@ -264,6 +264,10 @@ export default function OrderTable({
           <p className="text-xs text-gray-400 mt-0.5 truncate">
             {order.order_number}・{formatDate(order.created_at)}
           </p>
+          {/* 同じ会社内の複数担当者を見分けるため。管理画面からの手動注文・過去注文はnullで非表示 */}
+          {order.ordered_by_display_name && (
+            <p className="text-xs text-gray-400 truncate">発注: {order.ordered_by_display_name}</p>
+          )}
           {(order.details_confirmed || order.shipping_label_printed) && (
             <div className="flex items-center gap-1 mt-1 flex-wrap">
               {order.details_confirmed && (
@@ -388,6 +392,9 @@ export default function OrderTable({
         <p className="text-xs text-gray-400">
           {order.order_number}・{formatDate(order.created_at)}
         </p>
+        {order.ordered_by_display_name && (
+          <p className="text-xs text-gray-400">発注: {order.ordered_by_display_name}</p>
+        )}
 
         {/* 確認済・伝票済バッジ */}
         {(order.details_confirmed || order.shipping_label_printed) && (

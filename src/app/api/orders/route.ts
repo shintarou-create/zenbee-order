@@ -371,6 +371,11 @@ export async function POST(req: NextRequest) {
         notes: notes || null,
         delivery_date: deliveryDate || null,
         delivery_time_slot: deliveryTimeSlot || null,
+        // 発注担当者のスナップショット。line_users.display_name は後から変わりうるため、
+        // 注文時点の名前を確定情報として保存する（自由入力欄は無く、LINEログイン中の
+        // ユーザーのdisplay_nameをそのまま使う）。
+        ordered_by_line_user_id: lineUser.id,
+        ordered_by_display_name: lineUser.display_name,
       })
       .select()
       .single()

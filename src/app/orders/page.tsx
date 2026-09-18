@@ -123,9 +123,15 @@ function OrdersContent() {
                 className="block bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-kincha transition-colors"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-gray-400 text-xs">
-                    {formatDate(order.created_at)}　{order.order_number}
-                  </p>
+                  <div>
+                    <p className="text-gray-400 text-xs">
+                      {formatDate(order.created_at)}　{order.order_number}
+                    </p>
+                    {/* 同じ会社の他の担当者との注文を見分けるため。過去注文等でnullの場合は何も出さない */}
+                    {order.ordered_by_display_name && (
+                      <p className="text-gray-500 text-xs mt-0.5">発注: {order.ordered_by_display_name}</p>
+                    )}
+                  </div>
                   <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${getCustomerOrderStatusColor(order.status, order.details_confirmed)}`}>
                     {getCustomerOrderStatusLabel(order.status, order.details_confirmed)}
                   </span>

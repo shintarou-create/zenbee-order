@@ -237,6 +237,10 @@ export interface Order {
   // 支払方法（注文単位。代金引換のとき cod_fee が意味を持つ）
   payment_method: PaymentMethod
   cod_fee: number
+  // 発注担当者のスナップショット（LIFF発注時点のline_users情報）。管理画面からの
+  // 手動注文・このカラム追加前の過去注文はどちらもnull（担当者不明として表示する）。
+  ordered_by_line_user_id: string | null
+  ordered_by_display_name: string | null
   created_at: string
   updated_at: string
   // Joined fields
