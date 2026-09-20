@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import iconv from 'iconv-lite'
 import { createServiceClient } from '@/lib/supabase/server'
 import { generateFreeePartnerCSV } from '@/lib/freee-partner-csv'
 
@@ -64,7 +65,8 @@ export async function POST(req: NextRequest) {
     }
 
     const csvString = generateFreeePartnerCSV(companies.map((c) => c.company_name))
-    const csvBuffer = new TextEncoder().encode(csvString)
+    // freeeの取込み仕様（CP932/Shift-JIS）に合わせてエンコードする。
+    const csvBuffer = iconv.encode(csvString, 'cp932')
 
     // ファイル名の日付はJST基準
     const now = new Date()
@@ -72,10 +74,10 @@ export async function POST(req: NextRequest) {
     const dateStr = `${jstNow.getFullYear()}${String(jstNow.getMonth() + 1).padStart(2, '0')}${String(jstNow.getDate()).padStart(2, '0')}`
     const filename = `freee_partners_${dateStr}.csv`
 
-    return new NextResponse(csvBuffer, {
+    return new NextResponse(new Uint8Array(csvBuffer), {
       status: 200,
       headers: {
-        'Content-Type': 'text/csv; charset=UTF-8',
+        'Content-Type': 'text/csv; charset=Shift_JIS',
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Content-Length': csvBuffer.length.toString(),
       },
