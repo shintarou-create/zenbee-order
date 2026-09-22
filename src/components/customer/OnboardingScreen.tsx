@@ -77,7 +77,7 @@ export default function OnboardingScreen({ accessToken, onSuccess }: OnboardingS
   }
 
   async function handleCodeSubmit() {
-    const trimmed = code.trim().toUpperCase()
+    const trimmed = code.trim().toLowerCase()
     setCodeError(null)
     if (!trimmed) { setCodeError('登録コードを入力してください'); return }
     if (trimmed.length !== 8) { setCodeError('登録コードは8文字です'); return }
@@ -217,7 +217,7 @@ export default function OnboardingScreen({ accessToken, onSuccess }: OnboardingS
               <input
                 type="text"
                 value={code}
-                onChange={(e) => { setCode(e.target.value.toUpperCase()); setCodeError(null) }}
+                onChange={(e) => { setCode(e.target.value.toLowerCase()); setCodeError(null) }}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCodeSubmit() } }}
                 placeholder="例: abcd2345"
                 maxLength={8}
