@@ -88,3 +88,28 @@ input[type='date']::-webkit-calendar-picker-indicator {
     transform: scale(0.98);
   }
 }
+
+/* 発注画面プレビュー（/admin/preview 配下・PreviewLayoutの "preview-frame" 枠）専用。
+ * Tailwind の sm:/md:/lg: 等はブラウザの実ビューポート幅で判定されるため、
+ * PCでプレビューを開くと枠が390pxでも sm: 以上が有効になってしまう
+ * （本番スマホ<640pxでは発生しない）。この枠配下に限り、実際に効いている
+ * sm:/md:/lg: バリアントをベースのクラス相当に打ち消し、常にスマホ表示にする。
+ * 本番の顧客側コンポーネント（src/components/customer/）のクラス自体は変更しない。
+ *
+ * 対象は src/components/customer/ 配下で実際に使われている sm:/md:/lg:/xl:/2xl:
+ * バリアントに機械的に合わせたもの（grep '\bsm:\|md:\|lg:\|xl:\|2xl:' で洗い出し済み）。
+ * 今後これらのコンポーネントに新しい sm:/md:/lg: 等が追加された場合は、
+ * ここにも対応する打ち消しルールを追記すること。
+ */
+.preview-frame .sm\:grid-cols-2 {
+  /* ProductBrowser.tsx / CategoryAccordion.tsx: grid-cols-1 sm:grid-cols-2 */
+  grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+}
+.preview-frame .sm\:max-w-md {
+  /* ProductDetailModal.tsx: w-full sm:max-w-md */
+  max-width: none !important;
+}
+.preview-frame .sm\:text-xs {
+  /* PreviewHeader.tsx: text-[11px] sm:text-xs */
+  font-size: 11px !important;
+}
