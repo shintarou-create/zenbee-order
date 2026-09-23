@@ -3,22 +3,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { CartItem, CartState } from '@/types'
 import { hasMixedShipStart } from '@/lib/delivery-rules'
+import { CART_STORAGE_KEY_LIVE } from '@/lib/cart-storage'
 
-const CART_STORAGE_KEY = 'zenbee_cart'
 const CART_VERSION = 2
-const CART_VERSION_KEY = 'zenbee_cart_version'
 
-function loadCartFromStorage(): CartItem[] {
+function loadCartFromStorage(storageKey: string): CartItem[] {
   if (typeof window === 'undefined') return []
   try {
-    localStorage.removeItem(CART_STORAGE_KEY)
-    const ver = sessionStorage.getItem(CART_VERSION_KEY)
+    localStorage.removeItem(storageKey)
+    const versionKey = `${storageKey}_version`
+    const ver = sessionStorage.getItem(versionKey)
     if (ver !== String(CART_VERSION)) {
-      sessionStorage.removeItem(CART_STORAGE_KEY)
-      sessionStorage.removeItem(CART_VERSION_KEY)
+      sessionStorage.removeItem(storageKey)
+      sessionStorage.removeItem(versionKey)
       return []
     }
-    const saved = sessionStorage.getItem(CART_STORAGE_KEY)
+    const saved = sessionStorage.getItem(storageKey)
     if (!saved) return []
     return JSON.parse(saved) as CartItem[]
   } catch {
@@ -26,11 +26,11 @@ function loadCartFromStorage(): CartItem[] {
   }
 }
 
-function saveCartToStorage(items: CartItem[]): void {
+function saveCartToStorage(storageKey: string, items: CartItem[]): void {
   if (typeof window === 'undefined') return
   try {
-    sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items))
-    sessionStorage.setItem(CART_VERSION_KEY, String(CART_VERSION))
+    sessionStorage.setItem(storageKey, JSON.stringify(items))
+    sessionStorage.setItem(`${storageKey}_version`, String(CART_VERSION))
   } catch {
     // sessionStorage が使えない場合は無視
   }
@@ -53,26 +53,32 @@ interface UseCartReturn extends CartState {
   customItemCount: number
 }
 
-export function useCart(): UseCartReturn {
+// storageKey 省略時は本番LIFF画面と同じキー（従来通りの挙動）。管理画面の
+// 発注画面プレビューは CART_STORAGE_KEY_PREVIEW を渡して本番カートと分離する。
+export function useCart(storageKey: string = CART_STORAGE_KEY_LIVE): UseCartReturn {
   const [items, setItems] = useState<CartItem[]>([])
   const [initialized, setInitialized] = useState(false)
   // 最新のカート状態を同期的に参照するための ref（addToCart の連続呼び出し対応）
   const itemsRef = useRef<CartItem[]>([])
 
-  // クライアントサイドでのみsessionStorageから読み込み（LIFFを閉じて開き直すと空になる）
+  // クライアントサイドでのみsessionStorageから読み込み（LIFFを閉じて開き直すと空になる）。
+  // storageKey は呼び出し元コンポーネントのライフサイクル中は固定値のため、
+  // 依存配列に加えても通常のマウント時1回のみの実行という挙動は変わらない。
   useEffect(() => {
-    const stored = loadCartFromStorage()
+    const stored = loadCartFromStorage(storageKey)
     setItems(stored)
     itemsRef.current = stored
     setInitialized(true)
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey])
 
   // items が変更されたら sessionStorage に保存・ref を同期
   useEffect(() => {
     if (initialized) {
-      saveCartToStorage(items)
+      saveCartToStorage(storageKey, items)
       itemsRef.current = items
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, initialized])
 
   const addToCart = useCallback((item: Omit<CartItem, 'subtotal'>): boolean => {
