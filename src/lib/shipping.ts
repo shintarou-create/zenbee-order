@@ -28,6 +28,30 @@ function normalizeProductName(name: string): string {
   )
 }
 
+// kg単位の箱詰めルール（常温青果・冷凍青果で共通）: 10kg箱を優先し、
+// 端数が5kg以下なら5kg箱を1つ追加、5kg超なら10kg箱をもう1つ追加する。
+// 常温／冷凍で箱の単価だけが異なるため、箱数の算出ロジックはここに集約する。
+// src/lib/yamato-csv.ts（B2送り状の発行枚数算出）でも同じ箱数ルールを使うため export する。
+export function calcKgBoxCounts(totalKg: number): { boxes10: number; boxes5: number } {
+  let boxes10 = Math.floor(totalKg / 10)
+  const remainder = totalKg % 10
+  let boxes5 = 0
+  if (remainder > 0) {
+    if (remainder <= 5) {
+      boxes5 = 1
+    } else {
+      boxes10 += 1
+    }
+  }
+  return { boxes10, boxes5 }
+}
+
+// 冷凍青果（kg単位）の箱単価。常温青果の箱代（10kg=1300円／5kg=1000円）に、
+// ヤマトのクール便加算（10kg=100〜140サイズ相当440円／5kg=60〜80サイズ相当330円）を
+// 上乗せした実額。信太郎確認済みの契約単価（2026-09時点）。
+const FROZEN_PRODUCE_BOX_10KG_COST = 1740 // 1300(常温青果10kg箱) + 440(クール加算)
+const FROZEN_PRODUCE_BOX_5KG_COST = 1330  // 1000(常温青果5kg箱) + 330(クール加算)
+
 export function calculateShipping(
   items: CartItem[],
   options?: ShippingOptions
@@ -52,22 +76,15 @@ export function calculateShipping(
 
   const lines: ShippingLine[] = []
 
-  // 青果（kg単位）: 10kg箱¥1,300優先、端数5kg以下なら5kg箱¥1,000
+  // 青果（kg単位・常温）: 10kg箱¥1,300優先、端数5kg以下なら5kg箱¥1,000。
+  // cool_type=2（冷凍）のkg商品は下の「冷凍青果」ブロックで別計算するため、ここでは除外する
+  // （みかんの皮（冷凍）等が常温の柑橘と同じ箱に混ざって冷凍料金が付かなくなる不具合の修正）。
   const totalKg = items
-    .filter((i) => i.unit === 'kg')
+    .filter((i) => i.unit === 'kg' && i.coolType !== 2)
     .reduce((sum, i) => sum + i.quantity, 0)
 
   if (totalKg > 0) {
-    let boxes10 = Math.floor(totalKg / 10)
-    const remainder = totalKg % 10
-    let boxes5 = 0
-    if (remainder > 0) {
-      if (remainder <= 5) {
-        boxes5 = 1
-      } else {
-        boxes10 += 1
-      }
-    }
+    const { boxes10, boxes5 } = calcKgBoxCounts(totalKg)
     if (boxes10 > 0) {
       lines.push({
         label: '青果 10kg箱',
@@ -82,6 +99,32 @@ export function calculateShipping(
         quantity: boxes5,
         unitCost: 1000,
         cost: 1000,
+      })
+    }
+  }
+
+  // 冷凍青果（kg単位）: みかんの皮（冷凍）等。常温の青果箱から切り離し、
+  // 同じ10kg/5kg箱ルールで箱数を算出したうえで冷凍便の単価を適用する。
+  const totalFrozenProduceKg = items
+    .filter((i) => i.unit === 'kg' && i.coolType === 2)
+    .reduce((sum, i) => sum + i.quantity, 0)
+
+  if (totalFrozenProduceKg > 0) {
+    const { boxes10, boxes5 } = calcKgBoxCounts(totalFrozenProduceKg)
+    if (boxes10 > 0) {
+      lines.push({
+        label: '冷凍青果 10kg箱（冷凍便）',
+        quantity: boxes10,
+        unitCost: FROZEN_PRODUCE_BOX_10KG_COST,
+        cost: boxes10 * FROZEN_PRODUCE_BOX_10KG_COST,
+      })
+    }
+    if (boxes5 > 0) {
+      lines.push({
+        label: '冷凍青果 5kg箱（冷凍便）',
+        quantity: boxes5,
+        unitCost: FROZEN_PRODUCE_BOX_5KG_COST,
+        cost: FROZEN_PRODUCE_BOX_5KG_COST,
       })
     }
   }

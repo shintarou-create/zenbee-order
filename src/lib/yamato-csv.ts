@@ -1,5 +1,6 @@
 import iconv from 'iconv-lite'
 import { formatYamatoItemName, isSetCategory } from '@/lib/quantity-format'
+import { calcKgBoxCounts } from '@/lib/shipping'
 
 // ────────────────────────────────────────────────────────────
 // JST 日付ユーティリティ
@@ -393,6 +394,16 @@ function calcFrozenBoxes(items: OrderItemForCsv[]): number {
   return items.reduce((sum, item) => sum + item.quantity, 0)
 }
 
+// 冷凍青果（kg単位・みかんの皮（冷凍）等）の箱数。送料計算（src/lib/shipping.ts）と
+// 同じ10kg/5kg箱ルールで算出する。現状この商品群にkgセットのtier販売は無いため、
+// calcAmbientBoxesのcitrusSetBoxesのような分岐は設けていない
+// （将来kgセットtierが追加された場合はここにも同様の分岐を足すこと）。
+function calcFrozenProduceBoxes(items: OrderItemForCsv[]): number {
+  const totalKg = items.reduce((sum, item) => sum + item.quantity, 0)
+  const { boxes10, boxes5 } = calcKgBoxCounts(totalKg)
+  return boxes10 + boxes5
+}
+
 // ────────────────────────────────────────────────────────────
 // 1注文 → 1行または2行のCSVフィールド配列を生成
 // ────────────────────────────────────────────────────────────
@@ -415,12 +426,15 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
   const rawDelivery = order.deliveryDate ? order.deliveryDate.replace(/-/g, '/') : ''
   const deliveryDate = rawDelivery && isAfterToday(rawDelivery) ? rawDelivery : ''
 
-  // cool_type でベース分類: 0=常温 / 1=冷蔵(びわ) / 2=冷凍(20Lジュース)
-  // DB制約の都合でびわが誤って cool_type=2 になっている場合も unit='個' で冷凍ジュースのみを識別
+  // cool_type でベース分類: 0=常温 / 1=冷蔵(びわ) / 2=冷凍(20Lジュース・冷凍kg青果)
+  // DB制約の都合でびわが誤って cool_type=2 になっている場合も unit='個' で冷凍ジュースのみを識別。
+  // cool_type=2 かつ unit='kg'（みかんの皮（冷凍）等）は frozenItems・ambientItems どちらにも
+  // 一致せず送り状が出力されない不具合があったため、frozenProduceItems として別枠にする。
   const frozenItems = items.filter(i => i.product.cool_type === 2 && i.product.unit === '個')
+  const frozenProduceItems = items.filter(i => i.product.cool_type === 2 && i.product.unit === 'kg')
   const coolItems = items.filter(i => i.product.cool_type === 1 || (i.product.cool_type === 2 && i.product.unit === 'パック'))
   const ambientItems = items.filter(i => i.product.cool_type === 0)
-  const typeCount = [ambientItems, coolItems, frozenItems].filter(a => a.length > 0).length
+  const typeCount = [ambientItems, coolItems, frozenItems, frozenProduceItems].filter(a => a.length > 0).length
 
   // 代引き（ヤマトコレクト）。codAmount・codTax の両方が入っていて codAmount > 0 のときだけ
   // 代引きモードとして扱う。代金は最初に出力される1行にのみ載せる（codAssignedで制御）。
@@ -604,12 +618,29 @@ function orderToRows(order: OrderForCsv, shipDate: string): string[][] {
     pushBandRow(
       typeCount > 1 ? `${order.orderNumber}-${suffix}` : order.orderNumber,
       1,  // ヤマト クール区分: 1=冷凍
-      '冷凍みかんジュース',
+      buildItemNameFromProducts(frozenItems),
       '',
       '下積み厳禁',
       calcFrozenBoxes(frozenItems),
       false,  // クール便は複数口にできないため常に単一送り状
       '冷凍',
+    )
+  }
+
+  if (frozenProduceItems.length > 0) {
+    suffix++
+    // 冷凍20Lジュース（frozenItems）とは箱の単価・数え方が異なる別商品群のため、
+    // 同じ注文に両方入っていても1行に統合せず、別の送り状行として出力する
+    // （箱数の二重計上・按分の複雑化を避けるため）。
+    pushBandRow(
+      typeCount > 1 ? `${order.orderNumber}-${suffix}` : order.orderNumber,
+      1,  // ヤマト クール区分: 1=冷凍
+      buildItemNameFromProducts(frozenProduceItems),
+      '',
+      '下積み厳禁',
+      calcFrozenProduceBoxes(frozenProduceItems),
+      false,  // クール便は複数口にできないため常に単一送り状
+      '冷凍青果',
     )
   }
 
