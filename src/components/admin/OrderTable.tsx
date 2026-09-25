@@ -46,6 +46,22 @@ function CodBadge({ order }: { order: Order }) {
   )
 }
 
+function NotesReplyBadge({ order }: { order: Order }) {
+  if (!order.notes) return null
+  if (order.notes_replied_at) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-white bg-gray-400 px-1.5 py-0.5 rounded">
+        返信済み
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs font-bold text-white bg-orange-500 px-1.5 py-0.5 rounded">
+      要返信
+    </span>
+  )
+}
+
 function LabelBadge({
   order,
   onUnmarkLabel,
@@ -336,7 +352,10 @@ export default function OrderTable({
         {/* 備考 */}
         <td className="px-4 py-3 max-w-[160px]">
           {order.notes ? (
-            <p className="text-xs text-orange-500 truncate">{order.notes}</p>
+            <div className="flex flex-col gap-0.5 items-start">
+              <NotesReplyBadge order={order} />
+              <p className={`text-xs truncate ${order.notes_replied_at ? 'text-gray-400' : 'text-orange-500'}`}>{order.notes}</p>
+            </div>
           ) : (
             <span className="text-xs text-gray-300">—</span>
           )}
@@ -442,13 +461,14 @@ export default function OrderTable({
         </div>
 
         {/* 備考 */}
-        <p className="text-xs">
-          {order.notes ? (
-            <span className="text-orange-500 block truncate">{order.notes}</span>
-          ) : (
-            <span className="text-gray-300">—</span>
-          )}
-        </p>
+        {order.notes ? (
+          <div className="flex flex-col gap-0.5 items-start text-xs">
+            <NotesReplyBadge order={order} />
+            <span className={`block truncate ${order.notes_replied_at ? 'text-gray-400' : 'text-orange-500'}`}>{order.notes}</span>
+          </div>
+        ) : (
+          <p className="text-xs"><span className="text-gray-300">—</span></p>
+        )}
 
         {/* 詳細リンク */}
         <div className="flex justify-end pt-1">

@@ -226,6 +226,8 @@ export interface Order {
   delivery_note_printed: boolean
   details_confirmed: boolean
   notes: string | null
+  // 備考への返信対応が完了した日時（null = 要返信 or 備考なし）
+  notes_replied_at: string | null
   admin_notes: string | null
   // 請求先オーバーライド（null = 会社デフォルトを使用）
   billing_name: string | null
@@ -250,7 +252,7 @@ export interface Order {
 }
 
 export type OrderInput = Omit<Order, 'id' | 'created_at' | 'updated_at' | 'company' | 'order_items' | 'order_shipping'>
-export type OrderUpdate = Partial<Pick<Order, 'status' | 'shipping_date' | 'delivery_date' | 'delivery_time_slot' | 'shipping_label_printed' | 'delivery_note_printed' | 'details_confirmed' | 'admin_notes' | 'billing_name' | 'billing_postal_code' | 'billing_prefecture' | 'billing_city' | 'billing_address' | 'billing_building' | 'payment_method' | 'cod_fee'>>
+export type OrderUpdate = Partial<Pick<Order, 'status' | 'shipping_date' | 'delivery_date' | 'delivery_time_slot' | 'shipping_label_printed' | 'delivery_note_printed' | 'details_confirmed' | 'notes' | 'notes_replied_at' | 'admin_notes' | 'billing_name' | 'billing_postal_code' | 'billing_prefecture' | 'billing_city' | 'billing_address' | 'billing_building' | 'payment_method' | 'cod_fee'>>
 
 // ============================================================
 // OrderItem

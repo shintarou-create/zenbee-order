@@ -127,6 +127,7 @@ function AdminOrdersContent() {
   const [dateTo, setDateTo] = useState(searchParams.get('to') || '')
   const [searchInput, setSearchInput] = useState(searchParams.get('q') || '')
   const [search, setSearch] = useState(searchParams.get('q') || '')
+  const [needsReplyOnly, setNeedsReplyOnly] = useState(searchParams.get('reply') === '1')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -150,13 +151,14 @@ function AdminOrdersContent() {
     fetchOrders(0)
     fetchCounts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, dateFrom, dateTo, search])
+  }, [activeTab, dateFrom, dateTo, search, needsReplyOnly])
 
   // タブ・日付・検索フィルタをクエリに適用（返り値は変更後のクエリ）
-  function applyTabAndFilters<T extends { gte: (...a: unknown[]) => T; lte: (...a: unknown[]) => T; ilike: (...a: unknown[]) => T; eq: (...a: unknown[]) => T; neq: (...a: unknown[]) => T; or: (...a: unknown[]) => T }>(q: T, tab: TabKey): T {
+  function applyTabAndFilters<T extends { gte: (...a: unknown[]) => T; lte: (...a: unknown[]) => T; ilike: (...a: unknown[]) => T; eq: (...a: unknown[]) => T; neq: (...a: unknown[]) => T; or: (...a: unknown[]) => T; is: (...a: unknown[]) => T; not: (...a: unknown[]) => T }>(q: T, tab: TabKey): T {
     if (dateFrom) q = q.gte('delivery_date', dateFrom)
     if (dateTo) q = q.lte('delivery_date', dateTo)
     if (search.trim()) q = q.ilike('company.company_name', `%${search.trim()}%`)
+    if (needsReplyOnly) q = q.not('notes', 'is', null).is('notes_replied_at', null)
     switch (tab) {
       case 'unconfirmed':
         return q.eq('status', 'pending').or('details_confirmed.is.null,details_confirmed.eq.false')
@@ -395,6 +397,7 @@ function AdminOrdersContent() {
   if (dateFrom) detailQuery.set('from', dateFrom)
   if (dateTo) detailQuery.set('to', dateTo)
   if (search.trim()) detailQuery.set('q', search.trim())
+  if (needsReplyOnly) detailQuery.set('reply', '1')
   const detailLinkSuffix = `?${detailQuery.toString()}`
 
   // 出荷準備タブで期間内に未確認がある場合の注意バナー
@@ -463,6 +466,20 @@ function AdminOrdersContent() {
             ✕
           </button>
         )}
+      </div>
+
+      {/* 要返信のみ */}
+      <div>
+        <button
+          onClick={() => setNeedsReplyOnly((prev) => !prev)}
+          className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+            needsReplyOnly
+              ? 'bg-orange-500 border-orange-500 text-white'
+              : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          要返信のみ
+        </button>
       </div>
 
       {/* 納品日フィルター */}

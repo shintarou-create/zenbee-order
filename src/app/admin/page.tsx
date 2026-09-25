@@ -85,6 +85,8 @@ export default function AdminDashboard() {
   const [pendingCompaniesCount, setPendingCompaniesCount] = useState(0)
   const [unconfirmedOrders, setUnconfirmedOrders] = useState<ActionOrder[]>([])
   const [unconfirmedCount, setUnconfirmedCount] = useState(0)
+  const [needsReplyOrders, setNeedsReplyOrders] = useState<ActionOrder[]>([])
+  const [needsReplyCount, setNeedsReplyCount] = useState(0)
 
   // 詳細データ
   const [crossStock, setCrossStock] = useState<CrossStockProduct[]>([])
@@ -150,6 +152,18 @@ export default function AdminDashboard() {
           .limit(5)
         setUnconfirmedCount(unconfirmedCnt || 0)
         setUnconfirmedOrders((unconfirmed || []) as unknown as ActionOrder[])
+
+        // 要返信の注文（備考ありでnotes_replied_atが未設定）
+        const { data: needsReply, count: needsReplyCnt } = await supabase
+          .from('orders')
+          .select('id, order_number, delivery_date, company:companies(company_name), order_items(product_name, quantity, unit)', { count: 'exact' })
+          .not('notes', 'is', null)
+          .is('notes_replied_at', null)
+          .neq('status', 'cancelled')
+          .order('delivery_date', { ascending: true, nullsFirst: false })
+          .limit(5)
+        setNeedsReplyCount(needsReplyCnt || 0)
+        setNeedsReplyOrders((needsReply || []) as unknown as ActionOrder[])
 
         // 在庫×の商品（is_active=true かつ stock_status='cross'）
         const { data: crossProducts } = await supabase
@@ -224,7 +238,7 @@ export default function AdminDashboard() {
   const shownItems = aggList.length > 6 ? aggList.slice(0, 5) : aggList
   const moreItemCount = aggList.length > 6 ? aggList.length - 5 : 0
 
-  const hasActionItems = overdueCount > 0 || pendingCompaniesCount > 0 || unconfirmedCount > 0
+  const hasActionItems = overdueCount > 0 || pendingCompaniesCount > 0 || unconfirmedCount > 0 || needsReplyCount > 0
   const nothingToDo = !hasActionItems && bannerType !== 'remind'
 
   return (
@@ -452,6 +466,44 @@ export default function AdminDashboard() {
                   <div className="px-4 py-2 border-t border-gray-100">
                     <Link href="/admin/orders" className="text-sm text-gray-600 font-medium hover:underline">
                       他 {unconfirmedCount - unconfirmedOrders.length}件（受注一覧へ）
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 要返信の備考 */}
+            {needsReplyCount > 0 && (
+              <div className="bg-white rounded-xl border border-orange-100 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-orange-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">要返信</span>
+                    <span className="text-sm text-gray-500">備考への返信が必要な注文</span>
+                  </div>
+                  <span className="text-sm font-bold text-gray-700">{needsReplyCount}件</span>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {needsReplyOrders.map((order) => (
+                    <Link
+                      key={order.id}
+                      href={`/admin/orders/${order.id}`}
+                      className="px-4 py-3 min-h-[44px] flex items-center justify-between hover:bg-gray-50 active:bg-gray-50 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 text-sm truncate">{order.company?.company_name ?? '—'}</p>
+                        <p className="text-xs text-gray-500">
+                          {order.order_number}
+                          {order.delivery_date ? `　納品 ${formatDateWithDay(order.delivery_date)}` : ''}
+                        </p>
+                      </div>
+                      <span className="text-xs text-orange-600 font-medium whitespace-nowrap ml-2">確認する →</span>
+                    </Link>
+                  ))}
+                </div>
+                {needsReplyCount > needsReplyOrders.length && (
+                  <div className="px-4 py-2 border-t border-gray-100">
+                    <Link href="/admin/orders?reply=1" className="text-sm text-orange-600 font-medium hover:underline">
+                      他 {needsReplyCount - needsReplyOrders.length}件（注文管理へ）
                     </Link>
                   </div>
                 )}

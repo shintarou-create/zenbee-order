@@ -222,14 +222,6 @@ export default function DeliveryNoteLayout({ order }: Props) {
           ※ 軽減税率（8%）対象品目
         </p>
       )}
-
-      {/* 備考 */}
-      {order.notes && (
-        <div style={{ border: '0.5px solid #e5e5e5', borderRadius: '4px', padding: '8px 12px', marginTop: '12px' }}>
-          <p style={{ fontSize: '10px', fontWeight: '600', color: '#777', margin: '0 0 4px 0' }}>備考</p>
-          <p style={{ fontSize: '12px', color: '#444', whiteSpace: 'pre-wrap', margin: 0 }}>{order.notes}</p>
-        </div>
-      )}
     </div>
     </>
   )

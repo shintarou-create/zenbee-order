@@ -59,6 +59,8 @@ export default function AdminOrderDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<OrderStatus>('pending')
+  const [notes, setNotes] = useState('')
+  const [notesReplied, setNotesReplied] = useState(false)
   const [adminNotes, setAdminNotes] = useState('')
   const [deliveryDate, setDeliveryDate] = useState('')
   const [deliveryTimeSlot, setDeliveryTimeSlot] = useState('')
@@ -116,6 +118,8 @@ export default function AdminOrderDetailPage() {
 
         setOrder(data as Order)
         setStatus(data.status as OrderStatus)
+        setNotes(data.notes || '')
+        setNotesReplied(data.notes_replied_at != null)
         setAdminNotes(data.admin_notes || '')
         setDeliveryDate(data.delivery_date || '')
         setDeliveryTimeSlot(data.delivery_time_slot || '')
@@ -536,10 +540,13 @@ export default function AdminOrderDetailPage() {
     setUpdating(true)
     try {
       const supabase = createClient()
+      const notesRepliedAt = notesReplied ? new Date().toISOString() : null
       const { error: updateError } = await supabase
         .from('orders')
         .update({
           status,
+          notes: notes || null,
+          notes_replied_at: notesRepliedAt,
           admin_notes: adminNotes || null,
           delivery_date: deliveryDate || null,
           delivery_time_slot: deliveryTimeSlot || null,
@@ -548,7 +555,7 @@ export default function AdminOrderDetailPage() {
 
       if (updateError) throw updateError
 
-      setOrder((prev) => prev ? { ...prev, status, admin_notes: adminNotes, delivery_time_slot: deliveryTimeSlot || null } : null)
+      setOrder((prev) => prev ? { ...prev, status, notes: notes || null, notes_replied_at: notesRepliedAt, admin_notes: adminNotes, delivery_time_slot: deliveryTimeSlot || null } : null)
       setMessage({ type: 'success', text: '注文を更新しました' })
       router.push('/admin/orders')
     } catch (err) {
@@ -704,12 +711,6 @@ export default function AdminOrderDetailPage() {
               <span className="text-gray-500">配達時間帯</span>
               <span>{order.delivery_time_slot ? formatDeliveryTimeSlot(order.delivery_time_slot) : '指定なし'}</span>
             </div>
-            {order.notes && (
-              <div>
-                <span className="text-gray-500">備考</span>
-                <p className="mt-1 text-gray-700 bg-gray-50 rounded p-2">{order.notes}</p>
-              </div>
-            )}
           </div>
         </div>
 
@@ -1412,6 +1413,29 @@ export default function AdminOrderDetailPage() {
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">備考</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="備考を入力"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"
+            />
+            <p className="text-xs text-gray-400 mt-1">※取引先のLINE注文履歴にも表示されます</p>
+            {notes && (
+              <label className="flex items-center gap-2 mt-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={notesReplied}
+                  onChange={(e) => setNotesReplied(e.target.checked)}
+                  className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                />
+                返信済みにする
+              </label>
+            )}
           </div>
 
           <div>
