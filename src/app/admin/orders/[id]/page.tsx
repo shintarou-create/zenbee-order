@@ -784,7 +784,7 @@ export default function AdminOrderDetailPage() {
                   className="w-full md:w-40 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  サジェスト額 ¥{suggestCodFee(order.total_amount).toLocaleString()}（契約内容により実際の手数料と異なる場合があります。手入力で上書きできます）
+                  サジェスト額 ¥{suggestCodFee(order.total_amount).toLocaleString()}（5.5万円以上は印紙代220円込み。契約内容により実際の手数料と異なる場合があります。手入力で上書きできます）
                 </p>
               </div>
 
