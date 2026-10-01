@@ -1,3 +1,5 @@
+import { formatDateWithDay } from './utils'
+
 const LINE_API_BASE = 'https://api.line.me/v2/bot'
 
 async function sendPushMessage(userId: string, message: string): Promise<void> {
@@ -38,12 +40,14 @@ export async function notifyOrderCreated(
   orderNumber: string,
   totalAmount: number,
   customerName: string,
+  deliveryDate: string | null,
   productSummary: string,
   adminLineId: string,
   hasCustomItems = false
 ): Promise<void> {
   // 仕様書 v2 準拠: 顧客へのPushは通数消費を避けるため送信しない（注文確認は LIFF 画面完結）
   // 引数 customerLineId は将来の応答メッセージ連携のため残存
+  // 引数 orderNumber は本文には出さない（通知を簡潔にするため）が、呼び出し側との互換のため残存
   const formattedAmount = new Intl.NumberFormat('ja-JP', {
     style: 'currency',
     currency: 'JPY',
@@ -57,7 +61,7 @@ export async function notifyOrderCreated(
 
   const adminMessage = `【新規注文通知】${customWarning}
 お客様: ${customerName}
-注文番号: ${orderNumber}
+納品希望日: ${formatDateWithDay(deliveryDate) || '未指定'}
 ${productSummary}
 ${amountLine}
 

@@ -448,6 +448,7 @@ export async function POST(req: NextRequest) {
           orderNumber,
           totalAmount,
           company.company_name,
+          deliveryDate || null,
           productSummary,
           adminLineId,
           hasCustom

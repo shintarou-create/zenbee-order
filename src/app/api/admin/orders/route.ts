@@ -390,7 +390,7 @@ export async function POST(req: NextRequest) {
         .join('\n')
 
       try {
-        await notifyOrderCreated('', orderNumber, totalAmount, company.company_name, productSummary, adminLineId, hasCustom)
+        await notifyOrderCreated('', orderNumber, totalAmount, company.company_name, deliveryDate || null, productSummary, adminLineId, hasCustom)
       } catch (err) {
         console.error('LINE通知エラー:', err)
       }
