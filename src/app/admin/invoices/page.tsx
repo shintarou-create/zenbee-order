@@ -13,8 +13,8 @@ type TabKey = 'all' | 'draft' | 'sent'
 // 送付方法グループ。no_email = メール送付だがアドレス未登録、non_email = 郵送・その他（メール以外の送付）
 type DeliveryGroup = 'no_email' | 'email' | 'non_email'
 type DeliveryFilter = 'all' | DeliveryGroup
-// 一覧のグループ表示順（メール未登録 → メール送付 → メール以外の送付）
-const DELIVERY_GROUP_ORDER: DeliveryGroup[] = ['no_email', 'email', 'non_email']
+// 一覧のグループ表示順（メール送付 → メール未登録 → メール以外の送付）
+const DELIVERY_GROUP_ORDER: DeliveryGroup[] = ['email', 'no_email', 'non_email']
 const DELIVERY_GROUP_LABELS: Record<DeliveryGroup, string> = {
   no_email: 'メール未登録',
   email: 'メール送付',
