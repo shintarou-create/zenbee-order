@@ -10,6 +10,22 @@ import { decodeFreeeCsvFile, parseFreeePartnerCsv, matchUnregisteredCompanies, t
 import FreeePartnerReconcilePanel from '@/components/admin/FreeePartnerReconcilePanel'
 
 type TabKey = 'all' | 'draft' | 'sent'
+// 送付方法グループ。no_email = メール送付だがアドレス未登録、non_email = 郵送・その他（メール以外の送付）
+type DeliveryGroup = 'no_email' | 'email' | 'non_email'
+type DeliveryFilter = 'all' | DeliveryGroup
+// 一覧のグループ表示順（メール未登録 → メール送付 → メール以外の送付）
+const DELIVERY_GROUP_ORDER: DeliveryGroup[] = ['no_email', 'email', 'non_email']
+const DELIVERY_GROUP_LABELS: Record<DeliveryGroup, string> = {
+  no_email: 'メール未登録',
+  email: 'メール送付',
+  non_email: 'メール以外の送付',
+}
+const DELIVERY_FILTER_CHIPS: { key: DeliveryFilter; label: string }[] = [
+  { key: 'all', label: 'すべて' },
+  { key: 'email', label: 'メール' },
+  { key: 'non_email', label: 'メール以外' },
+  { key: 'no_email', label: '未登録' },
+]
 type SupabaseClientType = ReturnType<typeof createClient>
 
 // 請求先会社の表示情報。has_separate_billing かつ billing_name があれば billing_name を主表示、
@@ -312,6 +328,7 @@ export default function AdminInvoicesPage() {
   const [bulkStatusRunning, setBulkStatusRunning] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('all')
+  const [deliveryFilter, setDeliveryFilter] = useState<DeliveryFilter>('all')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [invoiceSearch, setInvoiceSearch] = useState('')
 
@@ -924,19 +941,14 @@ export default function AdminInvoicesPage() {
   // 一括：選択中のうち「メール送付 かつ メール登録あり」を1社ずつ直列で処理（並列禁止）。
   // 郵送・その他（メール以外の送付）、およびメール未登録はスキップし、内訳を confirm に提示する。
   // 下書き作成済みが含まれる場合は再作成の内訳も提示し、OK なら再作成する。
-  async function handleBulkGmailDraft() {
-    const sel = invoices.filter((inv) => selectedIds.has(inv.id))
+  // scope を渡すと、選択中のうち scope に含まれる請求書だけを対象にする（「メール送付」グループ見出しの一括作成用）。
+  async function handleBulkGmailDraft(scope?: Invoice[]) {
+    const sel = (scope ?? invoices).filter((inv) => selectedIds.has(inv.id))
     // 作成対象 = メール送付 かつ メールあり（未作成・作成済みの両方）。
-    const targets = sel.filter((inv) => {
-      const { email, deliveryMethod } = getCompanyView(inv)
-      return deliveryMethod === 'email' && !!email
-    })
+    const targets = sel.filter((inv) => deliveryGroupOf(inv) === 'email')
     // スキップ内訳: 郵送・その他（送付方法がメール以外）／メール未登録（メール送付だがメール無し）
-    const nonEmailMethodN = sel.filter((inv) => getCompanyView(inv).deliveryMethod !== 'email').length
-    const noEmailN = sel.filter((inv) => {
-      const { email, deliveryMethod } = getCompanyView(inv)
-      return deliveryMethod === 'email' && !email
-    }).length
+    const nonEmailMethodN = sel.filter((inv) => deliveryGroupOf(inv) === 'non_email').length
+    const noEmailN = sel.filter((inv) => deliveryGroupOf(inv) === 'no_email').length
     const skipParts: string[] = []
     if (nonEmailMethodN > 0) skipParts.push(`郵送・メール以外の送付のため${nonEmailMethodN}件`)
     if (noEmailN > 0) skipParts.push(`メール未登録のため${noEmailN}件`)
@@ -1303,6 +1315,13 @@ export default function AdminInvoicesPage() {
     return { email: c?.email ?? null, displayName, storeName, deliveryMethod }
   }
 
+  // 送付方法グループの判定。行バッジ・メール未登録警告・一括Gmail下書きの対象判定・グループ表示で共通利用する。
+  function deliveryGroupOf(invoice: Invoice): DeliveryGroup {
+    const { email, deliveryMethod } = getCompanyView(invoice)
+    if (deliveryMethod !== 'email') return 'non_email'
+    return email ? 'email' : 'no_email'
+  }
+
   // ISO日時 → 日本時間「M/D HH:mm」
   function formatDraftBadge(ts: string): string {
     const jst = new Date(new Date(ts).toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }))
@@ -1321,9 +1340,12 @@ export default function AdminInvoicesPage() {
   }
 
   function toggleSelectAllTab() {
-    // 検索で絞られた結果を基準にする（検索で画面から消えた行が選択されたまま
+    // 検索・送付方法で絞られた結果を基準にする（画面から消えた行が選択されたまま
     // 残ると、一括Gmail下書き作成等が意図しない取引先に実行されるため）。
-    const ids = tabInvoices.map((i) => i.id)
+    toggleSelectIds(visibleInvoices.map((i) => i.id))
+  }
+
+  function toggleSelectIds(ids: string[]) {
     setSelectedIds((prev) => {
       const allSel = ids.length > 0 && ids.every((id) => prev.has(id))
       const next = new Set(prev)
@@ -1335,6 +1357,11 @@ export default function AdminInvoicesPage() {
 
   function changeTab(tab: TabKey) {
     setActiveTab(tab)
+    setSelectedIds(new Set())
+  }
+
+  function changeDeliveryFilter(filter: DeliveryFilter) {
+    setDeliveryFilter(filter)
     setSelectedIds(new Set())
   }
 
@@ -1371,15 +1398,21 @@ export default function AdminInvoicesPage() {
     draft: searchBase.filter((i) => i.status === 'draft').length,
     sent: searchBase.filter((i) => i.status === 'sent').length,
   }
+  // 送付方法チップ（タブ・検索と併用）。件数は検索＋タブ適用後の基準。
+  const deliveryCounts: Record<DeliveryFilter, number> = { all: tabInvoices.length, email: 0, non_email: 0, no_email: 0 }
+  tabInvoices.forEach((inv) => deliveryCounts[deliveryGroupOf(inv)]++)
+  const visibleInvoices = tabInvoices.filter((inv) => deliveryFilter === 'all' || deliveryGroupOf(inv) === deliveryFilter)
+  // グループ内は取得順（現状の並び）を維持する
+  const invoiceGroups = DELIVERY_GROUP_ORDER.map((group) => ({
+    group,
+    items: visibleInvoices.filter((inv) => deliveryGroupOf(inv) === group),
+  })).filter((g) => g.items.length > 0)
   // 請求合計（選択中の請求月・検索結果基準。検索中は「請求合計」の見出しにその旨を添える）
   const totalSum = searchBase.reduce((s, i) => s + i.total_amount, 0)
 
   // メール送付の取引先でメール未登録の請求のみ警告対象（郵送・その他は対象外）
   const noEmailNames = invoices
-    .filter((inv) => {
-      const { email, deliveryMethod } = getCompanyView(inv)
-      return deliveryMethod === 'email' && !email
-    })
+    .filter((inv) => deliveryGroupOf(inv) === 'no_email')
     .map((inv) => getCompanyView(inv).displayName)
 
   // freee取引先照合パネル用: この月の請求対象社（invoices.company_id ベース、検索フィルタの
@@ -1409,7 +1442,7 @@ export default function AdminInvoicesPage() {
   })()
 
   const selectedCount = selectedIds.size
-  const allTabSelected = tabInvoices.length > 0 && tabInvoices.every((i) => selectedIds.has(i.id))
+  const allTabSelected = visibleInvoices.length > 0 && visibleInvoices.every((i) => selectedIds.has(i.id))
   const anyBusy = bulkRunning || bulkStatusRunning || gmailDraftingId !== null || pdfDownloadingId !== null
   const todayStr = new Date().toLocaleDateString('sv-SE') // YYYY-MM-DD（ローカル）
 
@@ -1625,15 +1658,33 @@ export default function AdminInvoicesPage() {
         ))}
       </div>
 
+      {/* 送付方法の絞り込みチップ（ステータスタブ・検索と併用） */}
+      <div className="flex gap-1.5 overflow-x-auto">
+        {DELIVERY_FILTER_CHIPS.map((c) => (
+          <button
+            key={c.key}
+            onClick={() => changeDeliveryFilter(c.key)}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${
+              deliveryFilter === c.key ? 'bg-green-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            {c.label}
+            <span className={`px-1.5 rounded-full ${deliveryFilter === c.key ? 'bg-white/20' : 'bg-gray-100 text-gray-500'}`}>
+              {deliveryCounts[c.key]}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* 請求書一覧 */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         {isLoading ? (
           <div className="flex justify-center py-8">
             <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : tabInvoices.length === 0 ? (
+        ) : visibleInvoices.length === 0 ? (
           <div className="text-center py-8 text-gray-400 text-sm">
-            {invoices.length === 0 ? '対象月の請求書がありません' : 'このタブの請求書はありません'}
+            {invoices.length === 0 ? '対象月の請求書がありません' : '条件に一致する請求書はありません'}
           </div>
         ) : (
           <>
@@ -1645,149 +1696,188 @@ export default function AdminInvoicesPage() {
                 onChange={toggleSelectAllTab}
                 className="w-5 h-5 accent-green-600"
               />
-              <span className="text-xs font-medium text-gray-600">このタブの{tabInvoices.length}社をすべて選択</span>
+              <span className="text-xs font-medium text-gray-600">表示中の{visibleInvoices.length}社をすべて選択</span>
             </label>
 
-            <div className="divide-y divide-gray-100">
-              {tabInvoices.map((invoice) => {
-                const { email, displayName, storeName, deliveryMethod } = getCompanyView(invoice)
-                const hasEmail = !!email
-                const isEmailMethod = deliveryMethod === 'email'
-                const canGmail = isEmailMethod && hasEmail
-                const isOverdue = !!invoice.due_date && invoice.status !== 'paid' && invoice.due_date < todayStr
-                const checked = selectedIds.has(invoice.id)
-                return (
-                  <div key={invoice.id} className="flex items-start gap-1 px-2 py-3">
-                    {/* チェックボックス（タップ領域44px以上） */}
-                    <label className="flex items-center justify-center min-w-[44px] min-h-[44px] cursor-pointer flex-shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleSelect(invoice.id)}
-                        className="w-5 h-5 accent-green-600"
-                      />
-                    </label>
-
-                    <div className="flex-1 min-w-0 pr-2">
-                      {/* 1段目: 会社名（左） / 金額（右・大） */}
-                      <div className="flex items-baseline justify-between gap-2">
-                        <div className="min-w-0">
-                          <span className="text-base font-semibold text-gray-900">{displayName}</span>
-                          {storeName && <span className="ml-1 text-xs text-gray-400">（店舗名: {storeName}）</span>}
-                        </div>
-                        <span className="font-bold text-gray-900 text-lg flex-shrink-0">{formatCurrency(invoice.total_amount)}</span>
-                      </div>
-
-                      {/* 2段目: 請求書番号・支払期限（超過は赤字） */}
-                      <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400 flex-wrap">
-                        <span>{invoice.invoice_number}</span>
-                        <span className="text-gray-300">/</span>
-                        <span className="flex items-center gap-1">
-                          <span className={isOverdue ? 'text-red-600 font-bold' : ''}>支払期限</span>
+            {invoiceGroups.map(({ group, items }) => {
+              const groupSelectedN = items.filter((i) => selectedIds.has(i.id)).length
+              const groupAllSelected = groupSelectedN === items.length
+              return (
+                <section key={group}>
+                  {/* グループ見出し（件数つき）。メール送付グループのみ全選択・一括下書き作成を置く */}
+                  <div className={`flex items-center gap-2 px-4 py-2 border-b border-gray-100 flex-wrap ${
+                    group === 'no_email' ? 'bg-amber-50' : group === 'email' ? 'bg-green-50' : 'bg-blue-50'
+                  }`}>
+                    <span className={`text-sm font-bold ${
+                      group === 'no_email' ? 'text-amber-800' : group === 'email' ? 'text-green-800' : 'text-blue-800'
+                    }`}>
+                      {DELIVERY_GROUP_LABELS[group]}
+                      <span className="ml-1 text-xs font-medium">{items.length}件</span>
+                    </span>
+                    {group === 'email' && (
+                      <div className="flex items-center gap-2 ml-auto flex-wrap">
+                        <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
                           <input
-                            type="date"
-                            value={invoice.due_date ?? ''}
-                            onChange={(e) => handleUpdateDueDate(invoice.id, e.target.value)}
-                            className={`text-xs border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-green-400 ${
-                              isOverdue ? 'border-red-300 text-red-600' : 'border-gray-200 text-gray-600'
-                            }`}
+                            type="checkbox"
+                            checked={groupAllSelected}
+                            onChange={() => toggleSelectIds(items.map((i) => i.id))}
+                            className="w-4 h-4 accent-green-600"
                           />
-                          {isOverdue && <span className="text-red-600 font-bold">超過</span>}
-                        </span>
-                      </div>
-
-                      {/* バッジ行 */}
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${getStatusColor(invoice.status)}`}>
-                          {statusLabel(invoice.status)}
-                        </span>
-                        {isEmailMethod ? (
-                          invoice.gmail_draft_created_at ? (
-                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                              下書き作成済み {formatDraftBadge(invoice.gmail_draft_created_at)}
-                            </span>
-                          ) : (
-                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">未作成</span>
-                          )
-                        ) : deliveryMethod === 'postal' ? (
-                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">郵送</span>
-                        ) : (
-                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">メール以外の送付</span>
-                        )}
-                        {isEmailMethod && !hasEmail && (
-                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">メール未登録</span>
-                        )}
-                        {invoiceHasCodWarning(invoice) && (
-                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
-                            ⚠ 代引き注文が含まれています
-                          </span>
-                        )}
-                      </div>
-
-                      {/* 行アクション */}
-                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                          このグループを全選択
+                        </label>
                         <button
-                          onClick={() => openInvoicePrint(invoice.id)}
-                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                          onClick={() => handleBulkGmailDraft(items)}
+                          disabled={anyBusy || groupSelectedN === 0}
+                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition-colors"
                         >
-                          請求書を開く
-                        </button>
-                        <button
-                          onClick={() => handleDownloadPdf(invoice)}
-                          disabled={pdfDownloadingId === invoice.id}
-                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50 transition-colors"
-                        >
-                          {pdfDownloadingId === invoice.id ? 'PDF作成中...' : 'PDF保存'}
-                        </button>
-                        {canGmail && !invoice.gmail_draft_created_at && (
-                          <button
-                            onClick={() => handleCreateGmailDraft(invoice)}
-                            disabled={anyBusy}
-                            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 disabled:opacity-50 transition-colors"
-                          >
-                            {gmailDraftingId === invoice.id ? '作成中...' : 'Gmail下書き作成'}
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleEditCompany(invoice)}
-                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
-                        >
-                          顧客情報を編集
-                        </button>
-                        <button
-                          onClick={() => openAdjustmentsModal(invoice)}
-                          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
-                        >
-                          {(invoice.invoice_adjustments?.length ?? 0) > 0
-                            ? `調整行を編集（${invoice.invoice_adjustments!.length}件）`
-                            : '調整行を編集'}
-                        </button>
-                        {/* 訂正用ステータスプルダウン（工程は未送信⇔送信済み。入金工程は freee 側で完結のため撤去）。
-                            既存の入金済み/未払いデータは表示崩れ防止のため、その行に限り「（過去の状態）」として表示する。 */}
-                        <select
-                          value={invoice.status}
-                          onChange={(e) => handleUpdateStatus(invoice.id, e.target.value)}
-                          className={`text-xs font-bold px-2 py-1 rounded-full border-none cursor-pointer ${getStatusColor(invoice.status)}`}
-                        >
-                          <option value="draft">未送信</option>
-                          <option value="sent">送信済み</option>
-                          {(invoice.status === 'paid' || invoice.status === 'overdue') && (
-                            <option value={invoice.status}>{statusLabel(invoice.status)}（過去の状態）</option>
-                          )}
-                        </select>
-                        {/* 削除は誤操作防止のため控えめな配置（末尾・地味な文字リンク）＋確認モーダル必須 */}
-                        <button
-                          onClick={() => setDeletingInvoice(invoice)}
-                          className="ml-auto text-xs text-gray-400 hover:text-red-600 transition-colors"
-                        >
-                          削除
+                          {bulkRunning ? '作成中...' : `Gmail下書きを一括作成（${groupSelectedN}件）`}
                         </button>
                       </div>
-                    </div>
+                    )}
                   </div>
-                )
-              })}
-            </div>
+                  <div className="divide-y divide-gray-100 border-b border-gray-100">
+                    {items.map((invoice) => {
+                      const { displayName, storeName, deliveryMethod } = getCompanyView(invoice)
+                      const deliveryGroup = deliveryGroupOf(invoice)
+                      const isEmailMethod = deliveryGroup !== 'non_email'
+                      const canGmail = deliveryGroup === 'email'
+                      const isOverdue = !!invoice.due_date && invoice.status !== 'paid' && invoice.due_date < todayStr
+                      const checked = selectedIds.has(invoice.id)
+                      return (
+                        <div key={invoice.id} className="flex items-start gap-1 px-2 py-3">
+                          {/* チェックボックス（タップ領域44px以上） */}
+                          <label className="flex items-center justify-center min-w-[44px] min-h-[44px] cursor-pointer flex-shrink-0">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleSelect(invoice.id)}
+                              className="w-5 h-5 accent-green-600"
+                            />
+                          </label>
+
+                          <div className="flex-1 min-w-0 pr-2">
+                            {/* 1段目: 会社名（左） / 金額（右・大） */}
+                            <div className="flex items-baseline justify-between gap-2">
+                              <div className="min-w-0">
+                                <span className="text-base font-semibold text-gray-900">{displayName}</span>
+                                {storeName && <span className="ml-1 text-xs text-gray-400">（店舗名: {storeName}）</span>}
+                              </div>
+                              <span className="font-bold text-gray-900 text-lg flex-shrink-0">{formatCurrency(invoice.total_amount)}</span>
+                            </div>
+
+                            {/* 2段目: 請求書番号・支払期限（超過は赤字） */}
+                            <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400 flex-wrap">
+                              <span>{invoice.invoice_number}</span>
+                              <span className="text-gray-300">/</span>
+                              <span className="flex items-center gap-1">
+                                <span className={isOverdue ? 'text-red-600 font-bold' : ''}>支払期限</span>
+                                <input
+                                  type="date"
+                                  value={invoice.due_date ?? ''}
+                                  onChange={(e) => handleUpdateDueDate(invoice.id, e.target.value)}
+                                  className={`text-xs border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-green-400 ${
+                                    isOverdue ? 'border-red-300 text-red-600' : 'border-gray-200 text-gray-600'
+                                  }`}
+                                />
+                                {isOverdue && <span className="text-red-600 font-bold">超過</span>}
+                              </span>
+                            </div>
+
+                            {/* バッジ行 */}
+                            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${getStatusColor(invoice.status)}`}>
+                                {statusLabel(invoice.status)}
+                              </span>
+                              {isEmailMethod ? (
+                                invoice.gmail_draft_created_at ? (
+                                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                                    下書き作成済み {formatDraftBadge(invoice.gmail_draft_created_at)}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">未作成</span>
+                                )
+                              ) : deliveryMethod === 'postal' ? (
+                                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">郵送</span>
+                              ) : (
+                                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">メール以外の送付</span>
+                              )}
+                              {deliveryGroup === 'no_email' && (
+                                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">メール未登録</span>
+                              )}
+                              {invoiceHasCodWarning(invoice) && (
+                                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                                  ⚠ 代引き注文が含まれています
+                                </span>
+                              )}
+                            </div>
+
+                            {/* 行アクション */}
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                              <button
+                                onClick={() => openInvoicePrint(invoice.id)}
+                                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                              >
+                                請求書を開く
+                              </button>
+                              <button
+                                onClick={() => handleDownloadPdf(invoice)}
+                                disabled={pdfDownloadingId === invoice.id}
+                                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-50 transition-colors"
+                              >
+                                {pdfDownloadingId === invoice.id ? 'PDF作成中...' : 'PDF保存'}
+                              </button>
+                              {canGmail && !invoice.gmail_draft_created_at && (
+                                <button
+                                  onClick={() => handleCreateGmailDraft(invoice)}
+                                  disabled={anyBusy}
+                                  className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 disabled:opacity-50 transition-colors"
+                                >
+                                  {gmailDraftingId === invoice.id ? '作成中...' : 'Gmail下書き作成'}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleEditCompany(invoice)}
+                                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                              >
+                                顧客情報を編集
+                              </button>
+                              <button
+                                onClick={() => openAdjustmentsModal(invoice)}
+                                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                              >
+                                {(invoice.invoice_adjustments?.length ?? 0) > 0
+                                  ? `調整行を編集（${invoice.invoice_adjustments!.length}件）`
+                                  : '調整行を編集'}
+                              </button>
+                              {/* 訂正用ステータスプルダウン（工程は未送信⇔送信済み。入金工程は freee 側で完結のため撤去）。
+                                  既存の入金済み/未払いデータは表示崩れ防止のため、その行に限り「（過去の状態）」として表示する。 */}
+                              <select
+                                value={invoice.status}
+                                onChange={(e) => handleUpdateStatus(invoice.id, e.target.value)}
+                                className={`text-xs font-bold px-2 py-1 rounded-full border-none cursor-pointer ${getStatusColor(invoice.status)}`}
+                              >
+                                <option value="draft">未送信</option>
+                                <option value="sent">送信済み</option>
+                                {(invoice.status === 'paid' || invoice.status === 'overdue') && (
+                                  <option value={invoice.status}>{statusLabel(invoice.status)}（過去の状態）</option>
+                                )}
+                              </select>
+                              {/* 削除は誤操作防止のため控えめな配置（末尾・地味な文字リンク）＋確認モーダル必須 */}
+                              <button
+                                onClick={() => setDeletingInvoice(invoice)}
+                                className="ml-auto text-xs text-gray-400 hover:text-red-600 transition-colors"
+                              >
+                                削除
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </section>
+              )
+            })}
           </>
         )}
       </div>
@@ -1812,7 +1902,7 @@ export default function AdminInvoicesPage() {
                 再送用のお詫び文を追加する
               </label>
               <button
-                onClick={handleBulkGmailDraft}
+                onClick={() => handleBulkGmailDraft()}
                 disabled={anyBusy}
                 className="text-sm font-bold px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition-colors"
               >
