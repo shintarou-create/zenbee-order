@@ -10,7 +10,7 @@ import OnboardingScreen from '@/components/customer/OnboardingScreen'
 import PendingApprovalScreen from '@/components/customer/PendingApprovalScreen'
 import ProductBrowser from '@/components/customer/ProductBrowser'
 import { CART_STORAGE_KEY_LIVE } from '@/lib/cart-storage'
-import type { Company, PriceRank } from '@/types'
+import type { Company } from '@/types'
 
 type CustomerStatus = 'loading' | 'onboarding' | 'pending' | 'ready' | 'error'
 
@@ -21,11 +21,11 @@ export default function HomePage() {
   const [customerLoading, setCustomerLoading] = useState(false)
   const [customerStatus, setCustomerStatus] = useState<CustomerStatus>('loading')
 
-  const priceRank: PriceRank = company?.price_rank || 'standard'
+  // 商品・価格は承認済み（ready）が確定してから取得する（承認待ちの端末に価格データを送らない）
   const { products, isLoading: productsLoading } = useProducts({
-    priceRank,
-    withTiers: true,
-    companyId: company?.id,
+    mode: 'customer',
+    accessToken,
+    enabled: customerStatus === 'ready',
   })
 
   const fetchCustomer = useCallback(async () => {

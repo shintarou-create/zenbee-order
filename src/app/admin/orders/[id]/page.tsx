@@ -196,13 +196,15 @@ export default function AdminOrderDetailPage() {
     if (!order || (order.status !== 'pending' && order.status !== 'shipped')) return
 
     async function fetchProducts() {
-      const supabase = createClient()
       // is_active フィルタなし: シーズン外等で非表示にした商品も管理者は意図して選べる必要がある
       // （客側LIFFの発注画面は別経路・別クエリのため、ここを変えても客側の表示には影響しない）。
-      const { data } = await supabase
-        .from('products')
-        .select('id, name, unit, category, display_order, is_active, product_pricing_tiers(id, product_id, tier_label, quantity, unit_price, is_active, visible_company_id), product_prices(price_rank, price_per_unit)')
-        .order('display_order', { ascending: true })
+      // 価格系テーブルは公開キーで読めないため、管理APIから取得する（tierは product_pricing_tiers 名に詰め替え）。
+      const productsRes = await adminFetch('/api/admin/products')
+      const productsJson = (await productsRes.json()) as { data?: Array<Record<string, unknown> & { pricing_tiers?: unknown[] }> }
+      const data = (productsJson.data ?? []).map(({ pricing_tiers, ...rest }) => ({
+        ...rest,
+        product_pricing_tiers: pricing_tiers ?? [],
+      }))
       // 「よく使う商品」順の並び替え用に使用実績を取得。失敗しても {} で display_order 順にフォールバック。
       let usageStats: Record<string, number> = {}
       try {

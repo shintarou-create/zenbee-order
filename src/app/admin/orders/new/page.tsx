@@ -115,14 +115,10 @@ export default function AdminOrderNewPage() {
       const [productsRes, companiesRes] = await Promise.all([
         // is_active フィルタなし: シーズン外等で非表示にした商品も管理者は意図して選べる必要がある
         // （客側LIFFの発注画面は別経路・別クエリのため、ここを変えても客側の表示には影響しない）。
-        supabase
-          .from('products')
-          .select(`
-            id, name, unit, stock_status, ship_start_date, cool_type, step_qty, min_order_qty, display_order, category, is_active,
-            product_prices (price_rank, price_per_unit),
-            pricing_tiers:product_pricing_tiers (id, product_id, tier_label, quantity, unit_price, display_order, is_active, visible_company_id)
-          `)
-          .order('display_order', { ascending: true }),
+        // 価格系テーブルは公開キーで読めないため、管理APIから取得する。
+        adminFetch('/api/admin/products')
+          .then((r) => r.json() as Promise<{ data?: unknown[] }>)
+          .then((json) => ({ data: json.data ?? null })),
         supabase
           .from('companies')
           .select('id, company_name, price_rank, internal_memo')

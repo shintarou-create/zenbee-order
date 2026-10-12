@@ -6,7 +6,6 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from 
 import type { DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { createClient } from '@/lib/supabase/client'
 import ProductForm from '@/components/admin/ProductForm'
 import CategorySection from '@/components/admin/CategorySection'
 import CategoryManageModal from '@/components/admin/CategoryManageModal'
@@ -74,15 +73,10 @@ export default function AdminProductsPage() {
   const fetchData = useCallback(async () => {
     setIsLoading(true)
     try {
-      const supabase = createClient()
+      // 価格系テーブルは公開キーで読めないため、商品一覧は管理APIから取得する
       const [catRes, prodRes] = await Promise.all([
         adminFetch('/api/admin/categories').then((r) => r.json()),
-        supabase.from('products').select(`
-          *,
-          inventory (id, product_id, available_qty, reserved_qty, updated_at),
-          product_prices (id, product_id, price_rank, price_per_unit),
-          pricing_tiers:product_pricing_tiers (id, product_id, tier_label, quantity, unit_price, display_order, is_active)
-        `).order('display_order', { ascending: true }),
+        adminFetch('/api/admin/products').then((r) => r.json()),
       ])
       setCategories(catRes.data || [])
       setProducts((prodRes.data || []) as Product[])

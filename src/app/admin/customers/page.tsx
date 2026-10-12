@@ -169,14 +169,11 @@ export default function AdminCustomersPage() {
 
   async function fetchProducts() {
     try {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name, category, pricing_tiers:product_pricing_tiers (id, tier_label, quantity, is_active)')
-        .eq('is_active', true)
-        .order('display_order', { ascending: true })
-      if (error) throw error
-      setProducts((data ?? []) as unknown as ProductForOverride[])
+      // 価格系テーブルは公開キーで読めないため、管理APIから取得して有効な商品だけに絞る
+      const res = await adminFetch('/api/admin/products')
+      const json = (await res.json()) as { data?: (ProductForOverride & { is_active: boolean })[]; error?: string }
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
+      setProducts((json.data ?? []).filter((p) => p.is_active))
     } catch (err) {
       console.error('商品取得エラー:', err)
     }

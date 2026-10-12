@@ -1,6 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 
+export const dynamic = 'force-dynamic'
+
+// 管理画面用の商品一覧（非表示の商品も含む全件）。価格系テーブルは公開キーで読めないため、
+// 管理画面の商品・価格・価格段階の取得はこのAPIを経由する。
+// 認証: middleware が /api/admin/* を保護済み
+export async function GET() {
+  const supabase = createServiceClient()
+  const { data, error } = await supabase
+    .from('products')
+    .select(`
+      *,
+      inventory (id, product_id, available_qty, reserved_qty, updated_at),
+      product_prices (id, product_id, price_rank, price_per_unit),
+      pricing_tiers:product_pricing_tiers (id, product_id, tier_label, quantity, unit_price, display_order, is_active, visible_company_id)
+    `)
+    .order('display_order', { ascending: true })
+
+  if (error) {
+    console.error('admin products GET error:', error)
+    return NextResponse.json({ error: '商品の取得に失敗しました' }, { status: 500 })
+  }
+  return NextResponse.json({ data: data ?? [] })
+}
+
 export async function POST(req: NextRequest) {
   let body: unknown
   try {
