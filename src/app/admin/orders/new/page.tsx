@@ -10,6 +10,7 @@ import { formatUnitWithTotal, shouldShowTierBadge, isSetCategory } from '@/lib/q
 import { sortProductsByUsage } from '@/lib/product-sort'
 import { DELIVERY_TIME_SLOT_OPTIONS } from '@/lib/yamato-csv'
 import { filterTiersForCompany } from '@/lib/tier-visibility'
+import { useBusinessTypes } from '@/hooks/useBusinessTypes'
 import type { PaymentMethod } from '@/types'
 import { PAYMENT_METHOD_LABELS } from '@/types'
 
@@ -87,6 +88,8 @@ export default function AdminOrderNewPage() {
   const [companyListOpen, setCompanyListOpen] = useState(false)
   const companySearchRef = useRef<HTMLDivElement>(null)
   const [newCompanyName, setNewCompanyName] = useState('')
+  const [newCompanyBusinessTypeId, setNewCompanyBusinessTypeId] = useState('')
+  const { activeTypes: businessTypes } = useBusinessTypes()
 
   // 商品追加フォーム
   const [addProductId, setAddProductId] = useState('')
@@ -268,7 +271,9 @@ export default function AdminOrderNewPage() {
       return
     }
     const payload = {
-      ...(companyMode === 'existing' ? { companyId } : { newCompanyName: newCompanyName.trim() }),
+      ...(companyMode === 'existing'
+        ? { companyId }
+        : { newCompanyName: newCompanyName.trim(), newCompanyBusinessTypeId: newCompanyBusinessTypeId || null }),
       items: items.map((item) =>
         item.isCustom
           ? { isCustom: true, customText: item.customText }
@@ -409,9 +414,20 @@ export default function AdminOrderNewPage() {
                 maxLength={200}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
               />
+              <select
+                value={newCompanyBusinessTypeId}
+                onChange={(e) => setNewCompanyBusinessTypeId(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400"
+              >
+                <option value="">業態を選択（任意）</option>
+                {businessTypes.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
               <p className="text-xs text-gray-500">
-                同名の取引先が既に存在する場合は既存の取引先を使用します。
-                新規作成の場合は price_rank=standard で登録されます。
+                同名の取引先が既に存在する場合は既存の取引先を使用します（業態の選択は無視されます）。
+                新規作成の場合は price_rank=standard で登録されます。業態を選ばない場合は未設定になり、
+                LINEから発注するには顧客管理で業態の設定が必要です。
               </p>
             </div>
           )}

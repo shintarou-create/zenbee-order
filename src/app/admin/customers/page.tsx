@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
 import CustomerTable from '@/components/admin/CustomerTable'
+import { useBusinessTypes } from '@/hooks/useBusinessTypes'
 import type { Company, PriceRank, DeliveryMethod, InvoiceDeliveryMethod, CompanyOverride, CompanyMemoLog } from '@/types'
 
 const PRICE_RANKS: { value: string; label: string }[] = [
@@ -110,6 +111,14 @@ const initialFormData: Partial<Company> = {
   internal_memo: '',
 }
 
+type BusinessTypeLog = {
+  id: string
+  changed_by: string | null
+  changed_at: string
+  from_type: { name: string } | null
+  to_type: { name: string } | null
+}
+
 export default function AdminCustomersPage() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -127,6 +136,12 @@ export default function AdminCustomersPage() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [approvingId, setApprovingId] = useState<string | null>(null)
+  // 承認モーダル（業態の選択が必須）
+  const [approveTarget, setApproveTarget] = useState<Company | null>(null)
+  const [approveTypeId, setApproveTypeId] = useState('')
+  // 業態マスタ・業態変更履歴
+  const { types: businessTypes, activeTypes: activeBusinessTypes } = useBusinessTypes()
+  const [businessTypeLogs, setBusinessTypeLogs] = useState<BusinessTypeLog[]>([])
   const [generatingCodeId, setGeneratingCodeId] = useState<string | null>(null)
 
   // 個別単価・送料特例
@@ -368,7 +383,31 @@ export default function AdminCustomersPage() {
     setMemoLogs([])
     setNewMemoBody('')
     fetchMemoLogs(company.id)
+    setBusinessTypeLogs([])
+    fetchBusinessTypeLogs(company.id)
     setShowModal(true)
+  }
+
+  async function fetchBusinessTypeLogs(companyId: string) {
+    try {
+      const res = await adminFetch(`/api/admin/companies/${companyId}/business-type-logs`)
+      const json = (await res.json()) as { data?: BusinessTypeLog[] }
+      if (res.ok) setBusinessTypeLogs(json.data ?? [])
+    } catch (err) {
+      console.error('業態変更履歴の取得エラー:', err)
+    }
+  }
+
+  // 業態の変更は履歴を残すため必ずAPI経由（companies の直接更新には含めない）
+  async function patchBusinessType(companyId: string, businessTypeId: string): Promise<string | null> {
+    const res = await adminFetch(`/api/admin/companies/${companyId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ business_type_id: businessTypeId }),
+    })
+    if (res.ok) return null
+    const json = (await res.json().catch(() => ({}))) as { error?: string }
+    return json.error || '業態の変更に失敗しました'
   }
 
   function handleAddNew() {
@@ -380,6 +419,7 @@ export default function AdminCustomersPage() {
     setOverrideError(null)
     setMemoLogs([])
     setNewMemoBody('')
+    setBusinessTypeLogs([])
     setShowModal(true)
   }
 
@@ -463,6 +503,7 @@ export default function AdminCustomersPage() {
         internal_memo: formData.internal_memo?.trim() || null,
       }
 
+      const nextBusinessTypeId = formData.business_type_id || null
       if (editingCompany) {
         const { error } = await supabase
           .from('companies')
@@ -470,11 +511,24 @@ export default function AdminCustomersPage() {
           .eq('id', editingCompany.id)
 
         if (error) throw error
-        setMessage({ type: 'success', text: '顧客情報を更新しました' })
+        const btError =
+          nextBusinessTypeId && nextBusinessTypeId !== (editingCompany.business_type_id ?? null)
+            ? await patchBusinessType(editingCompany.id, nextBusinessTypeId)
+            : null
+        setMessage(
+          btError
+            ? { type: 'error', text: `顧客情報は更新しましたが、${btError}` }
+            : { type: 'success', text: '顧客情報を更新しました' }
+        )
       } else {
-        const { error } = await supabase.from('companies').insert(companyData)
+        const { data: inserted, error } = await supabase.from('companies').insert(companyData).select('id').single()
         if (error) throw error
-        setMessage({ type: 'success', text: '顧客を追加しました' })
+        const btError = nextBusinessTypeId && inserted ? await patchBusinessType(inserted.id, nextBusinessTypeId) : null
+        setMessage(
+          btError
+            ? { type: 'error', text: `顧客は追加しましたが、${btError}` }
+            : { type: 'success', text: '顧客を追加しました' }
+        )
       }
 
       setShowModal(false)
@@ -488,19 +542,28 @@ export default function AdminCustomersPage() {
     }
   }
 
-  async function handleApprove(company: Company) {
+  // 承認ボタン → 業態選択モーダルを開く（業態を選ばないと承認できない）
+  function handleApprove(company: Company) {
+    setApproveTarget(company)
+    setApproveTypeId(company.business_type_id ?? '')
+  }
+
+  async function confirmApprove() {
+    const company = approveTarget
+    if (!company || !approveTypeId) return
     setApprovingId(company.id)
     try {
       const res = await adminFetch(`/api/admin/companies/${company.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approval_status: 'approved' }),
+        body: JSON.stringify({ approval_status: 'approved', business_type_id: approveTypeId }),
       })
       const json = (await res.json()) as { error?: string }
       if (!res.ok) {
         setMessage({ type: 'error', text: json.error || '承認に失敗しました' })
       } else {
         setMessage({ type: 'success', text: `${company.company_name} を承認しました` })
+        setApproveTarget(null)
         await fetchCompanies()
       }
     } catch {
@@ -694,6 +757,12 @@ export default function AdminCustomersPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">顧客管理</h1>
         <div className="flex items-center gap-2">
+          <Link
+            href="/admin/business-types"
+            className="border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+          >
+            業態の設定
+          </Link>
           <Link
             href="/admin/customers/import"
             className="border border-green-600 text-green-600 hover:bg-green-50 font-medium px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
@@ -1063,6 +1132,39 @@ export default function AdminCustomersPage() {
                 <p className="text-xs text-gray-400 mt-1">
                   直接配達・来店引取りは送料一律¥0で計算されます。
                 </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">業態</label>
+                <select
+                  value={formData.business_type_id ?? ''}
+                  onChange={(e) => setFormData((p) => ({ ...p, business_type_id: e.target.value || null }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  {/* 未設定には戻せないため、未設定の取引先のときだけ選択肢に出す */}
+                  {!editingCompany?.business_type_id && <option value="">未設定</option>}
+                  {businessTypes
+                    .filter((t) => t.is_active || t.id === formData.business_type_id)
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}{t.is_active ? '' : '（無効）'}
+                      </option>
+                    ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  LINEで見える商品が業態で決まります。変更は以後の注文から反映され、過去の注文の売上分類は変わりません。
+                </p>
+                {editingCompany && businessTypeLogs.length > 0 && (
+                  <ul className="mt-2 space-y-0.5 text-xs text-gray-500">
+                    {businessTypeLogs.map((log) => (
+                      <li key={log.id}>
+                        {new Date(log.changed_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}：
+                        {log.from_type?.name ?? '未設定'} → {log.to_type?.name ?? '未設定'}
+                        {log.changed_by ? `（${log.changed_by}）` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               <div>
@@ -1569,6 +1671,49 @@ export default function AdminCustomersPage() {
                 className="border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium px-6 py-2 rounded-lg text-sm transition-colors"
               >
                 キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 承認モーダル（業態の選択が必須） */}
+      {approveTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setApproveTarget(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-4 space-y-3">
+            <h2 className="text-lg font-bold text-gray-900">承認する</h2>
+            <div className="text-sm text-gray-700 space-y-1">
+              <p className="font-bold">{approveTarget.company_name}</p>
+              {approveTarget.notes && <p className="text-xs text-gray-500 whitespace-pre-wrap">{approveTarget.notes}</p>}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">業態（必須）</label>
+              <select
+                value={approveTypeId}
+                onChange={(e) => setApproveTypeId(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400"
+              >
+                <option value="">業態を選択してください</option>
+                {activeBusinessTypes.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">承認すると、選んだ業態の商品が表示され、相手のLINEにご利用開始のご案内が届きます。</p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setApproveTarget(null)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={confirmApprove}
+                disabled={!approveTypeId || approvingId === approveTarget.id}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+              >
+                {approvingId === approveTarget.id ? '承認中...' : '承認する'}
               </button>
             </div>
           </div>

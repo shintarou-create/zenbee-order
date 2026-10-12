@@ -127,6 +127,14 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // 業態が未設定の取引先は発注不可（画面で隠すだけでなくサーバー側で必ず拒否する）
+    if (!company.business_type_id) {
+      return NextResponse.json(
+        { error: 'ご利用の準備中です。担当者からのご案内をお待ちください。' },
+        { status: 403 }
+      )
+    }
+
     // 通常行の productId リスト（自由記入行を除く）
     const normalItems = items.filter((i) => !i.isCustom)
     const productIds = normalItems.map((i) => i.productId)
@@ -156,6 +164,24 @@ export async function POST(req: NextRequest) {
         )
       }
       products = fetched as typeof products
+
+      // 取引先の業態に紐づかない商品は注文させない（他業態の商品IDを直接送られた場合の防御）
+      const { data: links, error: linkError } = await supabase
+        .from('business_type_products')
+        .select('product_id')
+        .eq('business_type_id', company.business_type_id)
+        .in('product_id', productIds)
+      if (linkError) {
+        return NextResponse.json({ error: '商品情報の取得に失敗しました' }, { status: 500 })
+      }
+      const allowed = new Set((links ?? []).map((l) => l.product_id as string))
+      const notAllowed = products.filter((p) => !allowed.has(p.id))
+      if (notAllowed.length > 0) {
+        return NextResponse.json(
+          { error: `ご注文いただけない商品が含まれています: ${notAllowed.map((p) => p.name).join('、')}` },
+          { status: 400 }
+        )
+      }
     }
 
     // 発送開始日の混在チェック（is_custom 行は ship_start_date なし = NULL 扱い）
@@ -366,6 +392,8 @@ export async function POST(req: NextRequest) {
       .insert({
         order_number: orderNumber,
         company_id: company.id,
+        // 注文時点の業態（売上分析の業態別集計用。後から取引先の業態を変えても動かない）
+        business_type_id: company.business_type_id,
         status: 'pending',
         total_amount: totalAmount,
         notes: notes || null,

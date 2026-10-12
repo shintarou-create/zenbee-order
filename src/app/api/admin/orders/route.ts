@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { companyId, newCompanyName, items, notes, deliveryDate, deliveryTimeSlot, paymentMethod, codFee } = body
+    const { companyId, newCompanyName, newCompanyBusinessTypeId, items, notes, deliveryDate, deliveryTimeSlot, paymentMethod, codFee } = body
 
     if (!companyId && !newCompanyName?.trim()) {
       return NextResponse.json({ error: '取引先を指定してください' }, { status: 400 })
@@ -84,12 +84,13 @@ export async function POST(req: NextRequest) {
       price_rank: string
       delivery_method: DeliveryMethod
       price_tax_type: 'inclusive' | 'exclusive'
+      business_type_id: string | null
     }
 
     if (companyId) {
       const { data, error } = await supabase
         .from('companies')
-        .select('id, company_name, price_rank, delivery_method, price_tax_type')
+        .select('id, company_name, price_rank, delivery_method, price_tax_type, business_type_id')
         .eq('id', companyId)
         .single()
       if (error || !data) {
@@ -101,7 +102,7 @@ export async function POST(req: NextRequest) {
       const trimmedName = (newCompanyName as string).trim()
       const { data: existing } = await supabase
         .from('companies')
-        .select('id, company_name, price_rank, delivery_method, price_tax_type')
+        .select('id, company_name, price_rank, delivery_method, price_tax_type, business_type_id')
         .eq('company_name', trimmedName)
         .maybeSingle()
 
@@ -116,8 +117,10 @@ export async function POST(req: NextRequest) {
             approval_status: 'approved',
             is_active: true,
             has_separate_billing: false,
+            // 管理画面で選んだ業態（未選択なら未設定のまま。LIFF発注には顧客管理での業態設定が必要）
+            business_type_id: typeof newCompanyBusinessTypeId === 'string' && newCompanyBusinessTypeId ? newCompanyBusinessTypeId : null,
           })
-          .select('id, company_name, price_rank, delivery_method, price_tax_type')
+          .select('id, company_name, price_rank, delivery_method, price_tax_type, business_type_id')
           .single()
         if (insertError || !inserted) {
           console.error('companies INSERT error:', insertError)
@@ -331,6 +334,8 @@ export async function POST(req: NextRequest) {
       .insert({
         order_number: orderNumber,
         company_id: company.id,
+        // 注文時点の業態（売上分析の業態別集計用）。管理画面からの注文は業態外の商品も選べる
+        business_type_id: company.business_type_id ?? null,
         status: 'pending',
         total_amount: totalAmount,
         notes: notes || null,

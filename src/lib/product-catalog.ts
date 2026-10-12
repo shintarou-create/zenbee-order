@@ -12,6 +12,9 @@ export interface CatalogOptions {
   priceRank: PriceRank
   // 発注者の company_id。null の場合は全社共通tierのみ（管理画面プレビュー）。
   companyId: string | null
+  // 発注者の業態。指定時はその業態に紐づく商品（business_type_products）だけを返す。
+  // null の場合は業態で絞らない（管理画面プレビュー用）。
+  businessTypeId: string | null
 }
 
 /**
@@ -19,7 +22,17 @@ export interface CatalogOptions {
  * pricing_tiers だけを付けて返す。他ランクの価格（product_prices）はレスポンスに含めない。
  */
 export async function fetchCatalog(supabase: ServiceClient, options: CatalogOptions): Promise<Product[]> {
-  const { priceRank, companyId } = options
+  const { priceRank, companyId, businessTypeId } = options
+
+  let allowedProductIds: Set<string> | null = null
+  if (businessTypeId) {
+    const { data: links, error: linkError } = await supabase
+      .from('business_type_products')
+      .select('product_id')
+      .eq('business_type_id', businessTypeId)
+    if (linkError) throw linkError
+    allowedProductIds = new Set((links ?? []).map((l) => l.product_id as string))
+  }
 
   const { data, error } = await supabase
     .from('products')
@@ -34,7 +47,9 @@ export async function fetchCatalog(supabase: ServiceClient, options: CatalogOpti
 
   if (error) throw error
 
-  const products = ((data ?? []) as unknown as Product[]).filter((p) => isProductVisible(p))
+  const products = ((data ?? []) as unknown as Product[]).filter(
+    (p) => isProductVisible(p) && (!allowedProductIds || allowedProductIds.has(p.id))
+  )
 
   return products.map((p) => {
     const priceEntry =

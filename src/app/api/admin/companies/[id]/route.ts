@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { sendPushMessage } from '@/lib/line-messaging'
+import { getAdminIdentity } from '@/lib/admin-auth'
 
 const VALID_APPROVAL_STATUSES = ['approved', 'pending', 'rejected'] as const
 type ApprovalStatus = (typeof VALID_APPROVAL_STATUSES)[number]
@@ -17,13 +18,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // 認証: middleware が /api/admin/* を保護済み
   try {
     const body = await req.json()
-    const { approval_status, delivery_method } = body as {
+    const { approval_status, delivery_method, business_type_id } = body as {
       approval_status?: string
       delivery_method?: string
+      business_type_id?: string | null
     }
 
-    // approval_status / delivery_method のいずれかは必須。指定されたものだけ更新する。
-    const updates: { approval_status?: ApprovalStatus; delivery_method?: DeliveryMethodValue } = {}
+    // approval_status / delivery_method / business_type_id のいずれかは必須。指定されたものだけ更新する。
+    const updates: {
+      approval_status?: ApprovalStatus
+      delivery_method?: DeliveryMethodValue
+      business_type_id?: string
+    } = {}
 
     if (approval_status !== undefined) {
       if (!VALID_APPROVAL_STATUSES.includes(approval_status as ApprovalStatus)) {
@@ -45,23 +51,64 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       updates.delivery_method = delivery_method as DeliveryMethodValue
     }
 
+    const supabase = createServiceClient()
+
+    // 業態（未設定に戻すことはできない。選べるのは有効な業態のみ）
+    if (business_type_id !== undefined) {
+      if (typeof business_type_id !== 'string' || !business_type_id) {
+        return NextResponse.json({ error: '業態を選択してください' }, { status: 400 })
+      }
+      const { data: bt } = await supabase
+        .from('business_types')
+        .select('id, is_active')
+        .eq('id', business_type_id)
+        .maybeSingle()
+      if (!bt || !bt.is_active) {
+        return NextResponse.json({ error: '指定された業態が見つからないか、無効になっています' }, { status: 400 })
+      }
+      updates.business_type_id = business_type_id
+    }
+
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
-        { error: 'approval_status または delivery_method を指定してください' },
+        { error: 'approval_status / delivery_method / business_type_id のいずれかを指定してください' },
         { status: 400 }
       )
     }
 
-    const supabase = createServiceClient()
+    const { data: before } = await supabase
+      .from('companies')
+      .select('id, business_type_id')
+      .eq('id', params.id)
+      .maybeSingle()
+    if (!before) return NextResponse.json({ error: '会社が見つかりません' }, { status: 404 })
+
+    // 承認には業態の割り当てが必須（今回指定するか、既に設定済みであること）
+    if (updates.approval_status === 'approved' && !(updates.business_type_id ?? before.business_type_id)) {
+      return NextResponse.json({ error: '業態を選択してから承認してください' }, { status: 400 })
+    }
+
     const { data, error } = await supabase
       .from('companies')
       .update(updates)
       .eq('id', params.id)
-      .select('id, approval_status, delivery_method')
+      .select('id, approval_status, delivery_method, business_type_id')
       .single()
 
     if (error) throw error
     if (!data) return NextResponse.json({ error: '会社が見つかりません' }, { status: 404 })
+
+    // 業態が変わった場合は変更履歴を残す（失敗しても更新自体はロールバックしない）
+    if (updates.business_type_id && updates.business_type_id !== before.business_type_id) {
+      const admin = await getAdminIdentity(req)
+      const { error: logError } = await supabase.from('company_business_type_logs').insert({
+        company_id: params.id,
+        from_business_type_id: before.business_type_id ?? null,
+        to_business_type_id: updates.business_type_id,
+        changed_by: admin?.name ?? null,
+      })
+      if (logError) console.error('業態変更履歴の記録エラー:', logError)
+    }
 
     // 承認時のみ、紐づく全 line_users に通知（失敗しても承認はロールバックしない）
     if (updates.approval_status === 'approved') {

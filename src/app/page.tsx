@@ -61,8 +61,12 @@ export default function HomePage() {
 
       const fetchedCompany = lineUser.company as Company
 
-      if (fetchedCompany.approval_status === 'pending') {
-        // 登録申請中 → 承認待ち画面
+      // 登録申請中、または承認済みでも業態が未設定（管理画面で作成した取引先など）→ 承認待ち画面。
+      // 商品APIもサーバー側で同じ条件を拒否するため、画面で隠すだけにはなっていない。
+      if (
+        fetchedCompany.approval_status === 'pending' ||
+        (fetchedCompany.approval_status !== 'rejected' && fetchedCompany.is_active && !fetchedCompany.business_type_id)
+      ) {
         setCompany(fetchedCompany)
         setCustomerStatus('pending')
         return

@@ -55,6 +55,18 @@ export type CoolType = 0 | 1 | 2
 export type AdminRole = 'admin' | 'superadmin'
 
 // ============================================================
+// BusinessType（業態マスタ。商品の出し分け・売上分析の業態別集計の単位）
+// ============================================================
+export interface BusinessType {
+  id: string
+  name: string
+  display_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+// ============================================================
 // Company（旧 Customer）
 // ============================================================
 export interface Company {
@@ -81,6 +93,9 @@ export interface Company {
   // 初回オンボーディング
   registration_code?: string | null
   approval_status?: 'approved' | 'pending' | 'rejected'
+  // 業態（business_types.id）。NULL=未設定。LIFFの商品表示・発注は業態設定済みの承認済み取引先のみ。
+  // 変更は必ず PATCH /api/admin/companies/[id] 経由で行う（変更履歴を残すため）。
+  business_type_id?: string | null
   // 請求先（デフォルト）
   has_separate_billing: boolean
   billing_name: string | null
@@ -243,6 +258,8 @@ export interface Order {
   // 手動注文・このカラム追加前の過去注文はどちらもnull（担当者不明として表示する）。
   ordered_by_line_user_id: string | null
   ordered_by_display_name: string | null
+  // 注文時点の取引先の業態（売上分析の業態別集計用）。NULL=業態未設定
+  business_type_id?: string | null
   created_at: string
   updated_at: string
   // Joined fields

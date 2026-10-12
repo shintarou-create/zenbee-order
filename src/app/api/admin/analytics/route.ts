@@ -29,11 +29,20 @@ export interface CategoryData {
   quantity: number
 }
 
+// 業態別（注文時点の業態 orders.business_type_id で集計）。business_type_id=null は「業態未設定」。
+export interface BusinessTypeData {
+  business_type_id: string | null
+  name: string
+  total: number
+  orderCount: number
+}
+
 export interface AnalyticsResponse {
   monthly: MonthlyData[]
   byProduct: ProductData[]
   byCompany: CompanyData[]
   byCategory: CategoryData[]
+  byBusinessType: BusinessTypeData[]
 }
 
 export async function GET(req: NextRequest) {
@@ -69,7 +78,13 @@ export async function GET(req: NextRequest) {
     const lastYearStart = `${lastYear}-01-01`
     const lastYearEnd = `${lastYear}-12-31`
 
-    type OrderRow = { id: string; delivery_date: string | null; company_id: string | null; total_amount: number | null }
+    type OrderRow = {
+      id: string
+      delivery_date: string | null
+      company_id: string | null
+      total_amount: number | null
+      business_type_id: string | null
+    }
     type LastYearRow = { delivery_date: string | null; total_amount: number | null }
 
     // 当年の注文を全件（1000行ずつバッチ）取得し、月別・商品別・取引先別すべてをここから導出する。
@@ -79,7 +94,7 @@ export async function GET(req: NextRequest) {
       fetchAllRows<OrderRow>((from, to) =>
         supabase
           .from('orders')
-          .select('id, delivery_date, company_id, total_amount')
+          .select('id, delivery_date, company_id, total_amount, business_type_id')
           .neq('status', 'cancelled')
           .gte('delivery_date', thisYearStart)
           .lte('delivery_date', thisYearEnd)
@@ -246,7 +261,44 @@ export async function GET(req: NextRequest) {
       byCompany.push(...sorted)
     }
 
-    const response: AnalyticsResponse = { monthly, byProduct, byCompany, byCategory }
+    // --- 業態別集計（aggOrders から。注文時点の業態で分類するため、取引先の現在の業態は見ない） ---
+    // 有効な業態は売上0でも必ず並べる（導入直後は飲食店以外が0円で表示される）。
+    // 無効な業態・業態未設定は、該当期間に売上がある場合だけ並べる。
+    const { data: typeRows, error: typeError } = await supabase
+      .from('business_types')
+      .select('id, name, display_order, is_active')
+      .order('display_order', { ascending: true })
+    if (typeError) throw typeError
+    const btMap = new Map<string | null, { total: number; orderCount: number }>()
+    for (const o of aggOrders) {
+      const key = o.business_type_id ?? null
+      const cur = btMap.get(key) ?? { total: 0, orderCount: 0 }
+      cur.total += o.total_amount ?? 0
+      cur.orderCount += 1
+      btMap.set(key, cur)
+    }
+    const byBusinessType: BusinessTypeData[] = []
+    for (const t of typeRows ?? []) {
+      const v = btMap.get(t.id)
+      if (!t.is_active && !v) continue
+      byBusinessType.push({
+        business_type_id: t.id,
+        name: t.is_active ? t.name : `${t.name}（無効）`,
+        total: v?.total ?? 0,
+        orderCount: v?.orderCount ?? 0,
+      })
+      btMap.delete(t.id)
+    }
+    // 業態未設定（と、マスタから消えた業態があればそれも未設定扱い）
+    const unset = Array.from(btMap.values()).reduce(
+      (acc, v) => ({ total: acc.total + v.total, orderCount: acc.orderCount + v.orderCount }),
+      { total: 0, orderCount: 0 }
+    )
+    if (unset.orderCount > 0) {
+      byBusinessType.push({ business_type_id: null, name: '業態未設定', ...unset })
+    }
+
+    const response: AnalyticsResponse = { monthly, byProduct, byCompany, byCategory, byBusinessType }
     return NextResponse.json({ data: response })
   } catch (err) {
     console.error('analytics GET error:', err)

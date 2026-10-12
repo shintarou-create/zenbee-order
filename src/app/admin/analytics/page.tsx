@@ -440,6 +440,38 @@ export default function AnalyticsPage() {
             )}
           </div>
 
+          {/* 業態別売上（注文時点の業態で集計。各業態の小計と全業態の合計） */}
+          {(() => {
+            const rows = data.byBusinessType ?? []
+            const grandTotal = rows.reduce((sum, r) => sum + r.total, 0)
+            const grandCount = rows.reduce((sum, r) => sum + r.orderCount, 0)
+            return (
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+                <div className="px-4 py-3 border-b border-gray-100">
+                  <h2 className="font-bold text-gray-900">業態別<span className="text-xs font-normal text-gray-400 ml-1">（{periodLabel}・注文時点の業態で集計）</span></h2>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {rows.map((r) => (
+                    <div key={r.business_type_id ?? 'unset'} className="px-4 py-3 flex items-center gap-3">
+                      <span className={`flex-1 text-sm truncate ${r.business_type_id ? 'text-gray-800' : 'text-amber-700'}`}>{r.name}</span>
+                      <span className="text-xs text-gray-500 flex-shrink-0">{r.orderCount}件</span>
+                      <span className="text-xs text-gray-400 w-12 text-right flex-shrink-0">
+                        {grandTotal > 0 ? `${Math.round((r.total / grandTotal) * 1000) / 10}%` : '-'}
+                      </span>
+                      <span className="font-bold text-green-700 text-sm flex-shrink-0 w-28 text-right">{formatCurrency(r.total)}</span>
+                    </div>
+                  ))}
+                  <div className="px-4 py-3 flex items-center gap-3 bg-gray-50">
+                    <span className="flex-1 text-sm font-bold text-gray-900">合計</span>
+                    <span className="text-xs text-gray-500 flex-shrink-0">{grandCount}件</span>
+                    <span className="text-xs text-gray-400 w-12 text-right flex-shrink-0">{grandTotal > 0 ? '100%' : '-'}</span>
+                    <span className="font-bold text-gray-900 text-sm flex-shrink-0 w-28 text-right">{formatCurrency(grandTotal)}</span>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
           {/* (C) 取引先別売上ランキング */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
             <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">

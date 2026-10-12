@@ -92,5 +92,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '在庫の初期化に失敗しました' }, { status: 500 })
   }
 
+  // 業態への紐づけ: 表示順が先頭の有効な業態（＝飲食店）に紐づける。従来どおり新商品が
+  // 既存の飲食店に表示されるようにするため。他の業態に見せる場合は「業態の設定」画面で追加する。
+  // 失敗しても商品作成自体は成功扱い（業態の設定画面から後で紐づけられる）。
+  const { data: defaultType } = await supabase
+    .from('business_types')
+    .select('id')
+    .eq('is_active', true)
+    .order('display_order', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (defaultType) {
+    const { error: linkError } = await supabase
+      .from('business_type_products')
+      .insert({ business_type_id: defaultType.id, product_id: newProduct.id })
+    if (linkError) console.error('[products POST] business_type_products insert error:', linkError)
+  }
+
   return NextResponse.json({ data: newProduct }, { status: 201 })
 }
