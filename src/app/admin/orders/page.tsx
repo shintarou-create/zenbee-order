@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
+import { updateOrder, updateOrders } from '@/lib/order-api'
 import OrderTable from '@/components/admin/OrderTable'
 import PendingProductsSummary from '@/components/admin/PendingProductsSummary'
 import type { Order } from '@/types'
@@ -249,24 +250,18 @@ function AdminOrdersContent() {
   }
 
   async function handleUndoDeliveryNotePrinted(orderId: string) {
-    const supabase = createClient()
-    const { error } = await supabase.from('orders').update({ delivery_note_printed: false }).eq('id', orderId)
-    if (error) throw error
+    await updateOrder(orderId, { delivery_note_printed: false })
     await refresh()
   }
 
   async function handleUndoShipped(orderId: string) {
-    const supabase = createClient()
-    const { error } = await supabase.from('orders').update({ status: 'pending' }).eq('id', orderId)
-    if (error) throw error
+    await updateOrder(orderId, { status: 'pending' })
     await refresh()
   }
 
   async function handleUnmarkLabel(orderId: string) {
     try {
-      const supabase = createClient()
-      const { error } = await supabase.from('orders').update({ shipping_label_printed: false }).eq('id', orderId)
-      if (error) throw error
+      await updateOrder(orderId, { shipping_label_printed: false })
       await refresh()
     } catch (err) {
       console.error('伝票済み解除エラー:', err)
@@ -279,9 +274,7 @@ function AdminOrdersContent() {
     if (!window.confirm(`選択した${selectedIds.length}件を確認済みにします。よろしいですか？`)) return
     setMarkingConfirmed(true)
     try {
-      const supabase = createClient()
-      const { error } = await supabase.from('orders').update({ details_confirmed: true }).in('id', selectedIds)
-      if (error) throw error
+      await updateOrders(selectedIds, { details_confirmed: true })
       showMsg('success', `${selectedIds.length}件を確認済みにしました`)
       setSelectedIds([])
       await refresh()
@@ -298,9 +291,7 @@ function AdminOrdersContent() {
     if (!window.confirm(`選択した${selectedIds.length}件を完了にします。よろしいですか？`)) return
     setMarkingDone(true)
     try {
-      const supabase = createClient()
-      const { error } = await supabase.from('orders').update({ status: 'done' }).in('id', selectedIds)
-      if (error) throw error
+      await updateOrders(selectedIds, { status: 'done' })
       showMsg('success', `${selectedIds.length}件を完了にしました`)
       setSelectedIds([])
       await refresh()
@@ -351,9 +342,7 @@ function AdminOrdersContent() {
     if (!window.confirm(`選択した${selectedIds.length}件を出荷済みにします。よろしいですか？`)) return
     setMarkingShipped(true)
     try {
-      const supabase = createClient()
-      const { error } = await supabase.from('orders').update({ status: 'shipped' }).in('id', selectedIds)
-      if (error) throw error
+      await updateOrders(selectedIds, { status: 'shipped' })
       showMsg('success', `${selectedIds.length}件を出荷済みにしました`)
       setSelectedIds([])
       await refresh()

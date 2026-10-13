@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
+import { updateOrder } from '@/lib/order-api'
 import { updateCompanyProfile } from '@/lib/company-api'
 import type { Order, OrderItem, OrderStatus, OrderShippingLine, Company, PriceRank, PaymentMethod } from '@/types'
 import { PAYMENT_METHOD_LABELS } from '@/types'
@@ -386,12 +387,7 @@ export default function AdminOrderDetailPage() {
     if (!order) return
     const newValue = !detailsConfirmed
     try {
-      const supabase = createClient()
-      const { error: updateError } = await supabase
-        .from('orders')
-        .update({ details_confirmed: newValue })
-        .eq('id', order.id)
-      if (updateError) throw updateError
+      await updateOrder(order.id, { details_confirmed: newValue })
       setDetailsConfirmed(newValue)
       setOrder((prev) => prev ? { ...prev, details_confirmed: newValue } : null)
 
@@ -539,21 +535,15 @@ export default function AdminOrderDetailPage() {
     if (!order) return
     setUpdating(true)
     try {
-      const supabase = createClient()
       const notesRepliedAt = notesReplied ? new Date().toISOString() : null
-      const { error: updateError } = await supabase
-        .from('orders')
-        .update({
-          status,
-          notes: notes || null,
-          notes_replied_at: notesRepliedAt,
-          admin_notes: adminNotes || null,
-          delivery_date: deliveryDate || null,
-          delivery_time_slot: deliveryTimeSlot || null,
-        })
-        .eq('id', order.id)
-
-      if (updateError) throw updateError
+      await updateOrder(order.id, {
+        status,
+        notes: notes || null,
+        notes_replied_at: notesRepliedAt,
+        admin_notes: adminNotes || null,
+        delivery_date: deliveryDate || null,
+        delivery_time_slot: deliveryTimeSlot || null,
+      })
 
       setOrder((prev) => prev ? { ...prev, status, notes: notes || null, notes_replied_at: notesRepliedAt, admin_notes: adminNotes, delivery_time_slot: deliveryTimeSlot || null } : null)
       setMessage({ type: 'success', text: '注文を更新しました' })

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { updateOrders } from '@/lib/order-api'
 import type { Order } from '@/types'
 import DeliveryNoteLayout from '@/components/admin/DeliveryNoteLayout'
 import { waitForImages } from '@/lib/print-utils'
@@ -48,11 +49,8 @@ export default function BulkPrintPage() {
   async function markDeliveryNotePrinted(targetOrders: Order[]) {
     if (targetOrders.length === 0) return
     try {
-      const supabase = createClient()
-      await supabase
-        .from('orders')
-        .update({ delivery_note_printed: true })
-        .in('id', targetOrders.map((o) => o.id))
+      // 失敗しても印刷は続ける（従来どおり。印刷済みフラグは受注一覧から手動で付け直せる）
+      await updateOrders(targetOrders.map((o) => o.id), { delivery_note_printed: true })
     } catch (err) {
       console.error('delivery_note_printed 更新エラー:', err)
     }
