@@ -195,9 +195,11 @@ export interface Product {
   current_price?: number
   pricing_tiers?: ProductPricingTier[]
   category_info?: Category | null
+  // 見せる業態（管理画面の商品一覧APIでのみ付与）
+  business_type_products?: { business_type_id: string }[]
 }
 
-export type ProductInput = Omit<Product, 'id' | 'created_at' | 'updated_at' | 'product_prices' | 'inventory' | 'current_price' | 'pricing_tiers' | 'category_info'>
+export type ProductInput = Omit<Product, 'id' | 'created_at' | 'updated_at' | 'product_prices' | 'inventory' | 'current_price' | 'pricing_tiers' | 'category_info' | 'business_type_products'>
 export type ProductUpdate = Partial<ProductInput>
 
 // ============================================================

@@ -455,6 +455,12 @@ export default function AdminCustomersPage() {
 
   async function handleSave() {
     if (!formData.company_name?.trim()) return
+    // 事前登録（新規作成）では業態を必須にする（LINE連携後すぐ発注できる状態で登録するため）
+    if (!editingCompany && !formData.business_type_id) {
+      setMessage({ type: 'error', text: '業態を選択してください' })
+      setTimeout(() => setMessage(null), 3000)
+      return
+    }
     // 親会社に自分自身は指定不可（DB側のCHECK制約とも整合。UIでも除外済みだが二重ガード）
     if (editingCompany && formData.parent_company_id === editingCompany.id) {
       setMessage({ type: 'error', text: '親会社に自分自身は指定できません' })
@@ -1135,14 +1141,18 @@ export default function AdminCustomersPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">業態</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  業態{!editingCompany && <span className="text-red-600">（必須）</span>}
+                </label>
                 <select
                   value={formData.business_type_id ?? ''}
                   onChange={(e) => setFormData((p) => ({ ...p, business_type_id: e.target.value || null }))}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400"
                 >
                   {/* 未設定には戻せないため、未設定の取引先のときだけ選択肢に出す */}
-                  {!editingCompany?.business_type_id && <option value="">未設定</option>}
+                  {!editingCompany?.business_type_id && (
+                    <option value="">{editingCompany ? '未設定' : '選択してください'}</option>
+                  )}
                   {businessTypes
                     .filter((t) => t.is_active || t.id === formData.business_type_id)
                     .map((t) => (
@@ -1571,7 +1581,7 @@ export default function AdminCustomersPage() {
             <div className="p-4 border-t border-gray-100 flex gap-3">
               <button
                 onClick={handleSave}
-                disabled={saving || !formData.company_name?.trim()}
+                disabled={saving || !formData.company_name?.trim() || (!editingCompany && !formData.business_type_id)}
                 className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
               >
                 {saving ? '保存中...' : '保存'}

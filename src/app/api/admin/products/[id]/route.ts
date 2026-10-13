@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { validateBusinessTypeIds, syncProductBusinessTypes } from '@/lib/business-type-products'
 
 const ALLOWED_FIELDS = [
   'name', 'category', 'category_id', 'unit',
@@ -23,7 +24,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'リクエストボディが不正です' }, { status: 400 })
   }
 
-  const { prices, stockQty, ...rest } = body as { prices?: unknown; stockQty?: unknown; [key: string]: unknown }
+  const { prices, stockQty, businessTypeIds, ...rest } = body as {
+    prices?: unknown
+    stockQty?: unknown
+    businessTypeIds?: unknown
+    [key: string]: unknown
+  }
 
   // 許可フィールドのみ抽出（未指定フィールドは更新しない部分更新）
   const updateData: Record<string, unknown> = {}
@@ -55,6 +61,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   console.log('[products PATCH] productId:', productId, 'fields:', Object.keys(updateData))
 
   const supabase = createServiceClient()
+
+  // 見せる業態（指定された場合のみ更新。指定するなら1つ以上）
+  let businessTypeIdsToSync: string[] | null = null
+  if (businessTypeIds !== undefined) {
+    const btResult = await validateBusinessTypeIds(supabase, businessTypeIds)
+    if ('error' in btResult) {
+      return NextResponse.json({ error: btResult.error }, { status: 400 })
+    }
+    businessTypeIdsToSync = btResult.ids
+  }
 
   if (Object.keys(updateData).length > 0) {
     const { error: updateError } = await supabase
@@ -99,6 +115,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (invError) {
       console.error('[products PATCH] inventory update error:', invError)
       return NextResponse.json({ error: '在庫数の保存に失敗しました' }, { status: 500 })
+    }
+  }
+
+  if (businessTypeIdsToSync) {
+    const linkError = await syncProductBusinessTypes(supabase, productId, businessTypeIdsToSync)
+    if (linkError) {
+      console.error('[products PATCH] business_type_products error:', linkError)
+      return NextResponse.json({ error: linkError }, { status: 500 })
     }
   }
 

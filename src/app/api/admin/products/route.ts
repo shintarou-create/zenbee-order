@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { validateBusinessTypeIds, syncProductBusinessTypes } from '@/lib/business-type-products'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,8 @@ export async function GET() {
       *,
       inventory (id, product_id, available_qty, reserved_qty, updated_at),
       product_prices (id, product_id, price_rank, price_per_unit),
-      pricing_tiers:product_pricing_tiers (id, product_id, tier_label, quantity, unit_price, display_order, is_active, visible_company_id)
+      pricing_tiers:product_pricing_tiers (id, product_id, tier_label, quantity, unit_price, display_order, is_active, visible_company_id),
+      business_type_products (business_type_id)
     `)
     .order('display_order', { ascending: true })
 
@@ -37,7 +39,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'リクエストボディが不正です' }, { status: 400 })
   }
 
-  const { prices, stockQty, ...productFields } = body as { prices?: unknown; stockQty?: unknown; [key: string]: unknown }
+  const { prices, stockQty, businessTypeIds, ...productFields } = body as {
+    prices?: unknown
+    stockQty?: unknown
+    businessTypeIds?: unknown
+    [key: string]: unknown
+  }
 
   if (!productFields.name || typeof productFields.name !== 'string' || !productFields.name.trim()) {
     return NextResponse.json({ error: '商品名は必須です' }, { status: 400 })
@@ -48,6 +55,12 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = createServiceClient()
+
+  // 見せる業態（必須・1つ以上）。商品を作る前に検証する
+  const btResult = await validateBusinessTypeIds(supabase, businessTypeIds)
+  if ('error' in btResult) {
+    return NextResponse.json({ error: btResult.error }, { status: 400 })
+  }
 
   // 商品を作成
   const { data: newProduct, error: insertError } = await supabase
@@ -92,21 +105,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '在庫の初期化に失敗しました' }, { status: 500 })
   }
 
-  // 業態への紐づけ: 表示順が先頭の有効な業態（＝飲食店）に紐づける。従来どおり新商品が
-  // 既存の飲食店に表示されるようにするため。他の業態に見せる場合は「業態の設定」画面で追加する。
-  // 失敗しても商品作成自体は成功扱い（業態の設定画面から後で紐づけられる）。
-  const { data: defaultType } = await supabase
-    .from('business_types')
-    .select('id')
-    .eq('is_active', true)
-    .order('display_order', { ascending: true })
-    .limit(1)
-    .maybeSingle()
-  if (defaultType) {
-    const { error: linkError } = await supabase
-      .from('business_type_products')
-      .insert({ business_type_id: defaultType.id, product_id: newProduct.id })
-    if (linkError) console.error('[products POST] business_type_products insert error:', linkError)
+  // 見せる業態の紐づけ（登録画面で選んだ業態のみ）
+  const linkError = await syncProductBusinessTypes(supabase, newProduct.id, btResult.ids)
+  if (linkError) {
+    console.error('[products POST] business_type_products error:', linkError)
+    return NextResponse.json(
+      { error: `商品は作成しましたが、${linkError}。業態の設定画面から設定してください` },
+      { status: 500 }
+    )
   }
 
   return NextResponse.json({ data: newProduct }, { status: 201 })

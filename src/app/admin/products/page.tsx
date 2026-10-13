@@ -12,6 +12,7 @@ import CategoryManageModal from '@/components/admin/CategoryManageModal'
 import PricingTiersModal from '@/components/admin/PricingTiersModal'
 import type { Product, Category, PriceRank, StockStatus } from '@/types'
 import { adminFetch } from '@/lib/admin-fetch'
+import { useBusinessTypes } from '@/hooks/useBusinessTypes'
 
 
 function SortableCategoryWrapper({
@@ -58,6 +59,7 @@ function SortableCategoryWrapper({
 
 export default function AdminProductsPage() {
   const [categories, setCategories] = useState<Category[]>([])
+  const { types: businessTypes } = useBusinessTypes()
   const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -153,13 +155,18 @@ export default function AdminProductsPage() {
     }
   }
 
-  async function handleSubmit(productData: Partial<Product>, prices: Record<PriceRank, number>, stockQty: number) {
+  async function handleSubmit(
+    productData: Partial<Product>,
+    prices: Record<PriceRank, number>,
+    stockQty: number,
+    businessTypeIds: string[]
+  ) {
     try {
       if (editingProduct) {
         const res = await adminFetch(`/api/admin/products/${editingProduct.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...productData, prices, stockQty }),
+          body: JSON.stringify({ ...productData, prices, stockQty, businessTypeIds }),
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || '更新に失敗しました')
@@ -168,7 +175,7 @@ export default function AdminProductsPage() {
         const res = await adminFetch('/api/admin/products', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...productData, prices, stockQty }),
+          body: JSON.stringify({ ...productData, prices, stockQty, businessTypeIds }),
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || '作成に失敗しました')
@@ -286,6 +293,7 @@ export default function AdminProductsPage() {
           <ProductForm
             product={editingProduct || undefined}
             categories={categories}
+            businessTypes={businessTypes}
             onSubmit={handleSubmit}
             onCancel={() => { setShowForm(false); setEditingProduct(null) }}
           />

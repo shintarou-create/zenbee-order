@@ -1,17 +1,20 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import type { Product, PriceRank, Category, StockStatus } from '@/types'
+import type { Product, PriceRank, Category, StockStatus, BusinessType } from '@/types'
 import { adminFetch } from '@/lib/admin-fetch'
 import PriceInput from './PriceInput'
 
 interface ProductFormProps {
   product?: Product
   categories?: Category[]
+  // 業態マスタ（表示順）。「見せる業態」の選択肢になる
+  businessTypes?: BusinessType[]
   onSubmit: (
     product: Partial<Product>,
     prices: Record<PriceRank, number>,
-    stockQty: number
+    stockQty: number,
+    businessTypeIds: string[]
   ) => Promise<void>
   onCancel: () => void
 }
@@ -23,7 +26,7 @@ const PRICE_RANKS: { value: PriceRank; label: string }[] = [
   { value: 'vip', label: 'VIP' },
 ]
 
-export default function ProductForm({ product, categories = [], onSubmit, onCancel }: ProductFormProps) {
+export default function ProductForm({ product, categories = [], businessTypes = [], onSubmit, onCancel }: ProductFormProps) {
   const [name, setName] = useState(product?.name || '')
   const [category, setCategory] = useState(product?.category || (categories[0]?.name ?? ''))
   const [categoryId, setCategoryId] = useState<string | null>(product?.category_id ?? null)
@@ -46,6 +49,20 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
     vip: 0,
   })
   const [submitting, setSubmitting] = useState(false)
+  // 見せる業態。編集時は現在の紐づけ、新規は業態マスタの読み込み後に先頭の有効な業態（飲食店）を初期値にする
+  const [businessTypeIds, setBusinessTypeIds] = useState<string[]>(
+    product?.business_type_products?.map((b) => b.business_type_id) ?? []
+  )
+  const businessTypeDefaultApplied = useRef(!!product)
+  useEffect(() => {
+    if (businessTypeDefaultApplied.current) return
+    const first = businessTypes.find((t) => t.is_active)
+    if (!first) return
+    businessTypeDefaultApplied.current = true
+    setBusinessTypeIds([first.id])
+  }, [businessTypes])
+  // 選択肢: 有効な業態＋（無効でも）現在紐づいている業態
+  const businessTypeOptions = businessTypes.filter((t) => t.is_active || businessTypeIds.includes(t.id))
   const [imageUploading, setImageUploading] = useState(false)
   const [imageError, setImageError] = useState<string | null>(null)
   const [hasFile, setHasFile] = useState(false)
@@ -119,7 +136,7 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return
+    if (!name.trim() || businessTypeIds.length === 0) return
 
     setSubmitting(true)
     try {
@@ -143,7 +160,8 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
           image_url: imageUrl,
         },
         prices,
-        stockQty
+        stockQty,
+        businessTypeIds
       )
     } finally {
       setSubmitting(false)
@@ -389,6 +407,34 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
         </div>
       </div>
 
+      {/* 見せる業態 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">見せる業態</label>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {businessTypeOptions.map((t) => (
+            <label key={t.id} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={businessTypeIds.includes(t.id)}
+                onChange={() =>
+                  setBusinessTypeIds((prev) =>
+                    prev.includes(t.id) ? prev.filter((id) => id !== t.id) : [...prev, t.id]
+                  )
+                }
+                className="w-4 h-4 accent-green-600"
+              />
+              {t.name}
+              {!t.is_active && <span className="text-xs text-gray-400">（無効）</span>}
+            </label>
+          ))}
+        </div>
+        <p className={`mt-1 text-xs ${businessTypeIds.length === 0 ? 'text-red-600' : 'text-gray-400'}`}>
+          {businessTypeIds.length === 0
+            ? '1つ以上選択してください'
+            : 'チェックした業態の取引先のLINE発注画面にだけ表示されます。'}
+        </p>
+      </div>
+
       {/* 並び順 */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">並び順</label>
@@ -415,7 +461,7 @@ export default function ProductForm({ product, categories = [], onSubmit, onCanc
       <div className="flex gap-3 pt-2">
         <button
           type="submit"
-          disabled={submitting || !name.trim()}
+          disabled={submitting || !name.trim() || businessTypeIds.length === 0}
           className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-2 rounded-lg text-sm disabled:opacity-50 transition-colors"
         >
           {submitting ? '保存中...' : product ? '更新する' : '追加する'}
