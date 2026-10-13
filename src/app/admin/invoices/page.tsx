@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Invoice, Order, Company } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
+import { createInvoice, updateInvoice, type CreateInvoiceResult } from '@/lib/invoice-api'
 import { updateCompanyProfile } from '@/lib/company-api'
 import { fetchAllRows } from '@/lib/supabase-batch'
 import { decodeFreeeCsvFile, parseFreeePartnerCsv, matchUnregisteredCompanies, type PartnerMatchResult } from '@/lib/freee-partner-match'
@@ -153,124 +154,17 @@ function computeUnbilledSummaries(monthOrders: Order[], invoices: Invoice[]): Un
     .sort((a, b) => a.displayName.localeCompare(b.displayName, 'ja'))
 }
 
-// その月の既存請求書番号から末尾の連番部分の最大値+1を返す（無ければ1から）。
-function computeNextSeqFromInvoiceNumbers(rows: { invoice_number: string }[]): number {
-  const seqs = rows.map((inv) => {
-    const m = /-(\d{3,})$/.exec(inv.invoice_number)
-    return m ? parseInt(m[1], 10) : 0
-  })
-  return seqs.length > 0 ? Math.max(...seqs) + 1 : 1
-}
-
-type CreateInvoiceForCompanyResult =
-  | { status: 'created'; invoiceId: string; invoiceNumber: string; orderIds: string[] }
-  | { status: 'already_exists'; invoiceNumber: string }
-  | { status: 'error'; error: string }
-
-// 請求先会社1社分の請求書を作成する（invoices INSERT + invoice_items INSERT）。
-// 一括生成・単体生成のどちらもこの関数を呼ぶ（処理を二重に書かない）。
-//
-// 採番: seqCounter.next を呼び出し元が「その月の既存最大連番+1」で1回だけ初期化して渡す。
-// INSERT成功時のみ seqCounter.next をインクリメントする（失敗時に採番を進めない）。
-// 複数社をループで呼ぶ一括生成では、同じ seqCounter を使い回すことで連番の重複を防ぐ。
-//
-// INSERT直前に「その会社・その月の請求書が既に存在しないか」を再確認する。
-// unbilledSummaries はUI表示用のスナップショット（stateが古い可能性がある）のため、
-// 実際の二重作成防止はここでの直前チェックで担保する。
+// 請求先会社1社分の請求書を作成する。一括生成・単体生成のどちらもこの関数を呼ぶ（処理を二重に書かない）。
+// 採番・二重作成チェック・代引き注文の除外・金額計算・明細作成・対象注文の完了更新は、
+// すべてサーバー（POST /api/admin/invoices）が1回の呼び出しでまとめて行う。
+// 途中で失敗した場合はサーバー側で作成途中の請求書を取り消すため、部分的な請求書や
+// 完了に変わったままの注文は残らない。
 async function createInvoiceForCompany(
-  supabase: SupabaseClientType,
   billingCompanyId: string,
   compOrders: Order[],
-  billingMonth: string,
-  seqCounter: { next: number }
-): Promise<CreateInvoiceForCompanyResult> {
-  const { data: existing } = await supabase
-    .from('invoices')
-    .select('id, invoice_number')
-    .eq('company_id', billingCompanyId)
-    .eq('billing_month', billingMonth)
-    .maybeSingle()
-
-  if (existing) {
-    return { status: 'already_exists', invoiceNumber: existing.invoice_number }
-  }
-
-  // G-3（最後の砦）: fetchOrdersForBillingMonth で代引き注文は除外済みのはずだが、
-  // この関数は一括生成・単体生成の唯一の入口のため、INSERT直前にもう一度確認する。
-  // 「未請求警告バナーの数字」と「実際に作られる請求書」がズレないことを優先する。
-  const codOrder = compOrders.find((o) => o.payment_method === 'cod')
-  if (codOrder) {
-    return {
-      status: 'error',
-      error: `注文 ${codOrder.order_number} は代金引換のため請求書に含められません（データ不整合の可能性があります）。`,
-    }
-  }
-
-  const [year, month] = billingMonth.split('-').map(Number)
-  const totalAmount = compOrders.reduce((sum, o) => sum + o.total_amount, 0)
-  const taxRate = 0.08
-  const taxAmount = Math.floor(totalAmount - totalAmount / (1 + taxRate))
-
-  const invoiceNumber = `INV-${billingMonth.replace('-', '')}-${String(seqCounter.next).padStart(3, '0')}`
-
-  // 支払期限: billing_month の翌月末日（例: 2026-06 → 2026-07-31）。
-  // new Date(year, month + 1, 0) = 翌月(month+1, 1-indexed)の0日目 = 翌月末日。
-  // toISOString は UTC 変換で日付がずれるためローカルで手動フォーマットする。
-  const dueDate = new Date(year, month + 1, 0)
-  const dueDateStr = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`
-
-  const { data: invoice, error: invoiceError } = await supabase
-    .from('invoices')
-    .insert({
-      invoice_number: invoiceNumber,
-      company_id: billingCompanyId,
-      billing_month: billingMonth,
-      total_amount: totalAmount,
-      tax_amount: taxAmount,
-      status: 'draft',
-      due_date: dueDateStr,
-    })
-    .select()
-    .single()
-
-  if (invoiceError || !invoice) {
-    return { status: 'error', error: invoiceError?.message || '不明なエラー' }
-  }
-
-  // このグループでの採番が成功したので次のグループはこの続きから
-  seqCounter.next++
-
-  const { error: itemsError } = await supabase.from('invoice_items').insert(
-    compOrders.map((order) => ({
-      invoice_id: invoice.id,
-      order_id: order.id,
-      amount: order.total_amount,
-    }))
-  )
-  if (itemsError) {
-    // 請求書本体は作成済みだが明細が0件のまま残る。この請求書は「未請求警告バナー」に
-    // 既存請求書あり＋未請求注文ありとして現れるが、バナーの案内（調整行で対応）では
-    // 直らない（調整行は注文明細ではないため）。正しい対処はこの請求書を削除して
-    // 作り直すことなので、その旨を明記する。
-    return {
-      status: 'error',
-      error: `請求書(${invoiceNumber})は作成されましたが明細の作成に失敗しました: ${itemsError.message}。この請求書（${invoiceNumber}）は明細が0件のまま残っているため、請求書一覧から削除してから作成し直してください（調整行では直りません）。`,
-    }
-  }
-
-  return { status: 'created', invoiceId: invoice.id, invoiceNumber, orderIds: compOrders.map((o) => o.id) }
-}
-
-// 請求書発行済みになった注文を一括で「完了(done)」に更新する。
-// .update() はゼロ行マッチや RLS で沈黙失敗するため error を必ず確認する。
-async function markOrdersDone(supabase: SupabaseClientType, orderIds: string[]): Promise<boolean> {
-  if (orderIds.length === 0) return true
-  const { error } = await supabase.from('orders').update({ status: 'done' }).in('id', orderIds)
-  if (error) {
-    console.error('注文の完了更新エラー:', error)
-    return false
-  }
-  return true
+  billingMonth: string
+): Promise<CreateInvoiceResult> {
+  return createInvoice(billingMonth, billingCompanyId, compOrders.map((o) => o.id))
 }
 
 // 請求管理から編集できる顧客情報フォーム項目（顧客管理の編集フォームと同じフルセット）
@@ -464,23 +358,15 @@ export default function AdminInvoicesPage() {
         return
       }
 
-      // 採番: その月の既存請求書番号から末尾の連番部分の最大値を取得し、そこから続ける。
-      // これをやらないと、一括生成のあとに1社だけ追加で生成した場合など連番が
-      // 0から始まり直し、既存の invoice_number と重複して UNIQUE制約違反でINSERTが失敗する。
-      const { data: existingInvoices } = await supabase
-        .from('invoices')
-        .select('invoice_number')
-        .eq('billing_month', selectedMonth)
-      const seqCounter = { next: computeNextSeqFromInvoiceNumbers(existingInvoices || []) }
-
+      // 採番はサーバーが1社ごとに「その月の既存最大連番+1」で行う（1社ずつ順番に呼ぶので重複しない）。
       let created = 0
       // INSERT失敗した会社（無言でスキップせず、結果メッセージに含めてユーザーに見せる）
       const failures: { companyName: string; error: string }[] = []
-      // 今回新規作成した請求書に紐づく注文ID（ループ後に一括で done に更新する）
+      // 今回新規作成した請求書に紐づく注文ID（完了への更新はサーバーが請求書作成と一緒に行う）
       const completedOrderIds: string[] = []
 
       for (const target of targets) {
-        const result = await createInvoiceForCompany(supabase, target.companyId, target.orders, selectedMonth, seqCounter)
+        const result = await createInvoiceForCompany(target.companyId, target.orders, selectedMonth)
         if (result.status === 'created') {
           completedOrderIds.push(...result.orderIds)
           created++
@@ -494,26 +380,17 @@ export default function AdminInvoicesPage() {
         }
       }
 
-      const completeOk = await markOrdersDone(supabase, completedOrderIds)
-
       // 失敗があった場合は握りつぶさず結果メッセージに含める（詳細はコンソールを参照）。
+      // 失敗した会社の請求書はサーバー側で取り消されており、注文も完了になっていない。
       const failureText =
         failures.length > 0
           ? `${failures.length}件失敗しました（${failures.map((f) => f.companyName).join('、')}）。詳細はコンソールをご確認ください。`
           : ''
 
-      if (!completeOk) {
-        // 請求書生成自体は成功として扱い、ロールバックはしない。
-        setMessage({
-          type: 'error',
-          text: `${created}件の請求書を生成しましたが、対象注文の完了更新に失敗しました（注文管理で手動で完了にしてください）${failureText ? `。${failureText}` : ''}`,
-        })
-      } else {
-        setMessage({
-          type: failures.length > 0 ? 'error' : 'success',
-          text: `${created}件の請求書を生成し、対象の注文${completedOrderIds.length}件を完了にしました${failureText ? `。${failureText}` : ''}`,
-        })
-      }
+      setMessage({
+        type: failures.length > 0 ? 'error' : 'success',
+        text: `${created}件の請求書を生成し、対象の注文${completedOrderIds.length}件を完了にしました${failureText ? `。${failureText}` : ''}`,
+      })
       await Promise.all([fetchInvoices(), fetchMonthOrders()])
     } catch (err) {
       console.error('請求書生成エラー:', err)
@@ -534,22 +411,12 @@ export default function AdminInvoicesPage() {
   async function handleCreateSingleInvoice(summary: UnbilledCompanySummary) {
     setSingleInvoiceCreatingId(summary.companyId)
     try {
-      const supabase = createClient()
-      const { data: existingInvoices } = await supabase
-        .from('invoices')
-        .select('invoice_number')
-        .eq('billing_month', selectedMonth)
-      const seqCounter = { next: computeNextSeqFromInvoiceNumbers(existingInvoices || []) }
-
-      const result = await createInvoiceForCompany(supabase, summary.companyId, summary.orders, selectedMonth, seqCounter)
+      const result = await createInvoiceForCompany(summary.companyId, summary.orders, selectedMonth)
 
       if (result.status === 'created') {
-        const completeOk = await markOrdersDone(supabase, result.orderIds)
         setMessage({
-          type: completeOk ? 'success' : 'error',
-          text: completeOk
-            ? `${result.invoiceNumber} を作成し、対象の注文${result.orderIds.length}件を完了にしました`
-            : `${result.invoiceNumber} を作成しましたが、対象注文の完了更新に失敗しました（注文管理で手動で完了にしてください）`,
+          type: 'success',
+          text: `${result.invoiceNumber} を作成し、対象の注文${result.orderIds.length}件を完了にしました`,
         })
         closeSingleInvoiceModal()
         await Promise.all([fetchInvoices(), fetchMonthOrders()])
@@ -580,11 +447,7 @@ export default function AdminInvoicesPage() {
     const current = invoices.find((i) => i.id === invoiceId)
     const newPaidAt = newStatus === 'paid' ? current?.paid_at ?? new Date().toISOString() : null
     try {
-      const supabase = createClient()
-      await supabase
-        .from('invoices')
-        .update({ status: newStatus, paid_at: newPaidAt })
-        .eq('id', invoiceId)
+      await updateInvoice(invoiceId, { status: newStatus, paid_at: newPaidAt })
 
       setInvoices((prev) =>
         prev.map((inv) =>
@@ -600,11 +463,7 @@ export default function AdminInvoicesPage() {
 
   async function handleUpdateDueDate(invoiceId: string, newDueDate: string) {
     try {
-      const supabase = createClient()
-      await supabase
-        .from('invoices')
-        .update({ due_date: newDueDate || null })
-        .eq('id', invoiceId)
+      await updateInvoice(invoiceId, { due_date: newDueDate || null })
 
       setInvoices((prev) =>
         prev.map((inv) =>
