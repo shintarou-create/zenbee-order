@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { sendPushMessage } from '@/lib/line-messaging'
-import { getAdminIdentity } from '@/lib/admin-auth'
+import { getAdminIdentity, verifyAdmin } from '@/lib/admin-auth'
+import { validateCompanyProfile } from '@/lib/company-profile'
 
 const VALID_APPROVAL_STATUSES = ['approved', 'pending', 'rejected'] as const
 type ApprovalStatus = (typeof VALID_APPROVAL_STATUSES)[number]
@@ -18,6 +19,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // 認証: middleware が /api/admin/* を保護済み
   try {
     const body = await req.json()
+
+    // 基本情報の編集（顧客管理の編集・価格ランク変更、請求管理・注文詳細の取引先情報編集）。
+    // { profile: {...} } で受け、承認・業態の変更とは同時に受け付けない。
+    if (body && typeof body === 'object' && 'profile' in body) {
+      return await updateProfile(req, params.id, body as Record<string, unknown>)
+    }
+
     const { approval_status, delivery_method, business_type_id } = body as {
       approval_status?: string
       delivery_method?: string
@@ -132,6 +140,52 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ data })
   } catch (err) {
     console.error('companies PATCH error:', err)
+    return NextResponse.json({ error: 'サーバーエラー' }, { status: 500 })
+  }
+}
+
+// 基本情報の更新。受け付ける列は src/lib/company-profile.ts の25列のみ
+// （承認状態・業態・freee登録・登録コードは不可）。
+async function updateProfile(req: NextRequest, id: string, body: Record<string, unknown>) {
+  const role = await verifyAdmin(req)
+  if (!role) {
+    return NextResponse.json({ error: '管理者権限が必要です' }, { status: 401 })
+  }
+
+  const otherKeys = Object.keys(body).filter((k) => k !== 'profile')
+  if (otherKeys.length > 0) {
+    return NextResponse.json(
+      { error: `基本情報の編集と同時に指定できない項目があります: ${otherKeys.join(', ')}` },
+      { status: 400 }
+    )
+  }
+
+  const result = validateCompanyProfile(body.profile, { requireName: false, selfId: id })
+  if ('error' in result) {
+    return NextResponse.json({ error: result.error }, { status: 400 })
+  }
+  if (Object.keys(result.data).length === 0) {
+    return NextResponse.json({ error: '変更する項目を指定してください' }, { status: 400 })
+  }
+
+  try {
+    const supabase = createServiceClient()
+    const { data, error } = await supabase
+      .from('companies')
+      .update(result.data)
+      .eq('id', id)
+      .select('id')
+      .maybeSingle()
+    if (error) {
+      if (error.code === '23505') {
+        return NextResponse.json({ error: '同じ店名の取引先が既に登録されています' }, { status: 409 })
+      }
+      throw error
+    }
+    if (!data) return NextResponse.json({ error: '会社が見つかりません' }, { status: 404 })
+    return NextResponse.json({ data })
+  } catch (err) {
+    console.error('companies PATCH (profile) error:', err)
     return NextResponse.json({ error: 'サーバーエラー' }, { status: 500 })
   }
 }

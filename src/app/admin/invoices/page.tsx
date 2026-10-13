@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Invoice, Order, Company } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
+import { updateCompanyProfile } from '@/lib/company-api'
 import { fetchAllRows } from '@/lib/supabase-batch'
 import { decodeFreeeCsvFile, parseFreeePartnerCsv, matchUnregisteredCompanies, type PartnerMatchResult } from '@/lib/freee-partner-match'
 import FreeePartnerReconcilePanel from '@/components/admin/FreeePartnerReconcilePanel'
@@ -665,13 +666,12 @@ export default function AdminInvoicesPage() {
     }
   }
 
-  // 顧客情報を保存（companies を直接 .update()。顧客管理の handleSave と同じパターンのため、
+  // 顧客情報を保存（管理API経由で companies を更新。顧客管理の handleSave と同じ API のため、
   // 顧客管理側にも自動反映される）。保存後は請求一覧を再フェッチして最新化する。
   async function handleSaveCompany() {
     if (!editingCompanyId || !companyFormData.company_name?.trim()) return
     setCompanySaving(true)
     try {
-      const supabase = createClient()
       const companyData = {
         company_name: companyFormData.company_name,
         representative_name: companyFormData.representative_name || null,
@@ -698,8 +698,8 @@ export default function AdminInvoicesPage() {
           : null,
       }
 
-      const { error } = await supabase.from('companies').update(companyData).eq('id', editingCompanyId)
-      if (error) throw error
+      // 保存は管理API経由（companies への公開キーでの書き込みは使わない）
+      await updateCompanyProfile(editingCompanyId, companyData)
 
       setMessage({ type: 'success', text: '顧客情報を更新しました' })
       setShowCompanyModal(false)

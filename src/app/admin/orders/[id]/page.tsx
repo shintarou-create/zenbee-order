@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
+import { updateCompanyProfile } from '@/lib/company-api'
 import type { Order, OrderItem, OrderStatus, OrderShippingLine, Company, PriceRank, PaymentMethod } from '@/types'
 import { PAYMENT_METHOD_LABELS } from '@/types'
 import { formatDate, formatCurrency, getOrderStatusLabel, getOrderStatusColor } from '@/lib/utils'
@@ -511,11 +512,8 @@ export default function AdminOrderDetailPage() {
         billing_address: companyForm.has_separate_billing ? (companyForm.billing_address || null) : null,
         billing_building: companyForm.has_separate_billing ? (companyForm.billing_building || null) : null,
       }
-      const { error } = await supabase
-        .from('companies')
-        .update(companyData)
-        .eq('id', company.id)
-      if (error) throw error
+      // 保存は管理API経由（companies への公開キーでの書き込みは使わない）
+      await updateCompanyProfile(company.id, companyData)
 
       // 最新 company データを画面に反映
       const { data: refreshed } = await supabase

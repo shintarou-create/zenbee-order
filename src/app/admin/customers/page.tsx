@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { adminFetch } from '@/lib/admin-fetch'
+import { createCompanyProfile, updateCompanyProfile } from '@/lib/company-api'
 import CustomerTable from '@/components/admin/CustomerTable'
 import { useBusinessTypes } from '@/hooks/useBusinessTypes'
 import type { Company, PriceRank, DeliveryMethod, InvoiceDeliveryMethod, CompanyOverride, CompanyMemoLog } from '@/types'
@@ -469,8 +470,6 @@ export default function AdminCustomersPage() {
     }
     setSaving(true)
     try {
-      const supabase = createClient()
-
       const companyData = {
         company_name: formData.company_name,
         representative_name: formData.representative_name || null,
@@ -510,13 +509,9 @@ export default function AdminCustomersPage() {
       }
 
       const nextBusinessTypeId = formData.business_type_id || null
+      // 保存は管理API経由（companies への公開キーでの書き込みは使わない）
       if (editingCompany) {
-        const { error } = await supabase
-          .from('companies')
-          .update(companyData)
-          .eq('id', editingCompany.id)
-
-        if (error) throw error
+        await updateCompanyProfile(editingCompany.id, companyData)
         const btError =
           nextBusinessTypeId && nextBusinessTypeId !== (editingCompany.business_type_id ?? null)
             ? await patchBusinessType(editingCompany.id, nextBusinessTypeId)
@@ -527,9 +522,8 @@ export default function AdminCustomersPage() {
             : { type: 'success', text: '顧客情報を更新しました' }
         )
       } else {
-        const { data: inserted, error } = await supabase.from('companies').insert(companyData).select('id').single()
-        if (error) throw error
-        const btError = nextBusinessTypeId && inserted ? await patchBusinessType(inserted.id, nextBusinessTypeId) : null
+        const insertedId = await createCompanyProfile(companyData)
+        const btError = nextBusinessTypeId ? await patchBusinessType(insertedId, nextBusinessTypeId) : null
         setMessage(
           btError
             ? { type: 'error', text: `顧客は追加しましたが、${btError}` }
@@ -605,12 +599,7 @@ export default function AdminCustomersPage() {
 
   async function handleChangePriceRank(company: Company, newRank: string) {
     try {
-      const supabase = createClient()
-      const { error } = await supabase
-        .from('companies')
-        .update({ price_rank: newRank })
-        .eq('id', company.id)
-      if (error) throw error
+      await updateCompanyProfile(company.id, { price_rank: newRank })
       setCompanies((prev) =>
         prev.map((c) => (c.id === company.id ? { ...c, price_rank: newRank as Company['price_rank'] } : c))
       )
