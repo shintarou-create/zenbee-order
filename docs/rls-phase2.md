@@ -2,10 +2,13 @@
 
 調査日：2026-10-13（コミット `0b4d23c` 時点）／調査のみ（コード・DBは未変更）
 
-> **⚠ 開発時のルール（段階1.5 以降）**
-> 管理画面のブラウザ（公開キー）から **companies・orders・invoices に新しい列を書き込む変更**をするときは、
-> その列の `GRANT` を追加しないと保存が失敗する（`permission denied for table ...`）。
-> 詳細は「段階1.5：列単位の権限」を参照。サーバーAPI（service role）からの書き込みはこの制限を受けない。
+> **⚠ 開発時のルール（2026-10-14 時点）**
+> - 管理画面のブラウザ（公開キー）から **orders・invoices に新しい列を書き込む変更**をするときは、
+>   その列の `GRANT` を追加しないと保存が失敗する（`permission denied for table ...`）。詳細は「段階1.5：列単位の権限」。
+> - **companies は 028 で公開キーの追加・更新権限を外した**（読み取りのみ）。取引先の保存は必ず管理API
+>   （`POST /api/admin/companies`・`PATCH /api/admin/companies/[id]` の `{ profile }`、呼び出しは `src/lib/company-api.ts`）を使う。
+>   新しい列を保存したいときは GRANT ではなく、`src/lib/company-profile.ts` の `COMPANY_PROFILE_FIELDS` と検証に追加する。
+> - サーバーAPI（service role）からの書き込みは、どちらの制限も受けない。
 
 ## 0. 前提と、最初に確認すべきこと
 
@@ -168,29 +171,33 @@ ORDER BY tablename, cmd, policyname;
 
 | テーブル | 公開キーで書き込める列 | 書き込めなくなった主な列 |
 |---|---|---|
-| companies（追加・更新） | company_name, representative_name, postal_code, prefecture, city, address, building, phone, email, price_rank, delivery_method, price_tax_type, notes, is_active, has_separate_billing, billing_name, billing_postal_code, billing_prefecture, billing_city, billing_address, billing_building, parent_company_id, invoice_delivery_method, invoice_delivery_note, internal_memo | approval_status（自己承認の防止）、business_type_id、freee_partner_registered、registration_code |
+| ~~companies（追加・更新）~~ **028 で廃止** | （027 時点：company_name ほか25列。028 で列単位の権限ごと取り消し、現在は公開キーで書き込み不可） | すべての列（承認状態・業態・freee登録・登録コードを含む） |
 | orders（更新） | status, delivery_note_printed, shipping_label_printed, details_confirmed, notes, notes_replied_at, admin_notes, delivery_date, delivery_time_slot | total_amount、company_id、business_type_id、payment_method、cod_fee、billing_* |
 | invoices（更新） | status, paid_at, due_date | total_amount ほか金額・請求先 |
 
 あわせて3テーブルの TRUNCATE も公開キーから外した。invoices の追加（請求書作成）は段階1で許可した INSERT のまま（列は絞っていない）。
 
+**2026-10-14 追記（028・実行済み）**：取引先の追加・更新4か所（顧客管理の事前登録・編集・価格ランク、請求管理の顧客情報、注文詳細の取引先情報）を管理API経由に移した（コミット `30067f5`）うえで、`028_revoke_companies_write_from_anon.sql` で companies の INSERT・UPDATE を anon・authenticated から取り消した。companies については列単位の GRANT のルールは不要になり、管理APIの許可リスト（`src/lib/company-profile.ts`）が保存できる列の唯一の定義になった。
+
 #### 今後の開発で守ること
 
-- **管理画面のブラウザから companies・orders・invoices に新しい列を書き込む変更をするときは、その列の GRANT を追加しないと保存が失敗する。** 例：
+- **管理画面のブラウザから orders・invoices に新しい列を書き込む変更をするときは、その列の GRANT を追加しないと保存が失敗する。** 例：
 
   ```sql
   GRANT UPDATE (新しい列名) ON public.orders TO anon, authenticated;
-  -- companies で事前登録（追加）にも使う場合は INSERT も
-  GRANT INSERT (新しい列名) ON public.companies TO anon, authenticated;
+  GRANT UPDATE (新しい列名) ON public.invoices TO anon, authenticated;
   ```
 
-  失敗すると、画面には「保存に失敗しました」等が出て、ブラウザのコンソールに `permission denied for table companies`（コード 42501）が出る。
+  失敗すると、画面には「保存に失敗しました」等が出て、ブラウザのコンソールに `permission denied for table orders`（コード 42501）が出る。
+- **companies は対象外**（028 で公開キーの書き込み自体を外したため、GRANT を足しても使わない）。取引先の新しい列は、`src/lib/company-profile.ts` の `COMPANY_PROFILE_FIELDS` と検証に追加し、画面からは `src/lib/company-api.ts` 経由で保存する。承認状態・業態・freee登録・登録コードは、このAPIでは受け付けない（承認・業態は専用の処理で変更する）。
 - 既存の画面で、上の表にない列を `.update()` / `.insert()` に足した場合も同じく失敗する。
 - 望ましいのは、GRANT を足すのではなく、その書き込みをサーバーAPI（`/api/admin/*`・service role）に移すこと（段階2の方針）。承認状態・業態・金額のような重要な列は、必ずサーバーAPI経由にする。
 - 新しい列を DB に追加しただけ（ブラウザから書き込まない）なら GRANT は不要。読み取り（SELECT）は列単位で絞っていない。
-- 戻し方（緊急時）：`GRANT INSERT, UPDATE, TRUNCATE ON public.companies TO anon, authenticated;` と `GRANT UPDATE, TRUNCATE ON public.orders, public.invoices TO anon, authenticated;`
+- 戻し方（緊急時）：orders・invoices は `GRANT UPDATE, TRUNCATE ON public.orders, public.invoices TO anon, authenticated;`。companies を 028 の前（027 の列単位の権限）に戻す場合は、`028_revoke_companies_write_from_anon.sql` 末尾の戻すSQLを使う（ただし現行コードは companies に公開キーで書き込まないため、通常は不要）。
 
 ### 段階2：ブラウザからの書き込み19か所をAPIへ移し、残りの書き込み権限を外す（3〜4日）
+
+> 進捗（2026-10-14）：**companies の5か所（追加1・更新4）は完了**（`30067f5` でAPI化、`028` で公開キーの追加・更新を取り消し済み）。残りは orders の更新10か所、invoices の追加1・更新2、invoice_items の追加1。
 
 | 閉じるもの | 書き換えが必要な画面 |
 |---|---|
