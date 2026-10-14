@@ -2,6 +2,15 @@
 // invoices・invoice_items・orders（請求書作成時の注文完了）への書き込みは、ブラウザの公開キーではなく
 // 管理API（service role）経由で行う。
 import { adminFetch } from '@/lib/admin-fetch'
+import type { Invoice } from '@/types'
+
+/** 対象月の請求書一覧を取得する（管理API経由）。 */
+export async function fetchInvoicesByMonth(billingMonth: string): Promise<Invoice[]> {
+  const res = await adminFetch(`/api/admin/invoices?billingMonth=${encodeURIComponent(billingMonth)}`)
+  const json = (await res.json().catch(() => ({}))) as { data?: Invoice[]; error?: string }
+  if (!res.ok) throw new Error(json.error || '請求書の取得に失敗しました')
+  return json.data ?? []
+}
 
 export type CreateInvoiceResult =
   | { status: 'created'; invoiceId: string; invoiceNumber: string; orderIds: string[] }

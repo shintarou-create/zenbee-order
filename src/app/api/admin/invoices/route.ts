@@ -17,6 +17,37 @@ import { verifyAdmin } from '@/lib/admin-auth'
 
 const MAX_SEQ_RETRY = 3
 
+// 対象月の請求書一覧（請求管理の一覧表示用）。従来ブラウザが公開キーで読んでいた埋め込み形をそのまま返す。
+// 認証: middleware が /api/admin/* を保護済み＋ verifyAdmin で再確認
+export async function GET(req: NextRequest) {
+  const role = await verifyAdmin(req)
+  if (!role) {
+    return NextResponse.json({ error: '管理者権限が必要です' }, { status: 401 })
+  }
+
+  const billingMonth = req.nextUrl.searchParams.get('billingMonth')
+  if (!billingMonth || !/^\d{4}-\d{2}$/.test(billingMonth)) {
+    return NextResponse.json({ error: 'billingMonth は YYYY-MM で指定してください' }, { status: 400 })
+  }
+
+  const supabase = createServiceClient()
+  const { data, error } = await supabase
+    .from('invoices')
+    .select(`
+      *,
+      company:companies (company_name, email, has_separate_billing, billing_name, invoice_delivery_method),
+      invoice_items (id, order_id, amount, order:orders (payment_method)),
+      invoice_adjustments (id)
+    `)
+    .eq('billing_month', billingMonth)
+    .order('created_at', { ascending: false })
+  if (error) {
+    console.error('invoices GET error:', error)
+    return NextResponse.json({ error: '請求書の取得に失敗しました' }, { status: 500 })
+  }
+  return NextResponse.json({ data: data ?? [] })
+}
+
 type OrderRow = {
   id: string
   order_number: string

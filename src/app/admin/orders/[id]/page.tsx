@@ -165,15 +165,11 @@ export default function AdminOrderDetailPage() {
   // 代金引換への変更を選べないようにする（実際の拒否はAPI側の必須チェックで担保する）。
   useEffect(() => {
     if (!orderId) return
+    // 請求書系は公開キーで読まない（管理API経由。RLS 段階3a）
     async function fetchLinkedInvoice() {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('invoice_items')
-        .select('invoice:invoices (id, invoice_number)')
-        .eq('order_id', orderId)
-        .limit(1)
-      const row = data?.[0] as { invoice?: { id: string; invoice_number: string } | null } | undefined
-      setLinkedInvoice(row?.invoice ?? null)
+      const res = await adminFetch(`/api/admin/invoices/by-order/${orderId}`)
+      const json = (await res.json().catch(() => ({}))) as { invoice?: { id: string; invoice_number: string } | null }
+      setLinkedInvoice(res.ok ? (json.invoice ?? null) : null)
     }
     fetchLinkedInvoice()
   }, [orderId])

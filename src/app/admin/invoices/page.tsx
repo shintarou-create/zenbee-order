@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Invoice, Order, Company } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import { adminFetch } from '@/lib/admin-fetch'
-import { createInvoice, updateInvoice, type CreateInvoiceResult } from '@/lib/invoice-api'
+import { createInvoice, updateInvoice, fetchInvoicesByMonth, type CreateInvoiceResult } from '@/lib/invoice-api'
 import { updateCompanyProfile } from '@/lib/company-api'
 import { fetchAllRows } from '@/lib/supabase-batch'
 import { decodeFreeeCsvFile, parseFreeePartnerCsv, matchUnregisteredCompanies, type PartnerMatchResult } from '@/lib/freee-partner-match'
@@ -297,20 +297,9 @@ export default function AdminInvoicesPage() {
   async function fetchInvoices() {
     setIsLoading(true)
     try {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('invoices')
-        .select(`
-          *,
-          company:companies (company_name, email, has_separate_billing, billing_name, invoice_delivery_method),
-          invoice_items (id, order_id, amount, order:orders (payment_method)),
-          invoice_adjustments (id)
-        `)
-        .eq('billing_month', selectedMonth)
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-      setInvoices((data || []) as Invoice[])
+      // 請求書系は公開キーで読まない（管理API経由。RLS 段階3a）
+      const data = await fetchInvoicesByMonth(selectedMonth)
+      setInvoices(data)
       setSelectedIds(new Set())
     } catch (err) {
       console.error('請求書取得エラー:', err)
