@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { normalizeRegistrationCode } from '@/lib/registration-code'
 
 // 紛らわしい文字(0/o/1/l)を除いた安全な文字セット
 const SAFE_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789'
@@ -33,16 +34,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '会社が見つかりません' }, { status: 404 })
     }
 
-    // 衝突時は最大10回リトライ
+    // 衝突時は最大10回リトライ。照合は大文字小文字を区別しないため、衝突確認も ilike で行う
+    // （DBに大文字で残っているコードと、大文字小文字違いで重複させない）
     let code = ''
     for (let attempt = 0; attempt < 10; attempt++) {
-      const candidate = generateCode()
+      const candidate = normalizeRegistrationCode(generateCode())
+      if (!candidate) continue
       const { data: existing } = await supabase
         .from('companies')
         .select('id')
-        .eq('registration_code', candidate)
-        .maybeSingle()
-      if (!existing) {
+        .ilike('registration_code', candidate)
+        .limit(1)
+      if (!existing || existing.length === 0) {
         code = candidate
         break
       }
@@ -54,7 +57,7 @@ export async function POST(req: NextRequest) {
 
     const { error } = await supabase
       .from('companies')
-      .update({ registration_code: code })
+      .update({ registration_code: code }) // 保存は常に小文字（normalizeRegistrationCode 済み）
       .eq('id', company_id)
 
     if (error) throw error

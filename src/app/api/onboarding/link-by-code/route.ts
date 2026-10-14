@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { normalizeRegistrationCode, findCompanyByRegistrationCode } from '@/lib/registration-code'
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,6 +12,16 @@ export async function POST(req: NextRequest) {
 
     if (!registration_code?.trim()) {
       return NextResponse.json({ error: '登録コードが必要です' }, { status: 400 })
+    }
+
+    // trim・小文字化し、英数字8文字以外は照合せずに「コードが正しくありません」とする
+    // （ilike のワイルドカード % _ を混入させないため）
+    const normalizedCode = normalizeRegistrationCode(registration_code)
+    if (!normalizedCode) {
+      return NextResponse.json(
+        { error: 'コードが正しくありません。ご確認の上、再度お試しください。' },
+        { status: 404 }
+      )
     }
 
     // LIFF アクセストークンを検証してユーザーIDを取得（orders/route.ts と同手法）
@@ -54,12 +65,8 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 登録コードで会社を検索
-    const { data: company } = await supabase
-      .from('companies')
-      .select('id, company_name, approval_status, is_active')
-      .eq('registration_code', registration_code.trim().toLowerCase())
-      .maybeSingle()
+    // 登録コードで会社を検索（大文字小文字を区別しない。DBに大文字のコードが残っていても通す）
+    const company = await findCompanyByRegistrationCode(supabase, normalizedCode)
 
     if (!company) {
       return NextResponse.json(
