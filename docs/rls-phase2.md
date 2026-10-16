@@ -10,6 +10,11 @@
 > - **新しい列を保存したいときは、GRANT を足すのではなく、各管理APIの「受け付ける列」の一覧に追加する**
 >   （一覧は下の「段階2：完了」の表を参照）。一覧にない列は、APIが 400 で断る。
 > - 以前の「orders・invoices に新しい列を書き込むときは GRANT を追加する」というルール（段階1.5）は、029 で不要になった。
+> - **段階2.5（030・2026-10-14 実行済み）以降、public の全テーブルで anon・authenticated に残っている権限は SELECT だけ。**
+>   新しいテーブルを作ると、Supabase の既定で anon・authenticated にすべての権限が付くので、作ったら必ず
+>   `REVOKE ALL ... FROM anon, authenticated` →（公開キーで読む必要がある場合のみ）`GRANT SELECT` をする（下の「教訓」②）。
+> - **請求書系（invoices・invoice_items・invoice_adjustments・invoice_monthly_export_log）は、ブラウザから読まない**（段階3a）。
+>   画面からは `src/lib/invoice-api.ts` の管理API経由で取得する。
 
 ## 0. 前提と、最初に確認すべきこと
 
@@ -224,7 +229,44 @@ ORDER BY tablename, cmd, policyname;
 - 受注一覧・注文詳細の注文更新は、既存の `/api/admin/orders/[id]` 系に操作を追加する形で寄せられる。
 - 戻し方：SQLのみ（書き込みポリシーを復元）。APIへの置き換えはそのままでよい。
 
+### 段階2.5：残っていた書き込み系の権限・ポリシーを取り除く（**完了：2026-10-14・本番実行済み**）
+
+`030_rls_stage2_5_revoke_residual.sql`（確認：`_check.sql`、戻し：`_rollback.sql`）
+
+- 段階2で書き込みをすべて管理APIに移した後も、公開キー（anon・authenticated）には DELETE などのテーブル権限と、使われていない書き込みポリシーが残っていた。
+- やったこと：
+  1. 実行前の権限とポリシーをバックアップ表（`_backup_20261014_stage25_grants`・`_backup_20261014_stage25_policies`）に保存
+  2. 使われていない書き込みポリシー6件を削除（companies_insert・companies_update・orders_update・stage1_invoices_insert・stage1_invoices_update・stage1_invoice_items_insert）
+  3. public の全テーブル（バックアップ表を除く）で、anon・authenticated の権限を **ALL 取消 → SELECT だけ付け直し**
+  4. バックアップ表は公開キーから読み書きとも不可
+  5. 自己チェック（SELECT 以外の権限・書き込みポリシーが1つでも残れば全体を取り消して中止）
+- 読み取り（SELECT）の権限とポリシーは変えていない（段階3・4で閉じる）。service_role は影響なし。
+- 実行後の状態：public の全テーブルで、公開キーに残る権限は SELECT のみ。書き込み系ポリシーは service_role 限定の ALL 4件（channels・invoice_adjustments・product_mappings・sales_facts）だけ。
+
+#### 教訓（段階2.5 で分かったこと）
+
+1. **PostgreSQL 17 の `MAINTAIN` 権限も、公開キーから取り消す対象になる。** 初版は INSERT・UPDATE・DELETE などを個別に取り消したため、PG17 で追加された `MAINTAIN`（VACUUM・ANALYZE・REINDEX などを実行できる権限）が残った。そこで「ALL を取り消してから SELECT だけ付け直す」方式に改めた。今後も権限を絞るときは、個別に列挙せず ALL 取消 → 必要な権限だけ付与、にする。
+2. **新しく作った public のテーブルには、既定で anon・authenticated にすべての権限（ALL）が付く**（Supabase の既定の権限設定）。RLS を有効にしてポリシーを作らなければ行は読み書きできないが、テーブル権限としては全部付いている。新しいテーブルを作ったら、同じマイグレーションの中で `REVOKE ALL ON TABLE ... FROM anon, authenticated;` を必ず入れる（公開キーで読ませる必要があるときだけ `GRANT SELECT`）。
+
+### 段階3a：請求書系の読み取りを管理APIへ（**コード：実装・デプロイ済み `f93d749`／SQL：031 未実行**）
+
+| 対象 | 変更 |
+|---|---|
+| 請求管理の一覧（`src/app/admin/invoices/page.tsx` の `fetchInvoices`） | `GET /api/admin/invoices?billingMonth=YYYY-MM`（`src/lib/invoice-api.ts` の `fetchInvoicesByMonth`）に変更。返す形は従来と同じ |
+| 注文詳細の請求済み判定（`src/app/admin/orders/[id]/page.tsx` の `fetchLinkedInvoice`） | `GET /api/admin/invoices/by-order/[orderId]` に変更 |
+
+- これで、ブラウザ（公開キー）から invoices・invoice_items・invoice_adjustments・invoice_monthly_export_log を読む箇所は **0件**。印刷ページ・PDF・調整行・月次PDFは以前から管理API経由。
+- 本番での確認（031 の実行前に行う）：
+  - 請求管理：一覧・月の切り替え・送付方法のグループ・調整行の件数バッジ・未請求の警告が従来どおり
+  - 注文詳細：請求書に載っている注文では「代金引換」が選べず注意文が出る／載っていない注文では選べる
+- **031 は未実行**：`031_rls_stage3a_close_invoice_reads.sql`（確認：`_check.sql`、戻し：`_rollback.sql`）。上の確認が済んだら実行する。
+  - 削除する読み取りポリシー4件：invoices「請求書は誰でも参照可能」、invoice_items「請求明細は誰でも参照可能」、invoice_adjustments「請求書調整行は誰でも参照可能」、invoice_monthly_export_log「月次PDFログは誰でも参照可能」
+  - invoice_adjustments の service_role ALL ポリシーは残す（自己チェックで確認）
+  - 実行後、公開キーでこの4テーブルを読むと0行になる（`/rest/v1/invoices?select=id&limit=1` が `[]`）
+
 ### 段階3：管理画面の読み取りをAPIへ移し、請求書・管理者まわりの読み取りを閉じる（4〜5日）
+
+> 進捗（2026-10-16）：**段階3a（請求書系）のコードは完了・031 未実行**。残りは admin_users・company_memo_logs と、管理画面の companies・orders 等の読み取り（段階3b 以降）。
 
 | 閉じるもの | 書き換えが必要な画面 |
 |---|---|
@@ -257,7 +299,8 @@ ORDER BY tablename, cmd, policyname;
 | 1 未使用の書き込み権限を外す | 0.5日 | なし | 完了（026） |
 | 1.5 列単位の権限（暫定） | ― | なし | 完了（027）→ 028・029 で役目を終えた |
 | 2 書き込みをAPIへ | 3〜4日 | 5画面 | **完了（028・029、2026-10-14）** |
-| 3 管理画面の読み取りをAPIへ | 4〜5日 | 10画面＋LIFFトップの管理者判定 | 未着手 |
+| 2.5 残っていた書き込み権限・ポリシーを除去 | ― | なし | **完了（030、2026-10-14）** |
+| 3 管理画面の読み取りをAPIへ | 4〜5日 | 10画面＋LIFFトップの管理者判定 | **3a（請求書系）コード完了・031 未実行**／3b 以降は未着手 |
 | 4 LIFFの読み取りをAPIへ | 2〜3日 | 3画面 | 未着手 |
 | 5 商品系（任意） | 1日 | なし〜少量 | 未着手 |
 
