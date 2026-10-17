@@ -14,7 +14,9 @@
 >   新しいテーブルを作ると、Supabase の既定で anon・authenticated にすべての権限が付くので、作ったら必ず
 >   `REVOKE ALL ... FROM anon, authenticated` →（公開キーで読む必要がある場合のみ）`GRANT SELECT` をする（下の「教訓」②）。
 > - **請求書系（invoices・invoice_items・invoice_adjustments・invoice_monthly_export_log）は、ブラウザから読まない**（段階3a）。
->   画面からは `src/lib/invoice-api.ts` の管理API経由で取得する。
+>   画面からは `src/lib/invoice-api.ts` の管理API経由で取得する。031 実行済みのため、公開キーで読むと0行になる。
+> - **admin_users は、ブラウザから読まない**（段階3b）。管理者かどうか・自分の名前は `GET /api/admin/me` で取得する
+>   （LIFFアクセストークンをサーバーでLINEに照会して本人を特定し、本人の name・role だけを返す）。
 
 ## 0. 前提と、最初に確認すべきこと
 
@@ -248,7 +250,7 @@ ORDER BY tablename, cmd, policyname;
 1. **PostgreSQL 17 の `MAINTAIN` 権限も、公開キーから取り消す対象になる。** 初版は INSERT・UPDATE・DELETE などを個別に取り消したため、PG17 で追加された `MAINTAIN`（VACUUM・ANALYZE・REINDEX などを実行できる権限）が残った。そこで「ALL を取り消してから SELECT だけ付け直す」方式に改めた。今後も権限を絞るときは、個別に列挙せず ALL 取消 → 必要な権限だけ付与、にする。
 2. **新しく作った public のテーブルには、既定で anon・authenticated にすべての権限（ALL）が付く**（Supabase の既定の権限設定）。RLS を有効にしてポリシーを作らなければ行は読み書きできないが、テーブル権限としては全部付いている。新しいテーブルを作ったら、同じマイグレーションの中で `REVOKE ALL ON TABLE ... FROM anon, authenticated;` を必ず入れる（公開キーで読ませる必要があるときだけ `GRANT SELECT`）。
 
-### 段階3a：請求書系の読み取りを管理APIへ（**コード：実装・デプロイ済み `f93d749`／SQL：031 未実行**）
+### 段階3a：請求書系の読み取りを管理APIへ（**完了：コード `f93d749`・031 本番実行済み**）
 
 | 対象 | 変更 |
 |---|---|
@@ -259,14 +261,32 @@ ORDER BY tablename, cmd, policyname;
 - 本番での確認（031 の実行前に行う）：
   - 請求管理：一覧・月の切り替え・送付方法のグループ・調整行の件数バッジ・未請求の警告が従来どおり
   - 注文詳細：請求書に載っている注文では「代金引換」が選べず注意文が出る／載っていない注文では選べる
-- **031 は未実行**：`031_rls_stage3a_close_invoice_reads.sql`（確認：`_check.sql`、戻し：`_rollback.sql`）。上の確認が済んだら実行する。
+- 本番確認（2026-10-17）：上の項目はすべて ○（調整行バッジのみ、調整行のある請求書が0件のため表示機会なし）。コンソール・ネットワークに 401/403/500 なし。
+- **031 は本番実行済み**：`031_rls_stage3a_close_invoice_reads.sql`（確認：`_check.sql`、戻し：`_rollback.sql`）。
   - 削除する読み取りポリシー4件：invoices「請求書は誰でも参照可能」、invoice_items「請求明細は誰でも参照可能」、invoice_adjustments「請求書調整行は誰でも参照可能」、invoice_monthly_export_log「月次PDFログは誰でも参照可能」
   - invoice_adjustments の service_role ALL ポリシーは残す（自己チェックで確認）
   - 実行後、公開キーでこの4テーブルを読むと0行になる（`/rest/v1/invoices?select=id&limit=1` が `[]`）
 
+### 段階3b：admin_users の読み取りを /api/admin/me へ（**コード：実装・デプロイ済み `3844a16`／SQL：033 未作成・未実行**）
+
+| 対象 | 変更 |
+|---|---|
+| 管理画面の入場判定（`src/app/admin/layout.tsx` の `checkAdmin`） | 公開キーで `admin_users` を `select('*')` していたのを `GET /api/admin/me`（`adminFetch`）に変更。レイアウトは管理画面内の移動では作り直されないため、呼び出しは画面を開いたとき1回 |
+| LIFFトップの「管理者なら /admin へ」（`src/app/page.tsx` の `fetchCustomer`） | LIFFアクセストークンを付けて `GET /api/admin/me` を呼び、200 なら /admin へ。**管理者でない取引先では 403 が返るのが正常**（ネットワーク欄に出る）。開発環境では管理APIが常に管理者扱いになるため判定しない |
+
+- `GET /api/admin/me`（`src/app/api/admin/me/route.ts`）：middleware（トークン→LINE `/v2/profile`→service role で admin_users 照合）を通ったうえで、`getAdminIdentity` が同じトークンから本人を特定し直す。クライアントが送る line_user_id は使わない。返すのは `{ name, role }` のみ。管理者でなければ 401（トークンなし・無効）／403（管理者でない）。
+- 管理画面の入場判定は、401/403 なら従来どおり「アクセス拒否」。429・5xx・通信失敗は「確認できませんでした（再読み込みしてください）」と出し分ける（管理者が一時的な失敗で締め出されたと誤解しないため）。
+- これで、ブラウザ（公開キー）から admin_users を読む箇所は **0件**。残る読み取りは middleware（service role の REST）と `src/lib/admin-auth.ts`（service role）だけで、どちらも読取ポリシーに依存しない。
+- あわせて middleware の `DEBUG: remove after diagnosis` ログ2行を削除。
+- 本番での確認（033 の実行前に行う）：
+  - 管理画面にログインでき、ダッシュボードが開く。サイドバー下に自分の名前が出る
+  - 管理者でないアカウント（またはトークンなし）で `/api/admin/me` が 401/403
+  - LIFFトップ：管理者は /admin へ移動、取引先は従来どおり商品画面
+- **033（admin_users の読取ポリシー「管理者情報は誰でも参照可能」の削除）は未作成・未実行**。上の確認が済んだら実行する。
+
 ### 段階3：管理画面の読み取りをAPIへ移し、請求書・管理者まわりの読み取りを閉じる（4〜5日）
 
-> 進捗（2026-10-16）：**段階3a（請求書系）のコードは完了・031 未実行**。残りは admin_users・company_memo_logs と、管理画面の companies・orders 等の読み取り（段階3b 以降）。
+> 進捗（2026-10-17）：**段階3a（請求書系）完了（031 実行済み）。段階3b（admin_users）のコードは完了・033 未実行**。残りは company_memo_logs と、管理画面の companies・orders 等の読み取り。
 
 | 閉じるもの | 書き換えが必要な画面 |
 |---|---|
@@ -300,7 +320,7 @@ ORDER BY tablename, cmd, policyname;
 | 1.5 列単位の権限（暫定） | ― | なし | 完了（027）→ 028・029 で役目を終えた |
 | 2 書き込みをAPIへ | 3〜4日 | 5画面 | **完了（028・029、2026-10-14）** |
 | 2.5 残っていた書き込み権限・ポリシーを除去 | ― | なし | **完了（030、2026-10-14）** |
-| 3 管理画面の読み取りをAPIへ | 4〜5日 | 10画面＋LIFFトップの管理者判定 | **3a（請求書系）コード完了・031 未実行**／3b 以降は未着手 |
+| 3 管理画面の読み取りをAPIへ | 4〜5日 | 10画面＋LIFFトップの管理者判定 | **3a（請求書系）完了**／**3b（admin_users）コード完了・033 未実行**／残りは未着手 |
 | 4 LIFFの読み取りをAPIへ | 2〜3日 | 3画面 | 未着手 |
 | 5 商品系（任意） | 1日 | なし〜少量 | 未着手 |
 
