@@ -4,8 +4,11 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useLiff } from '@/hooks/useLiff'
-import { createClient } from '@/lib/supabase/client'
+import { adminFetch } from '@/lib/admin-fetch'
 import type { AdminUser } from '@/types'
+
+// /api/admin/me の応答（本人の name・role のみ）
+type AdminMe = Pick<AdminUser, 'name' | 'role'>
 
 const NAV_ITEMS = [
   { href: '/admin', label: 'ホーム', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
@@ -17,13 +20,14 @@ const NAV_ITEMS = [
 ]
 
 const DEV_BYPASS = process.env.NODE_ENV === 'development'
-const DEV_ADMIN: AdminUser = { id: 'dev', line_user_id: 'dev', name: '開発者（DEV）', role: 'superadmin' }
+const DEV_ADMIN: AdminMe = { name: '開発者（DEV）', role: 'superadmin' }
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { userId, isLoading: liffLoading } = useLiff()
-  const [adminUser, setAdminUser] = useState<AdminUser | null>(DEV_BYPASS ? DEV_ADMIN : null)
+  const [adminUser, setAdminUser] = useState<AdminMe | null>(DEV_BYPASS ? DEV_ADMIN : null)
   const [checking, setChecking] = useState(!DEV_BYPASS)
+  const [checkFailed, setCheckFailed] = useState(false)
 
   useEffect(() => {
     if (DEV_BYPASS) return
@@ -33,18 +37,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       return
     }
 
+    // admin_users は公開キーで読まない（管理API経由・本人の name/role のみ。RLS 段階3b）
     async function checkAdmin() {
       try {
-        const supabase = createClient()
-        const { data } = await supabase
-          .from('admin_users')
-          .select('*')
-          .eq('line_user_id', userId)
-          .single()
-
-        setAdminUser(data as AdminUser | null)
+        const res = await adminFetch('/api/admin/me')
+        if (res.ok) {
+          setAdminUser((await res.json()) as AdminMe)
+        } else {
+          setAdminUser(null)
+          // 401/403 は「管理者ではない」。それ以外（429・5xx 等）は一時的な失敗として再読み込みを促す
+          if (res.status !== 401 && res.status !== 403) setCheckFailed(true)
+        }
       } catch {
         setAdminUser(null)
+        setCheckFailed(true)
       } finally {
         setChecking(false)
       }
@@ -70,8 +76,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-gray-900 mb-2">アクセス拒否</h1>
-          <p className="text-gray-600">管理者権限がありません</p>
+          <h1 className="text-xl font-bold text-gray-900 mb-2">{checkFailed ? '確認できませんでした' : 'アクセス拒否'}</h1>
+          <p className="text-gray-600">
+            {checkFailed ? '管理者権限の確認に失敗しました。少し待ってから再読み込みしてください' : '管理者権限がありません'}
+          </p>
           <Link href="/" className="mt-4 inline-block text-kincha font-bold text-sm">
             ホームに戻る
           </Link>

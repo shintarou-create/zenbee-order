@@ -32,18 +32,17 @@ export default function HomePage() {
     if (!userId) return
     setCustomerLoading(true)
     try {
-      const supabase = createClient()
-
-      const { data: adminUser } = await supabase
-        .from('admin_users')
-        .select('id')
-        .eq('line_user_id', userId)
-        .single()
-
-      if (adminUser) {
-        router.push('/admin')
-        return
+      // 管理者なら管理画面へ。admin_users は公開キーで読まず、LIFFトークンを管理APIで検証する（RLS 段階3b）。
+      // 管理者でなければ 401/403 が返るのが正常。開発環境は管理APIが常に管理者扱いになるため判定しない。
+      if (process.env.NODE_ENV !== 'development' && accessToken) {
+        const meRes = await fetch('/api/admin/me', { headers: { Authorization: `Bearer ${accessToken}` } })
+        if (meRes.ok) {
+          router.push('/admin')
+          return
+        }
       }
+
+      const supabase = createClient()
 
       // LEFT JOIN で company も取得（maybeSingle で未紐付けを null で受ける）
       const { data: lineUser } = await supabase
@@ -84,7 +83,7 @@ export default function HomePage() {
     } finally {
       setCustomerLoading(false)
     }
-  }, [userId, router])
+  }, [userId, accessToken, router])
 
   useEffect(() => {
     if (!userId) return
